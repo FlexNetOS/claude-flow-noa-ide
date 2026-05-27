@@ -426,23 +426,44 @@ async function killBackgroundDaemon(projectRoot: string): Promise<boolean> {
 
 /**
  * Kill stale daemon processes not tracked by the PID file (#1551).
- * Uses `ps` to find all daemon processes for this project and kills them.
+ * Uses platform-appropriate commands to find all daemon processes for this project.
  */
 async function killStaleDaemons(projectRoot: string, quiet: boolean): Promise<void> {
   try {
     const { execFileSync } = await import('child_process');
-    const psOutput = execFileSync('ps', ['-eo', 'pid,command'], { encoding: 'utf-8', timeout: 5000 });
+    const isWindows = process.platform === 'win32';
+    
+    let psOutput: string;
+    if (isWindows) {
+      psOutput = execFileSync('tasklist', ['/FI', 'IMAGENAME node.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf-8', timeout: 5000 });
+    } else {
+      psOutput = execFileSync('ps', ['-eo', 'pid,command'], { encoding: 'utf-8', timeout: 5000 });
+    }
+    
     const lines = psOutput.split('\n');
     const currentPid = process.pid;
     const trackedPid = getBackgroundDaemonPid(projectRoot);
     let killed = 0;
 
     for (const line of lines) {
-      if (!line.includes('daemon start --foreground')) continue;
-      if (!line.includes('claude-flow') && !line.includes('@claude-flow/cli')) continue;
-      const pidStr = line.trim().split(/\s+/)[0];
-      const pid = parseInt(pidStr, 10);
+      if (!line.trim()) continue;
+      
+      let pid: number;
+      try {
+        if (isWindows) {
+          const parts = line.split(',');
+          if (parts.length < 2) continue;
+          pid = parseInt(parts[1].replace(/[^0-9]/g, ''), 10);
+        } else {
+          const pidStr = line.trim().split(/\t/)[0];
+          pid = parseInt(pidStr, 10);
+        }
+      } catch {
+        continue;
+      }
+      
       if (isNaN(pid) || pid === currentPid || pid === trackedPid) continue;
+      if (!line.includes('daemon') && !line.includes('claude-flow') && !line.includes('claude-flow')) continue;
       if (!isProcessRunning(pid)) continue;
       try {
         process.kill(pid, 'SIGTERM');
@@ -457,7 +478,7 @@ async function killStaleDaemons(projectRoot: string, quiet: boolean): Promise<vo
       output.printInfo(`Cleaned up ${killed} stale daemon process(es)`);
     }
   } catch {
-    // ps not available or failed — skip stale cleanup
+    // Process listing not available or failed — skip stale cleanup
   }
 }
 

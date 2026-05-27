@@ -590,11 +590,6 @@ const Index = () => {
     setIsPlanning(false);
     setPlanGenerated(true);
     setVisibleSteps(1);
-    
-    // Auto-start execution with the generated plan
-    setTimeout(() => {
-      executeResearch(plan, goal);
-    }, 500);
   };
 
   // Execute research plan
@@ -1104,18 +1099,34 @@ const Index = () => {
               </div>
             )}
 
-            {/* Control Button */}
+            {/* Control Buttons */}
             <div ref={objectiveRef} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-6 sm:mb-8">
-              <Button
-                onClick={resetAll}
-                variant="outline"
-                size="sm"
-                disabled={isRunning}
-                className="gap-2"
-              >
-                <RotateCcw className="w-4 h-4" />
-                New Research
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={resetAll}
+                  variant="outline"
+                  size="sm"
+                  disabled={isRunning}
+                  className="gap-2"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  New Research
+                </Button>
+                {!isRunning && !showFinalAnalysis && (
+                  <Button
+                    onClick={() => executeResearch()}
+                    size="sm"
+                    className="gap-2"
+                    style={{ 
+                      backgroundColor: widgetConfig.accentColor,
+                      color: '#fff'
+                    }}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Execute Research
+                  </Button>
+                )}
+              </div>
               <div className="text-xs sm:text-sm flex-1 min-w-0 text-center px-4" style={{ color: "#a3a3a3" }}>
                 <span className="font-medium" style={{ color: "#f5f5f5" }}>Objective:</span> <span className="break-words">{userGoal}</span>
               </div>

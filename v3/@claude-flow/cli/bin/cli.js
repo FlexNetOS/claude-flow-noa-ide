@@ -28,6 +28,20 @@ const isExplicitMCP = cliArgs.length >= 1 && cliArgs[0] === 'mcp' && (cliArgs.le
 const isMCPMode = !process.stdin.isTTY && (process.argv.length === 2 || isExplicitMCP);
 
 if (isMCPMode) {
+  // In stdio MCP mode, stdout is reserved exclusively for JSON-RPC frames.
+  // Redirect diagnostic console output to stderr so tool-level console.log calls
+  // cannot corrupt the MCP stream and make clients close the transport.
+  console.log = (...args) => {
+    if (_isCosmeticAgentdbPatchNoise(String(args[0] ?? ''))) return;
+    console.error(...args);
+  };
+  console.info = (...args) => console.error(...args);
+  console.debug = (...args) => console.error(...args);
+
+  const writeProtocolMessage = (message) => {
+    process.stdout.write(`${JSON.stringify(message)}\n`);
+  };
+
   // Run MCP server mode
   const { listMCPTools, callMCPTool, hasTool } = await import('../dist/src/mcp-client.js');
 
@@ -42,6 +56,20 @@ if (isMCPMode) {
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', async (chunk) => {
     buffer += chunk;
+    if (buffer.length > MCP_MAX_BUFFER_BYTES) {
+      // Drop the buffer + emit a protocol-level error so the client
+      // sees the rejection rather than a silent OOM.
+      writeProtocolMessage({
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32700,
+          message: `Buffered stdin exceeds ${MCP_MAX_BUFFER_BYTES} bytes without newline; resetting`,
+        },
+      });
+      buffer = '';
+      return;
+    }
     let lines = buffer.split('\n');
     buffer = lines.pop() || '';
 
@@ -51,25 +79,25 @@ if (isMCPMode) {
         try {
           message = JSON.parse(line);
         } catch {
-          console.log(JSON.stringify({
+          writeProtocolMessage({
             jsonrpc: '2.0',
             id: null,
             error: { code: -32700, message: 'Parse error' },
-          }));
+          });
           continue;
         }
         try {
           const response = await handleMessage(message);
           if (response) {
-            console.log(JSON.stringify(response));
+            writeProtocolMessage(response);
           }
         } catch (error) {
           // #1606: Return proper internal error instead of parse error
-          console.log(JSON.stringify({
+          writeProtocolMessage({
             jsonrpc: '2.0',
             id: message.id ?? null,
             error: { code: -32603, message: error instanceof Error ? error.message : 'Internal error' },
-          }));
+          });
         }
       }
     }

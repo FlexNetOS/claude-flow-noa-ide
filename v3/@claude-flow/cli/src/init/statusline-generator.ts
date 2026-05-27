@@ -629,6 +629,31 @@ function progressBar(current, total) {
   return '[' + '\\u25CF'.repeat(filled) + '\\u25CB'.repeat(width - filled) + ']';
 }
 
+function isBuddyMode() {
+  const args = process.argv.join(' ').toLowerCase();
+  const envBuddy =
+    process.env.CLAUDE_BUDDY === '1' ||
+    process.env.CLAUDE_CODE_BUDDY === '1';
+
+  return args.includes('buddy') || envBuddy;
+}
+
+function generateBuddyStatusline() {
+  const git = getGitInfo();
+  const modelName = getModelFromStdin() || getModelName();
+
+  let line = c.bold + c.brightPurple + '▊ RuFlo ' + c.reset;
+  line += c.brightCyan + git.name + c.reset;
+
+  if (git.gitBranch) {
+    line += ' ' + c.dim + '|' + c.reset + ' ' + c.brightBlue + git.gitBranch + c.reset;
+  }
+
+  line += ' ' + c.dim + '|' + c.reset + ' ' + c.purple + modelName + c.reset;
+
+  return line;
+}
+
 function generateStatusline() {
   const git = getGitInfo();
   // Prefer model name from Claude Code stdin data, fallback to file-based detection
@@ -882,7 +907,7 @@ if (process.argv.includes('--json')) {
 } else if (process.argv.includes('--compact')) {
   console.log(JSON.stringify(generateJSON()));
 } else {
-  console.log(generateStatusline());
+  console.log(isBuddyMode() ? generateBuddyStatusline() : generateStatusline());
 }
 `;
 }

@@ -9,12 +9,25 @@
 
 import { randomUUID } from 'crypto';
 
-// Suppress [AgentDB Patch] warnings (cosmetic, from agentic-flow v1.x compat patch)
+// In stdio MCP mode, stdout is reserved exclusively for JSON-RPC frames.
+// Redirect diagnostic console output to stderr so tool-level console.log calls
+// cannot corrupt the MCP stream and make clients close the transport.
+// Also suppress the SPECIFIC cosmetic "[AgentDB Patch] Controller index not
+// found" noise. Tight match (both prefix AND "Controller index not found") so
+// other [AgentDB Patch] warnings about real issues still flow through.
 const _origWarn = console.warn;
+const _isCosmeticAgentdbPatchNoise = (msg) =>
+  msg.includes('[AgentDB Patch]') && msg.includes('Controller index not found');
 console.warn = (...args) => {
   if (String(args[0] ?? '').includes('[AgentDB Patch]')) return;
   _origWarn.apply(console, args);
 };
+console.log = (...args) => {
+  if (_isCosmeticAgentdbPatchNoise(String(args[0] ?? ''))) return;
+  console.error(...args);
+};
+console.info = (...args) => console.error(...args);
+console.debug = (...args) => console.error(...args);
 
 import { listMCPTools, callMCPTool, hasTool } from '../dist/src/mcp-client.js';
 
@@ -36,12 +49,29 @@ console.error(JSON.stringify({
   version: VERSION,
 }));
 
+function writeProtocolMessage(message) {
+  process.stdout.write(`${JSON.stringify(message)}\n`);
+}
+
 // Handle stdin messages
 let buffer = '';
 
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', async (chunk) => {
   buffer += chunk;
+
+  if (buffer.length > MCP_MAX_BUFFER_BYTES) {
+    writeProtocolMessage({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32700,
+        message: `Buffered stdin exceeds ${MCP_MAX_BUFFER_BYTES} bytes without newline; resetting`,
+      },
+    });
+    buffer = '';
+    return;
+  }
 
   // Process complete JSON messages (newline-delimited)
   let lines = buffer.split('\n');
@@ -53,7 +83,7 @@ process.stdin.on('data', async (chunk) => {
         const message = JSON.parse(line);
         const response = await handleMessage(message);
         if (response) {
-          console.log(JSON.stringify(response));
+          writeProtocolMessage(response);
         }
       } catch (error) {
         console.error(
@@ -61,11 +91,11 @@ process.stdin.on('data', async (chunk) => {
           error instanceof Error ? error.message : String(error)
         );
         // Send parse error response
-        console.log(JSON.stringify({
+        writeProtocolMessage({
           jsonrpc: '2.0',
           id: null,
           error: { code: -32700, message: 'Parse error' },
-        }));
+        });
       }
     }
   }
