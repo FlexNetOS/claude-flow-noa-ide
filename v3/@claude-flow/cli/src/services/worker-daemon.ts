@@ -320,7 +320,11 @@ export class WorkerDaemon extends EventEmitter {
 
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
-    process.on('SIGHUP', shutdown);
+    // Detached Windows daemons can receive SIGHUP during parent/session changes.
+    // Ignore it there so background workers stay alive.
+    if (process.platform !== 'win32') {
+      process.on('SIGHUP', shutdown);
+    }
   }
 
   /**
@@ -472,6 +476,8 @@ export class WorkerDaemon extends EventEmitter {
     try {
       const pid = parseInt(readFileSync(this.pidFile, 'utf-8').trim(), 10);
       if (isNaN(pid)) return null;
+      // If PID file points to this process, it is not "another" daemon.
+      if (pid === process.pid) return null;
       // Check if process is alive (signal 0 = existence check)
       process.kill(pid, 0);
       return pid; // Process is alive

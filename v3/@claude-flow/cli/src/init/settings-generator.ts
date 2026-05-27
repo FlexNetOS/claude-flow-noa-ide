@@ -173,11 +173,12 @@ const IS_WINDOWS = process.platform === 'win32';
  * Wraps in `sh -c` to guarantee shell expansion on all platforms (macOS zsh,
  * Linux bash). Falls back to "." if CLAUDE_PROJECT_DIR is unset, since
  * Claude Code runs hooks from the project root.
- * On Windows, uses `cmd /c` with %CLAUDE_PROJECT_DIR%.
+ * On Windows, uses `cmd /c` with relative script paths (from project root).
  */
 function hookCmd(script: string, subcommand: string): string {
   if (IS_WINDOWS) {
-    return `cmd /c node %CLAUDE_PROJECT_DIR%/${script} ${subcommand}`.trim();
+    // Avoid env-var expansion issues in Windows hook runners.
+    return `cmd /c node ${script} ${subcommand}`.trim();
   }
   // Use sh -c to ensure $CLAUDE_PROJECT_DIR is expanded by a real shell,
   // even if Claude Code doesn't invoke hooks through a shell on macOS.

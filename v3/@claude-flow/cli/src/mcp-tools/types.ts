@@ -22,10 +22,17 @@ export interface MCPToolResult {
 
 /**
  * Returns the effective project working directory.
- * Prefers CLAUDE_FLOW_CWD (set by the install script for global/MCP installs
- * where process.cwd() may resolve to '/') over the real process.cwd().
+ * Prefers project-scoped env vars exposed by the host runtime over the
+ * installer fallback `CLAUDE_FLOW_CWD`, so globally registered MCP servers can
+ * still isolate state per project when the host provides that context.
  */
 export function getProjectCwd(): string {
+  // Prefer project-scoped env vars (highest priority)
+  if (process.env.CLAUDE_FLOW_PROJECT_DIR) return process.env.CLAUDE_FLOW_PROJECT_DIR;
+  if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR;
+  if (process.env.INIT_CWD) return process.env.INIT_CWD;
+  // CLAUDE_FLOW_CWD is set by the install script; filter out '/' and $HOME which indicate
+  // a global/MCP install context where no project has been set yet.
   const envCwd = process.env.CLAUDE_FLOW_CWD;
   if (envCwd && envCwd !== '/' && envCwd !== process.env.HOME) {
     return envCwd;

@@ -61,6 +61,29 @@ Install Ruflo as a native Claude Code plugin -- adds skills, commands, agents, a
 <details>
 <summary><strong>All 32 plugins</strong></summary>
 
+## Status Bar on Narrow Terminals
+
+On narrow terminal windows, the status bar can take up significant screen space and reduce visible log output.
+
+### Recommended Terminal Width
+
+For the best terminal experience, use a window width of at least 100 columns.
+
+### Workarounds
+
+- widen the terminal window
+- reduce terminal zoom level
+- use the web UI for compact layouts
+- disable the statusline in `.claude/settings.json`
+
+### Disable Statusline
+
+You can disable the terminal statusline by removing or disabling the `statusLine` setting in `.claude/settings.json`.
+
+### Notes
+
+Statusline density is more noticeable in narrow terminal layouts and split-pane workflows. Recent versions include improvements, but narrow terminals may still feel cramped.
+
 #### Core & Orchestration
 
 | Plugin | What it does |

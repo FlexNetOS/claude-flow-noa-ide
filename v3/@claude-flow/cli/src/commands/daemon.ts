@@ -271,7 +271,9 @@ async function startBackgroundDaemon(projectRoot: string, quiet: boolean, maxCpu
       // Prevent macOS SIGHUP kill when terminal closes
       ...(process.platform === 'darwin' ? { NOHUP: '1' } : {}),
     },
-    ...(isWin ? { shell: true, windowsHide: true } : {}),
+    // Avoid shell-mode spawn on Windows. Shell parsing can break quoted
+    // executable paths like "C:\Program Files\..." and cause stale PID files.
+    ...(isWin ? { windowsHide: true } : {}),
   };
 
   // Use spawn with explicit arguments instead of shell string interpolation
@@ -299,8 +301,7 @@ async function startBackgroundDaemon(projectRoot: string, quiet: boolean, maxCpu
     return { success: false, exitCode: 1 };
   }
 
-  // Unref BEFORE writing PID file — prevents race where parent exits
-  // but child hasn't fully detached yet (fixes macOS daemon death #1283)
+  // Unref immediately so parent can exit while child keeps running.
   child.unref();
 
   // Longer delay to let the child process start and write its own PID file.
