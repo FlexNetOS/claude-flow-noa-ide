@@ -1,0 +1,248 @@
+{
+  "summary": {
+    "trackedCount": 7,
+    "withDataCount": 0,
+    "skippedCount": 7,
+    "driftFailures": 0,
+    "allPassed": true,
+    "trends": [
+      {
+        "benchmark": "rag-real-text",
+        "metricPath": "results.results.compound.recallAt5",
+        "direction": "higher",
+        "sparkline": "▄",
+        "sampleCount": 1,
+        "latestValue": 0.9666666666666667,
+        "drift": {
+          "earlyMean": 0,
+          "lateMean": 0,
+          "drift": 0,
+          "passed": true,
+          "skipped": true
+        }
+      },
+      {
+        "benchmark": "rag-real-text",
+        "metricPath": "results.results.hyde.recallAt5",
+        "direction": "higher",
+        "sparkline": "▄",
+        "sampleCount": 1,
+        "latestValue": 0.9666666666666667,
+        "drift": {
+          "earlyMean": 0,
+          "lateMean": 0,
+          "drift": 0,
+          "passed": true,
+          "skipped": true
+        }
+      },
+      {
+        "benchmark": "rag-adaptive-router",
+        "metricPath": "results.results.accuracy",
+        "direction": "higher",
+        "sparkline": "▄",
+        "sampleCount": 1,
+        "latestValue": 1,
+        "drift": {
+          "earlyMean": 0,
+          "lateMean": 0,
+          "drift": 0,
+          "passed": true,
+          "skipped": true
+        }
+      },
+      {
+        "benchmark": "rag-router-ablation",
+        "metricPath": "results.results.adaptive.meanRecallAt5",
+        "direction": "higher",
+        "sparkline": "▄",
+        "sampleCount": 1,
+        "latestValue": 0.8833333333333334,
+        "drift": {
+          "earlyMean": 0,
+          "lateMean": 0,
+          "drift": 0,
+          "passed": true,
+          "skipped": true
+        }
+      },
+      {
+        "benchmark": "rag-lazy-router",
+        "metricPath": "results.results.embedsSavedPercent",
+        "direction": "higher",
+        "sparkline": "▄",
+        "sampleCount": 1,
+        "latestValue": 24.324324324324326,
+        "drift": {
+          "earlyMean": 0,
+          "lateMean": 0,
+          "drift": 0,
+          "passed": true,
+          "skipped": true
+        }
+      },
+      {
+        "benchmark": "rag-cached-router",
+        "metricPath": "results.results.cacheStats.hitRate",
+        "direction": "higher",
+        "sparkline": "▄▄",
+        "sampleCount": 2,
+        "latestValue": 0.7407407407407407,
+        "drift": {
+          "earlyMean": 0,
+          "lateMean": 0,
+          "drift": 0,
+          "passed": true,
+          "skipped": true
+        }
+      },
+      {
+        "benchmark": "rag-cached-router",
+        "metricPath": "results.results.embedsSavedPercent",
+        "direction": "higher",
+        "sparkline": "▄▄",
+        "sampleCount": 2,
+        "latestValue": 74.07407407407408,
+        "drift": {
+          "earlyMean": 0,
+          "lateMean": 0,
+          "drift": 0,
+          "passed": true,
+          "skipped": true
+        }
+      }
+    ]
+  },
+  "witness": {
+    "benchmark": "rag-trend-visualization",
+    "timestamp": "2026-05-18T01:54:42.735Z",
+    "commit": "3fe81e47d40eb135deaea5e2f96058544cbf7ffe",
+    "model": "ledger-derived",
+    "corpus": {
+      "id": "435eb5e466c61076586e3fd316676f7abb3efc5de1b43b6ff57b9ce985d373ba",
+      "size": 7
+    },
+    "queries": {
+      "id": "7cc10dbe481dbad00756bea27a4cdad4a195024176a689fc5cdba814fd44b0d5",
+      "count": 9
+    },
+    "results": {
+      "trackedCount": 7,
+      "withDataCount": 0,
+      "skippedCount": 7,
+      "driftFailures": 0,
+      "allPassed": true,
+      "trends": [
+        {
+          "benchmark": "rag-real-text",
+          "metricPath": "results.results.compound.recallAt5",
+          "direction": "higher",
+          "sparkline": "▄",
+          "sampleCount": 1,
+          "latestValue": 0.9666666666666667,
+          "drift": {
+            "earlyMean": 0,
+            "lateMean": 0,
+            "drift": 0,
+            "passed": true,
+            "skipped": true
+          }
+        },
+        {
+          "benchmark": "rag-real-text",
+          "metricPath": "results.results.hyde.recallAt5",
+          "direction": "higher",
+          "sparkline": "▄",
+          "sampleCount": 1,
+          "latestValue": 0.9666666666666667,
+          "drift": {
+            "earlyMean": 0,
+            "lateMean": 0,
+            "drift": 0,
+            "passed": true,
+            "skipped": true
+          }
+        },
+        {
+          "benchmark": "rag-adaptive-router",
+          "metricPath": "results.results.accuracy",
+          "direction": "higher",
+          "sparkline": "▄",
+          "sampleCount": 1,
+          "latestValue": 1,
+          "drift": {
+            "earlyMean": 0,
+            "lateMean": 0,
+            "drift": 0,
+            "passed": true,
+            "skipped": true
+          }
+        },
+        {
+          "benchmark": "rag-router-ablation",
+          "metricPath": "results.results.adaptive.meanRecallAt5",
+          "direction": "higher",
+          "sparkline": "▄",
+          "sampleCount": 1,
+          "latestValue": 0.8833333333333334,
+          "drift": {
+            "earlyMean": 0,
+            "lateMean": 0,
+            "drift": 0,
+            "passed": true,
+            "skipped": true
+          }
+        },
+        {
+          "benchmark": "rag-lazy-router",
+          "metricPath": "results.results.embedsSavedPercent",
+          "direction": "higher",
+          "sparkline": "▄",
+          "sampleCount": 1,
+          "latestValue": 24.324324324324326,
+          "drift": {
+            "earlyMean": 0,
+            "lateMean": 0,
+            "drift": 0,
+            "passed": true,
+            "skipped": true
+          }
+        },
+        {
+          "benchmark": "rag-cached-router",
+          "metricPath": "results.results.cacheStats.hitRate",
+          "direction": "higher",
+          "sparkline": "▄▄",
+          "sampleCount": 2,
+          "latestValue": 0.7407407407407407,
+          "drift": {
+            "earlyMean": 0,
+            "lateMean": 0,
+            "drift": 0,
+            "passed": true,
+            "skipped": true
+          }
+        },
+        {
+          "benchmark": "rag-cached-router",
+          "metricPath": "results.results.embedsSavedPercent",
+          "direction": "higher",
+          "sparkline": "▄▄",
+          "sampleCount": 2,
+          "latestValue": 74.07407407407408,
+          "drift": {
+            "earlyMean": 0,
+            "lateMean": 0,
+            "drift": 0,
+            "passed": true,
+            "skipped": true
+          }
+        }
+      ]
+    },
+    "contentHash": "141ded929d85859ea8aec144fd54fa337dbfdfd82bc4fb80bc3364ae5f58525a",
+    "signature": "34a162e1d29bd8205cc71a6a103a4e53b5b1acd1871464af8820aa8636ba6f7a913155ebd988f3d368cfc184545ed7c35b8f8e89a73f8cd2be1d0fb43e512909",
+    "publicKey": "302a300506032b6570032100792919585e27493aba5d008a05aeb60588e31ce759d33b579c2d50618dad07f2",
+    "signatureAlgorithm": "ed25519"
+  }
+}

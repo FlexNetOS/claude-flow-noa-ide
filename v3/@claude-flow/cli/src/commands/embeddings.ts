@@ -550,14 +550,14 @@ const indexCommand: Command = {
   description: 'Manage HNSW indexes',
   options: [
     { name: 'action', short: 'a', type: 'string', description: 'Action: build, rebuild, status, optimize', default: 'status' },
-    { name: 'collection', short: 'c', type: 'string', description: 'Collection/namespace name' },
+    { name: 'collection', short: 'c', type: 'string', description: 'Collection/namespace label (informational; HNSW is a single global index across all namespaces). Omit to build for all namespaces (#1947 RC2).' },
     { name: 'ef-construction', type: 'number', description: 'HNSW ef_construction parameter', default: '200' },
     { name: 'm', type: 'number', description: 'HNSW M parameter', default: '16' },
   ],
   examples: [
     { command: 'claude-flow embeddings index', description: 'Show index status' },
-    { command: 'claude-flow embeddings index -a build -c documents', description: 'Build index' },
-    { command: 'claude-flow embeddings index -a optimize -c patterns', description: 'Optimize index' },
+    { command: 'claude-flow embeddings index -a build', description: 'Build index from all namespaces' },
+    { command: 'claude-flow embeddings index -a rebuild -c project', description: 'Rebuild (label as `project`)' },
   ],
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     const action = ctx.flags.action as string || 'status';
@@ -644,12 +644,16 @@ const indexCommand: Command = {
 
       // Build/Rebuild action
       if (action === 'build' || action === 'rebuild') {
-        if (!collection) {
-          output.printError('Collection is required for build/rebuild');
-          return { success: false, exitCode: 1 };
-        }
+        // #1947 RC #2: `-c` is informational — the HNSW index is global
+        // and indexes every namespace's embeddings in one structure. The
+        // earlier code REQUIRED `-c` for build/rebuild AND its examples
+        // suggested `-c default`, which silently produced 0 vectors when a
+        // user's entries lived under a different namespace (e.g. `project`,
+        // `claude-memories`). Treat omitted `-c` as "all namespaces"
+        // (the actual runtime behavior) and tell the user as much.
+        const label = collection ?? '(all namespaces)';
 
-        const spinner = output.createSpinner({ text: `${action}ing index for ${collection}...`, spinner: 'dots' });
+        const spinner = output.createSpinner({ text: `${action}ing index for ${label}...`, spinner: 'dots' });
         spinner.start();
 
         // Force rebuild if requested
@@ -666,13 +670,19 @@ const indexCommand: Command = {
         const newStatus = getHNSWStatus();
         output.writeln();
         output.printBox([
-          `Collection: ${collection}`,
+          `Collection: ${label}`,
           `Action: ${action}`,
           `Vectors: ${newStatus.entryCount}`,
           `Dimensions: ${newStatus.dimensions}`,
           `M: ${m}`,
           `ef_construction: ${efConstruction}`,
         ].join('\n'), 'Index Built');
+
+        if (!collection && newStatus.entryCount === 0) {
+          output.writeln();
+          output.printInfo('No vectors indexed. Store some entries first:');
+          output.printInfo('  claude-flow memory store -k "key" --value "text" --namespace <ns>');
+        }
 
         return { success: true, data: newStatus };
       }

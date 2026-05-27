@@ -204,6 +204,16 @@ export interface ConsensusConfig {
   timeoutMs: number;
   maxRounds: number;
   requireQuorum: boolean;
+  /**
+   * ADR-095 G2.2 — optional pluggable transport. When provided, the
+   * ConsensusEngine forwards it to the underlying Raft / Byzantine /
+   * Gossip implementation so their inter-node messaging actually
+   * crosses a process or host boundary. When omitted, protocols run
+   * in single-process mode (legacy behavior). Typed as `unknown` here
+   * to avoid forcing every consumer of `types.ts` to import the
+   * transport module; the engine narrows it via a structural check.
+   */
+  transport?: unknown;
 }
 
 export interface ConsensusProposal {

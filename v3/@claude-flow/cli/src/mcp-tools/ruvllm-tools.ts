@@ -16,7 +16,7 @@ async function loadRuvllmWasm() {
 export const ruvllmWasmTools: MCPTool[] = [
   {
     name: 'ruvllm_status',
-    description: 'Get ruvllm-wasm availability and initialization status.',
+    description: 'Get ruvllm-wasm availability and initialization status. Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: { type: 'object' as const, properties: {} },
     handler: async () => {
       try {
@@ -55,7 +55,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_hnsw_create',
-    description: 'Create a WASM HNSW router for semantic pattern routing. Max ~11 patterns (v2.0.1 limit).',
+    description: 'Create a WASM HNSW router for semantic pattern routing. Max ~11 patterns (v2.0.1 limit). Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -84,7 +84,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_hnsw_add',
-    description: 'Add a pattern to an HNSW router. Embedding must match router dimensions.',
+    description: 'Add a pattern to an HNSW router. Embedding must match router dimensions. Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -115,7 +115,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_hnsw_route',
-    description: 'Route a query embedding to nearest patterns in HNSW index.',
+    description: 'Route a query embedding to nearest patterns in HNSW index. Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -140,7 +140,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_sona_create',
-    description: 'Create a SONA instant adaptation loop (<1ms adaptation cycles).',
+    description: 'Create a SONA instant adaptation loop (<1ms adaptation cycles). Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -167,7 +167,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_sona_adapt',
-    description: 'Run SONA instant adaptation with a quality signal.',
+    description: 'Run SONA instant adaptation with a quality signal. Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -190,7 +190,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_microlora_create',
-    description: 'Create a MicroLoRA adapter (ultra-lightweight LoRA, ranks 1-4).',
+    description: 'Create a MicroLoRA adapter (ultra-lightweight LoRA, ranks 1-4). Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -220,7 +220,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_microlora_adapt',
-    description: 'Adapt MicroLoRA weights with quality feedback.',
+    description: 'Adapt MicroLoRA weights with quality feedback. Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -249,7 +249,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_chat_format',
-    description: 'Format chat messages using a template (llama3, mistral, chatml, phi, gemma, or auto-detect).',
+    description: 'Format chat messages using a template (llama3, mistral, chatml, phi, gemma, or auto-detect). Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -283,7 +283,7 @@ export const ruvllmWasmTools: MCPTool[] = [
   },
   {
     name: 'ruvllm_generate_config',
-    description: 'Create a generation config (maxTokens, temperature, topP, etc.) as JSON.',
+    description: 'Create a generation config (maxTokens, temperature, topP, etc.) as JSON. Use when sending every prompt to the Anthropic API is wrong because you need local inference — air-gapped environments, MicroLoRA-fine-tuned per-task adapters, or sub-cent per-call cost. For general Claude work native Task is the right call.',
     inputSchema: {
       type: 'object' as const,
       properties: {

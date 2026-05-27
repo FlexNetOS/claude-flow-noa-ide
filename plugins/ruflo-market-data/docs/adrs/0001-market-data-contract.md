@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-market-data plugin contract — pinning, namespace coordination, namespace-routing fix, embeddings_generate fix, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, market-data, ohlcv, candlestick, namespace, hnsw, smoke-test]
@@ -61,9 +67,15 @@ bash plugins/ruflo-market-data/scripts/smoke.sh
 - `plugins/ruflo-knowledge-graph/docs/adrs/0001-knowledge-graph-contract.md` — same `embeddings_embed` rename
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention this ADR fixes a violation of
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-market-data/`. Contract elements implemented: `embeddings_embed` → `embeddings_generate` tool-name drift fixed; `agentdb_hierarchical-*` namespace arg bug fixed (switched to `memory_*`); `agentdb_pattern-store` namespace arg bug fixed; smoke-as-contract gate defined in `scripts/smoke.sh` (11 checks).
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

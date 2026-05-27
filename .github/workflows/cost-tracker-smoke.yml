@@ -39,7 +39,9 @@ jobs:
         run: |
           mkdir -p .ci-bench
           cd .ci-bench
-          npm init -y > /dev/null
+          # npm 11 rejects a package name starting with `.` (the dir name), so
+          # write the manifest explicitly instead of `npm init -y`.
+          printf '{"name":"ci-bench","version":"0.0.0","private":true}\n' > package.json
           # Pin to the same major as v3/node_modules to keep results comparable.
           npm install --no-audit --no-fund --silent agent-booster@^0.2
 

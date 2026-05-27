@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-autopilot plugin contract — pinning, namespace coordination, /loop integration, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, autopilot, loop, learning, mcp, smoke-test]
@@ -52,9 +58,15 @@ bash plugins/ruflo-autopilot/scripts/smoke.sh
 - `plugins/ruflo-aidefence/docs/adrs/0001-aidefence-contract.md` — 3-gate pattern
 - `v3/@claude-flow/cli/src/mcp-tools/autopilot-tools.ts` — 10 `autopilot_*` tool definitions
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-autopilot/`. Contract elements implemented: 10 `autopilot_*` MCP tools covered; namespace `autopilot-patterns` claimed per ADR-097 convention; `/loop` + `ScheduleWakeup` 270s cache-warm heartbeat documented; smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

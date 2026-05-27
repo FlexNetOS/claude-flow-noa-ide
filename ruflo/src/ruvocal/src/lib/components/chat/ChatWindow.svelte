@@ -430,15 +430,8 @@
 		return out;
 	}
 
-<<<<<<< HEAD
-	// Pull tool names from the latest assistant message. `$derived.by`
-	// is Svelte 5's function form (vs `$derived(expr)` for expressions);
-	// the previous `$derived<T>(() => {…}())` was a parser error.
-	let lastAssistantToolNames: string[] = $derived.by(() => {
-=======
 	// Pull tool names from the latest assistant message.
 	let lastAssistantToolNames: string[] = $derived((() => {
->>>>>>> pr-1936-head
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const msg = messages[i];
 			if (msg.from !== "assistant") continue;
@@ -452,11 +445,7 @@
 			return names;
 		}
 		return [];
-<<<<<<< HEAD
-	});
-=======
 	})());
->>>>>>> pr-1936-head
 
 	let dynamicFollowUps: RouterFollowUp[] = $derived(
 		dedupePrompts(lastAssistantToolNames.flatMap(followUpsForTool), 4)

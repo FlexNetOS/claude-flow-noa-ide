@@ -123,7 +123,7 @@ function setNestedValue(obj: Record<string, unknown>, key: string, value: unknow
 export const configTools: MCPTool[] = [
   {
     name: 'config_get',
-    description: 'Get configuration value',
+    description: 'Get configuration value Use when native settings.json edits are wrong because the values need to be read by the Ruflo runtime (daemon, MCP server, neural router) — those load via the config_* path, not by re-reading settings.json. For .gitignore / .editorconfig style files, native Edit is fine.',
     category: 'config',
     inputSchema: {
       type: 'object',
@@ -170,7 +170,7 @@ export const configTools: MCPTool[] = [
   },
   {
     name: 'config_set',
-    description: 'Set configuration value',
+    description: 'Set configuration value Use when native settings.json edits are wrong because the values need to be read by the Ruflo runtime (daemon, MCP server, neural router) — those load via the config_* path, not by re-reading settings.json. For .gitignore / .editorconfig style files, native Edit is fine.',
     category: 'config',
     inputSchema: {
       type: 'object',
@@ -220,7 +220,7 @@ export const configTools: MCPTool[] = [
   },
   {
     name: 'config_list',
-    description: 'List configuration values',
+    description: 'List configuration values Use when native settings.json edits are wrong because the values need to be read by the Ruflo runtime (daemon, MCP server, neural router) — those load via the config_* path, not by re-reading settings.json. For .gitignore / .editorconfig style files, native Edit is fine.',
     category: 'config',
     inputSchema: {
       type: 'object',
@@ -294,7 +294,7 @@ export const configTools: MCPTool[] = [
   },
   {
     name: 'config_reset',
-    description: 'Reset configuration to defaults',
+    description: 'Reset configuration to defaults Use when native settings.json edits are wrong because the values need to be read by the Ruflo runtime (daemon, MCP server, neural router) — those load via the config_* path, not by re-reading settings.json. For .gitignore / .editorconfig style files, native Edit is fine.',
     category: 'config',
     inputSchema: {
       type: 'object',
@@ -355,7 +355,7 @@ export const configTools: MCPTool[] = [
   },
   {
     name: 'config_export',
-    description: 'Export configuration to JSON',
+    description: 'Export configuration to JSON Use when native settings.json edits are wrong because the values need to be read by the Ruflo runtime (daemon, MCP server, neural router) — those load via the config_* path, not by re-reading settings.json. For .gitignore / .editorconfig style files, native Edit is fine.',
     category: 'config',
     inputSchema: {
       type: 'object',
@@ -398,7 +398,7 @@ export const configTools: MCPTool[] = [
   },
   {
     name: 'config_import',
-    description: 'Import configuration from JSON',
+    description: 'Import configuration from JSON Use when native settings.json edits are wrong because the values need to be read by the Ruflo runtime (daemon, MCP server, neural router) — those load via the config_* path, not by re-reading settings.json. For .gitignore / .editorconfig style files, native Edit is fine.',
     category: 'config',
     inputSchema: {
       type: 'object',

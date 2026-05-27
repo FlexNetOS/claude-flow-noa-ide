@@ -8,9 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type MCPTool, getProjectCwd } from './types.js';
-import { validateIdentifier, validateText } from './validate-input.js';
-import { scanClaudeCodeRegistry } from '../registry/claude-code-registry.js';
-import { matchUserSkillsForTask, type UserSkillMatch } from '../registry/skill-matcher.js';
+import { validateIdentifier } from './validate-input.js';
 
 // Swarm state persistence
 const SWARM_DIR = '.claude-flow/swarm';
@@ -144,7 +142,7 @@ const VALID_TOPOLOGIES = new Set([
 export const swarmTools: MCPTool[] = [
   {
     name: 'swarm_init',
-    description: 'Initialize a swarm with persistent state tracking. When a `task` is provided AND `strategy` is "specialized" (or `autoPickAgents: true` is set explicitly), also consults the user-installed Claude Code registry (~/.claude/agents/, ~/.claude/skills/) and returns ranked `recommendedAgents` so the caller knows which user-installed content (e.g. polymarket-analyzer, kali-osint-username, ceo) is relevant before spawning. Backwards-compatible — existing callers that pass no task get the original behavior.',
+    description: 'Initialize a swarm with persistent state tracking Use when native Task tool is wrong because you need multi-agent coordination — topology (hierarchical/mesh/star), consensus (raft/byzantine/gossip/crdt/quorum), shared memory namespace, or anti-drift gates. For independent one-shot subagents, native Task is fine; spawn each separately.',
     category: 'swarm',
     inputSchema: {
       type: 'object',
@@ -153,8 +151,6 @@ export const swarmTools: MCPTool[] = [
         maxAgents: { type: 'number', description: 'Maximum number of agents (1-50)' },
         strategy: { type: 'string', description: 'Agent strategy (specialized, balanced, adaptive)' },
         config: { type: 'object', description: 'Additional swarm configuration' },
-        task: { type: 'string', description: 'Optional task description. When provided with strategy="specialized" (or autoPickAgents=true), the swarm consults ~/.claude/ for matching user-installed agents/skills and returns them as recommendedAgents. (#bug23)' },
-        autoPickAgents: { type: 'boolean', description: 'Force registry-aware agent selection regardless of strategy. Defaults: true when task+strategy="specialized", false otherwise. Set false to opt out explicitly. (#bug23)' },
       },
     },
     handler: async (input) => {
@@ -167,69 +163,17 @@ export const swarmTools: MCPTool[] = [
         const v = validateIdentifier(input.strategy, 'strategy');
         if (!v.valid) return { success: false, error: v.error };
       }
-      if (input.task !== undefined && input.task !== null) {
-        const v = validateText(input.task, 'task');
-        if (!v.valid) return { success: false, error: v.error };
-      }
 
       const topology = (input.topology as string) || 'hierarchical-mesh';
       const maxAgents = Math.min(Math.max((input.maxAgents as number) || 15, 1), 50);
       const strategy = (input.strategy as string) || 'specialized';
       const config = (input.config || {}) as Record<string, unknown>;
-      const task = (input.task as string | undefined) ?? undefined;
 
       if (!VALID_TOPOLOGIES.has(topology)) {
         return {
           success: false,
           error: `Invalid topology: ${topology}. Valid: ${[...VALID_TOPOLOGIES].join(', ')}`,
         };
-      }
-
-      // #bug23 — Decide whether to consult the user's Claude Code
-      // registry. Default policy: only when a task is provided AND the
-      // strategy is "specialized" (so generic balanced/adaptive runs
-      // don't pay the scan cost). Caller can force on/off with
-      // `autoPickAgents`.
-      const autoPickExplicit = input.autoPickAgents as boolean | undefined;
-      const autoPickAgents = autoPickExplicit ?? (Boolean(task) && strategy === 'specialized');
-
-      let recommendedAgents: Array<{
-        name: string;
-        type: 'skill' | 'agent';
-        score: number;
-        source: 'user';
-        description?: string;
-        matchedKeywords: string[];
-      }> = [];
-      let registryConsulted = false;
-
-      if (autoPickAgents && task) {
-        try {
-          const registry = await scanClaudeCodeRegistry();
-          // Cap recommendations at maxAgents — we don't suggest more
-          // user content than the swarm can absorb.
-          const matches: UserSkillMatch[] = matchUserSkillsForTask(
-            task,
-            undefined,
-            registry.skills,
-            registry.agents,
-            maxAgents,
-          );
-          recommendedAgents = matches.map((m) => ({
-            name: m.name,
-            type: m.type,
-            score: m.score,
-            source: 'user' as const,
-            description: m.description,
-            matchedKeywords: m.matchedKeywords,
-          }));
-          registryConsulted = true;
-        } catch {
-          // Registry unavailable — swarm init must never fail because
-          // of a filesystem hiccup. Empty `recommendedAgents` signals
-          // "auto-pick attempted but found nothing".
-          registryConsulted = true;
-        }
       }
 
       const swarmId = `swarm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -249,12 +193,6 @@ export const swarmTools: MCPTool[] = [
           communicationProtocol: (config.communicationProtocol as string) || 'message-bus',
           autoScaling: (config.autoScaling as boolean) ?? true,
           consensusMechanism: (config.consensusMechanism as string) || 'majority',
-          // #bug23 — persist the auto-picked recommendations so
-          // subsequent swarm_status / swarm_health calls can show the
-          // caller what the swarm was bootstrapped with.
-          recommendedAgents,
-          autoPickAgents,
-          ...(task ? { task } : {}),
         },
         createdAt: now,
         updatedAt: now,
@@ -276,17 +214,12 @@ export const swarmTools: MCPTool[] = [
         initializedAt: now,
         config: swarmState.config,
         persisted: true,
-        // #bug23 — surface the registry-aware selections at the top
-        // level so callers don't have to dig through `config`.
-        recommendedAgents,
-        registryConsulted,
-        autoPickAgents,
       };
     },
   },
   {
     name: 'swarm_status',
-    description: 'Get swarm status from persistent state',
+    description: 'Get swarm status from persistent state Use when native Task tool is wrong because you need multi-agent coordination — topology (hierarchical/mesh/star), consensus (raft/byzantine/gossip/crdt/quorum), shared memory namespace, or anti-drift gates. For independent one-shot subagents, native Task is fine; spawn each separately.',
     category: 'swarm',
     inputSchema: {
       type: 'object',
@@ -349,7 +282,7 @@ export const swarmTools: MCPTool[] = [
   },
   {
     name: 'swarm_shutdown',
-    description: 'Shutdown a swarm and update persistent state',
+    description: 'Shutdown a swarm and update persistent state Use when native Task tool is wrong because you need multi-agent coordination — topology (hierarchical/mesh/star), consensus (raft/byzantine/gossip/crdt/quorum), shared memory namespace, or anti-drift gates. For independent one-shot subagents, native Task is fine; spawn each separately.',
     category: 'swarm',
     inputSchema: {
       type: 'object',
@@ -411,7 +344,7 @@ export const swarmTools: MCPTool[] = [
   },
   {
     name: 'swarm_health',
-    description: 'Check swarm health status with real state inspection',
+    description: 'Check swarm health status with real state inspection Use when native Task tool is wrong because you need multi-agent coordination — topology (hierarchical/mesh/star), consensus (raft/byzantine/gossip/crdt/quorum), shared memory namespace, or anti-drift gates. For independent one-shot subagents, native Task is fine; spawn each separately.',
     category: 'swarm',
     inputSchema: {
       type: 'object',

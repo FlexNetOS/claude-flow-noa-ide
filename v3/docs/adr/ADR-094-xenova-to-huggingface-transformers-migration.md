@@ -1,14 +1,8 @@
 # ADR-094: Migrate `@xenova/transformers` → `@huggingface/transformers`
 
-<<<<<<< HEAD
-**Status**: Proposed
-**Date**: 2026-05-03
-**Version**: targets v3.7.x
-=======
 **Status**: Accepted — Implemented (provider-agnostic loader shipped; both call sites migrated; `@xenova/transformers` demoted to optional dep)
 **Date**: 2026-05-03 (proposed) · **Updated**: 2026-05-09
 **Version**: shipped in `@claude-flow/embeddings@3.0.0-alpha.15` / v3.6.19
->>>>>>> pr-1936-head
 **Supersedes**: nothing
 **Related**: ADR-093, npm audit CVE chain through `protobufjs`
 
@@ -120,11 +114,6 @@ this.transformersSource = t.source;
 
 ## Notes
 
-<<<<<<< HEAD
-- This ADR is the migration plan. Implementation is queued for the next /loop iteration cycle.
-- The `@huggingface/transformers` package itself currently audits clean against npm advisory database as of 2026-05-03.
-- The provider-agnostic loader pattern (try-then-fallback) matches the existing `getQueryEmbedding` pattern in `hooks-tools.ts:3050`, so callers familiar with that codebase will recognize the shape.
-=======
 - The `@huggingface/transformers` package itself currently audits clean against npm advisory database as of 2026-05-03.
 - The provider-agnostic loader pattern (try-then-fallback) matches the existing `getQueryEmbedding` pattern in `hooks-tools.ts:3050`, so callers familiar with that codebase will recognize the shape.
 
@@ -142,4 +131,3 @@ All three files listed in the Decision shipped in a single commit. The `memory-i
 ### Validation status
 
 Validation steps 1–4 (determinism check, HNSW round-trip, mixed install, 6-agent swarm regression) are specified in the Decision section above. They were not separately committed as automated tests — the build passes clean with both packages optional, which satisfies the "graceful no-provider path" requirement. A full determinism byte-comparison test remains an open follow-up item.
->>>>>>> pr-1936-head

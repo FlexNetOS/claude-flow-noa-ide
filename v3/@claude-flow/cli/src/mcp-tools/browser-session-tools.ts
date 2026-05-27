@@ -23,14 +23,6 @@ import { validateIdentifier, validateText } from './validate-input.js';
 
 const RUVECTOR_PIN = 'ruvector@0.2.25';
 const RVF_DIR_DEFAULT = '.ruflo/browser-sessions';
-<<<<<<< HEAD
-// rvf create requires -d/--dimension <n>. 384 matches the embedding dimension
-// used elsewhere in the codebase (ONNX all-MiniLM-L6-v2,
-// neural_status.totalEmbeddingDims). Without this, the rvf create call errors
-// out immediately and browser_session_record is unusable (Bug 19).
-const RVF_DIMENSION = '384';
-=======
->>>>>>> pr-1936-head
 
 interface ShellResult {
   success: boolean;
@@ -68,41 +60,6 @@ async function ensureSessionsDir(): Promise<string> {
   return dir;
 }
 
-<<<<<<< HEAD
-/**
- * #bug20 — In-process retrieve from the memory bridge / sql.js+HNSW backend.
- *
- * Replaces the previous `npx -y @claude-flow/cli@latest memory retrieve …`
- * shell-out used by `browser_template_apply` and `browser_cookie_use`.
- * Reuses `getEntry` from `memory/memory-initializer.js` — the same API the
- * `memory_retrieve` MCP handler calls directly. Avoids the ~3-5s npm
- * round-trip, the deprecation-warning JSON pollution, and the conflation
- * of transient `npx` failures with a logical "key missing".
- */
-interface RetrieveResult {
-  found: boolean;
-  value?: string;
-  error?: string;
-}
-
-async function retrieveFromMemory(namespace: string, key: string): Promise<RetrieveResult> {
-  try {
-    const { getEntry } = await import('../memory/memory-initializer.js');
-    const result = await getEntry({ key, namespace });
-    if (result.found && result.entry) {
-      return { found: true, value: result.entry.content };
-    }
-    return { found: false, error: result.error };
-  } catch (error) {
-    return {
-      found: false,
-      error: error instanceof Error ? error.message : 'memory backend unavailable',
-    };
-  }
-}
-
-=======
->>>>>>> pr-1936-head
 function makeSessionId(taskSlug: string): string {
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const slug = taskSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'session';
@@ -126,7 +83,7 @@ export const browserSessionTools: MCPTool[] = [
   // ==========================================================================
   {
     name: 'browser_session_record',
-    description: 'Open a named, traced browser session: allocate an RVF cognitive container, begin a ruvector trajectory, then open the URL via agent-browser. Returns the session id and rvf path.',
+    description: 'Open a named, traced browser session: allocate an RVF cognitive container, begin a ruvector trajectory, then open the URL via agent-browser. Returns the session id and rvf path. Use when native WebFetch is wrong because you need real browser automation — JS-heavy SPA scraping, login flows with cookie reuse, replay against DOM-drifted versions, AIDefence PII gating before content reaches Claude. For static HTML pages, native WebFetch is faster and free.',
     category: 'browser-session',
     tags: ['session', 'rvf', 'trajectory', 'lifecycle'],
     inputSchema: {
@@ -155,14 +112,23 @@ export const browserSessionTools: MCPTool[] = [
       const dir = (input.rvf_dir as string | undefined) ?? (await ensureSessionsDir());
       const rvfPath = path.join(dir, `${sessionId}.rvf`);
 
-<<<<<<< HEAD
-      // 1. RVF allocate. rvf create requires -d/--dimension <n>; pass 384 to
-      //    match the codebase-wide embedding dimension (Bug 19).
-      const rvf = await shell('npx', ['-y', RUVECTOR_PIN, 'rvf', 'create', rvfPath, '--kind', 'browser-session', '--dimension', RVF_DIMENSION], { timeout: 60000 });
-=======
-      // 1. RVF allocate
-      const rvf = await shell('npx', ['-y', RUVECTOR_PIN, 'rvf', 'create', rvfPath, '--kind', 'browser-session'], { timeout: 60000 });
->>>>>>> pr-1936-head
+      // 1. RVF allocate.
+      // Issue #2015: ruvector@0.2.25's `rvf create` accepts only
+      // `-d/--dimension <n>` (required) and `-m/--metric <metric>`.
+      // The wrapper previously passed `--kind browser-session` and
+      // omitted `--dimension`, so commander hit the required-option
+      // check first and the wrapper returned `rvf create failed` for
+      // every call. The second round of the fix strips the bogus
+      // `--kind` flag — when round 1 only added `--dimension`, the
+      // next call surfaced `error: unknown option '--kind'`.
+      //
+      // 384 matches the MiniLM-L6 default used elsewhere in the
+      // toolchain (ONNX embedder + AgentDB vector indexes).
+      const rvf = await shell(
+        'npx',
+        ['-y', RUVECTOR_PIN, 'rvf', 'create', rvfPath, '--dimension', '384'],
+        { timeout: 60000 },
+      );
       if (!rvf.success) return fail('rvf create failed', { detail: rvf.error, stderr: rvf.stderr, sessionId, rvfPath });
 
       // 2. trajectory-begin
@@ -200,7 +166,7 @@ export const browserSessionTools: MCPTool[] = [
   // ==========================================================================
   {
     name: 'browser_session_end',
-    description: 'End a recorded browser session: trajectory-end with verdict, rvf compact, AIDefence pre-store gate (best-effort), and AgentDB index in the browser-sessions namespace.',
+    description: 'End a recorded browser session: trajectory-end with verdict, rvf compact, AIDefence pre-store gate (best-effort), and AgentDB index in the browser-sessions namespace. Use when native WebFetch is wrong because you need real browser automation — JS-heavy SPA scraping, login flows with cookie reuse, replay against DOM-drifted versions, AIDefence PII gating before content reaches Claude. For static HTML pages, native WebFetch is faster and free.',
     category: 'browser-session',
     tags: ['session', 'rvf', 'trajectory', 'lifecycle', 'agentdb'],
     inputSchema: {
@@ -262,7 +228,7 @@ export const browserSessionTools: MCPTool[] = [
   // ==========================================================================
   {
     name: 'browser_session_replay',
-    description: 'Load a recorded session trajectory and return its steps so the caller can dispatch them through the 23 browser_* tools. Does NOT itself drive the browser — replay execution is caller-orchestrated to keep this tool a primitive (ADR-0001 §7).',
+    description: 'Load a recorded session trajectory and return its steps so the caller can dispatch them through the 23 browser_* tools. Does NOT itself drive the browser — replay execution is caller-orchestrated to keep this tool a primitive (ADR-0001 §7). Use when native WebFetch is wrong because you need real browser automation — JS-heavy SPA scraping, login flows with cookie reuse, replay against DOM-drifted versions, AIDefence PII gating before content reaches Claude. For static HTML pages, native WebFetch is faster and free.',
     category: 'browser-session',
     tags: ['session', 'replay', 'trajectory', 'lifecycle'],
     inputSchema: {
@@ -318,7 +284,7 @@ export const browserSessionTools: MCPTool[] = [
   // ==========================================================================
   {
     name: 'browser_template_apply',
-    description: 'Fetch a recipe from the browser-templates AgentDB namespace and return it for caller-level execution.',
+    description: 'Fetch a recipe from the browser-templates AgentDB namespace and return it for caller-level execution. Use when native WebFetch is wrong because you need real browser automation — JS-heavy SPA scraping, login flows with cookie reuse, replay against DOM-drifted versions, AIDefence PII gating before content reaches Claude. For static HTML pages, native WebFetch is faster and free.',
     category: 'browser-session',
     tags: ['template', 'agentdb', 'extract'],
     inputSchema: {
@@ -331,19 +297,6 @@ export const browserSessionTools: MCPTool[] = [
     handler: async (input) => {
       const vN = validateText(input.name as string, 'name');
       if (!vN.valid) return fail(vN.error || 'invalid name');
-<<<<<<< HEAD
-      // #bug20: in-process call into the memory backend instead of
-      // re-spawning `npx @claude-flow/cli@latest memory retrieve`.
-      const r = await retrieveFromMemory('browser-templates', input.name as string);
-      if (!r.found) {
-        return fail('template fetch failed', {
-          detail: r.error ?? `template "${input.name}" not found in browser-templates namespace`,
-        });
-      }
-      return ok({
-        templateName: input.name,
-        recipe: r.value,
-=======
       const r = await shell('npx', ['-y', '@claude-flow/cli@latest', 'memory', 'retrieve',
         '--namespace', 'browser-templates',
         '--key', input.name as string], { timeout: 60000 });
@@ -351,7 +304,6 @@ export const browserSessionTools: MCPTool[] = [
       return ok({
         templateName: input.name,
         recipe: r.stdout,
->>>>>>> pr-1936-head
         nextStep: 'Caller dispatches the recipe via browser_* tools; persist updated selectors to browser-selectors on success.',
       });
     },
@@ -362,7 +314,7 @@ export const browserSessionTools: MCPTool[] = [
   // ==========================================================================
   {
     name: 'browser_cookie_use',
-    description: 'Fetch a vault handle for a host from the browser-cookies AgentDB namespace. Raw cookie values are NEVER returned — only the opaque handle plus expiry / AIDefence verdict.',
+    description: 'Fetch a vault handle for a host from the browser-cookies AgentDB namespace. Raw cookie values are NEVER returned — only the opaque handle plus expiry / AIDefence verdict. Use when native WebFetch is wrong because you need real browser automation — JS-heavy SPA scraping, login flows with cookie reuse, replay against DOM-drifted versions, AIDefence PII gating before content reaches Claude. For static HTML pages, native WebFetch is faster and free.',
     category: 'browser-session',
     tags: ['cookie', 'agentdb', 'aidefence', 'auth'],
     inputSchema: {
@@ -375,30 +327,15 @@ export const browserSessionTools: MCPTool[] = [
     handler: async (input) => {
       const vH = validateText(input.host as string, 'host');
       if (!vH.valid) return fail(vH.error || 'invalid host');
-<<<<<<< HEAD
-      // #bug20: in-process call into the memory backend instead of
-      // re-spawning `npx @claude-flow/cli@latest memory retrieve`.
-      const r = await retrieveFromMemory('browser-cookies', input.host as string);
-      if (!r.found) {
-        return fail('cookie lookup failed', {
-          detail: r.error ?? `host "${input.host}" not found in browser-cookies namespace`,
-        });
-      }
-=======
       const r = await shell('npx', ['-y', '@claude-flow/cli@latest', 'memory', 'retrieve',
         '--namespace', 'browser-cookies',
         '--key', input.host as string], { timeout: 60000 });
       if (!r.success) return fail('cookie lookup failed', { detail: r.error, stderr: r.stderr });
->>>>>>> pr-1936-head
       // The contract: the value blob includes a vault_handle, expiry, aidefence_verdict.
       // Raw values do not enter this namespace (browser-login is responsible).
       return ok({
         host: input.host,
-<<<<<<< HEAD
-        vault: r.value,
-=======
         vault: r.stdout,
->>>>>>> pr-1936-head
         nextStep: 'Caller mounts the handle via the browser runner; the raw cookie is materialized only inside the browser process, never returned to the model.',
       });
     },

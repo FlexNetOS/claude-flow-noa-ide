@@ -20,6 +20,7 @@
 # Swallow all diagnostics — nothing this script prints should reach Claude Code.
 exec 2>/dev/null
 
+<<<<<<< HEAD
 # run <cmd> [args…]
 # Executes the command with stdin passed through. Only forwards stdout to
 # Claude Code if it contains a valid hookSpecificOutput JSON object.
@@ -33,6 +34,9 @@ run() {
     printf '%s\n' "$out"
   fi
 }
+=======
+run() { "$@" || true; }
+>>>>>>> pr-2031-head
 
 if command -v ruflo >/dev/null 2>&1; then
   run ruflo hooks "$@"

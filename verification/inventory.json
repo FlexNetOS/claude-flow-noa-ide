@@ -1955,10 +1955,10 @@
       "sourceFile": "plugins\\ruflo-testgen\\.claude-plugin\\plugin.json"
     },
     {
-      "name": "ruflo-wasm",
+      "name": "ruflo-agent",
       "version": "0.2.0",
       "description": "Sandboxed WASM agent creation, execution, and gallery sharing — wraps 10 wasm_* MCP tools (agent_create/prompt/tool/list/terminate/files/export + gallery_list/search/create); built on @ruvector/rvagent-wasm + @ruvector/ruvllm-wasm per ADR-070 (Implemented)",
-      "sourceFile": "plugins\\ruflo-wasm\\.claude-plugin\\plugin.json"
+      "sourceFile": "plugins\\ruflo-agent\\.claude-plugin\\plugin.json"
     },
     {
       "name": "ruflo-workflows",
@@ -2217,8 +2217,8 @@
     {
       "name": "wasm-specialist",
       "description": "WASM sandbox specialist for creating, managing, and sharing isolated agent environments",
-      "plugin": "ruflo-wasm",
-      "sourceFile": "plugins\\ruflo-wasm\\agents\\wasm-specialist.md"
+      "plugin": "ruflo-agent",
+      "sourceFile": "plugins\\ruflo-agent\\agents\\wasm-specialist.md"
     },
     {
       "name": "witness-auditor",

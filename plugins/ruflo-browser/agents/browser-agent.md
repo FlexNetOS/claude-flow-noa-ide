@@ -12,7 +12,11 @@ Every browser session you open MUST be allocated as an RVF cognitive container a
 
 ```bash
 SID=$(date +%Y%m%d-%H%M%S)-<task-slug>
+<<<<<<< HEAD
 npx -y ruvector@0.2.25 rvf create "$SID.rvf" --kind browser-session
+=======
+npx -y ruvector@0.2.25 rvf create "$SID.rvf" --dimension 384
+>>>>>>> pr-2031-head
 npx -y ruvector@0.2.25 hooks trajectory-begin --session-id "$SID" --task "<human-task>"
 ```
 

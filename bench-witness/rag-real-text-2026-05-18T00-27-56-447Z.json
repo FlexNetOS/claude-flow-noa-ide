@@ -1,0 +1,516 @@
+{
+  "summary": {
+    "plain": {
+      "recallAt5": 0.8999999999999999,
+      "mrr": 1,
+      "ndcgAt5": 0.9255244116680239,
+      "meanLatencyMs": 1.1547083333333334
+    },
+    "mmr": {
+      "recallAt5": 0.3666666666666667,
+      "mrr": 1,
+      "ndcgAt5": 0.4849645485171013,
+      "meanLatencyMs": 1.4214516666666668
+    },
+    "rrf": {
+      "recallAt5": 0.9333333333333332,
+      "mrr": 1,
+      "ndcgAt5": 0.9562649741625527,
+      "meanLatencyMs": 2.8675763333333335
+    },
+    "hyde": {
+      "recallAt5": 0.9666666666666667,
+      "mrr": 1,
+      "ndcgAt5": 0.9781324870812763,
+      "meanLatencyMs": 4.961305333333333
+    },
+    "compound": {
+      "recallAt5": 0.9666666666666667,
+      "mrr": 1,
+      "ndcgAt5": 0.9781324870812763,
+      "meanLatencyMs": 7.618409833333332
+    }
+  },
+  "perQuery": {
+    "plain": [
+      {
+        "query": "authentication question",
+        "hits": [
+          "auth-2",
+          "auth-1",
+          "auth-3",
+          "auth-0",
+          "sec-3"
+        ],
+        "recall": 0.8,
+        "ndcg": 0.8687949224876582,
+        "rr": 1,
+        "ms": 1.478541
+      },
+      {
+        "query": "billing question",
+        "hits": [
+          "billing-0",
+          "billing-1",
+          "billing-3",
+          "billing-2",
+          "billing-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 0.979
+      },
+      {
+        "query": "vector search question",
+        "hits": [
+          "search-1",
+          "search-0",
+          "search-4",
+          "search-2",
+          "search-3"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.094625
+      },
+      {
+        "query": "logging question",
+        "hits": [
+          "logging-1",
+          "logging-3",
+          "logging-2",
+          "logging-0",
+          "logging-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.242417
+      },
+      {
+        "query": "deployment question",
+        "hits": [
+          "deploy-3",
+          "deploy-2",
+          "deploy-4",
+          "deploy-0",
+          "deploy-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.092959
+      },
+      {
+        "query": "security question",
+        "hits": [
+          "sec-4",
+          "sec-1",
+          "deploy-2",
+          "deploy-3",
+          "sec-3"
+        ],
+        "recall": 0.6,
+        "ndcg": 0.6843515475204855,
+        "rr": 1,
+        "ms": 1.040708
+      }
+    ],
+    "mmr": [
+      {
+        "query": "authentication question",
+        "hits": [
+          "auth-2",
+          "sec-3",
+          "auth-1",
+          "search-0",
+          "sec-4"
+        ],
+        "recall": 0.4,
+        "ndcg": 0.5087403079104241,
+        "rr": 1,
+        "ms": 2.894625
+      },
+      {
+        "query": "billing question",
+        "hits": [
+          "billing-0",
+          "auth-1",
+          "search-3",
+          "logging-4",
+          "deploy-2"
+        ],
+        "recall": 0.2,
+        "ndcg": 0.3391602052736161,
+        "rr": 1,
+        "ms": 1.052583
+      },
+      {
+        "query": "vector search question",
+        "hits": [
+          "search-1",
+          "search-3",
+          "auth-1",
+          "sec-2",
+          "billing-3"
+        ],
+        "recall": 0.4,
+        "ndcg": 0.5531464700081437,
+        "rr": 1,
+        "ms": 1.076709
+      },
+      {
+        "query": "logging question",
+        "hits": [
+          "logging-1",
+          "logging-4",
+          "sec-3",
+          "logging-3",
+          "deploy-4"
+        ],
+        "recall": 0.6,
+        "ndcg": 0.6992148198508501,
+        "rr": 1,
+        "ms": 1.255959
+      },
+      {
+        "query": "deployment question",
+        "hits": [
+          "deploy-3",
+          "billing-3",
+          "search-4",
+          "sec-4",
+          "deploy-2"
+        ],
+        "recall": 0.4,
+        "ndcg": 0.4703652827859579,
+        "rr": 1,
+        "ms": 1.1265
+      },
+      {
+        "query": "security question",
+        "hits": [
+          "sec-4",
+          "deploy-2",
+          "logging-4",
+          "billing-4",
+          "auth-4"
+        ],
+        "recall": 0.2,
+        "ndcg": 0.3391602052736161,
+        "rr": 1,
+        "ms": 1.122334
+      }
+    ],
+    "rrf": [
+      {
+        "query": "authentication question",
+        "hits": [
+          "auth-1",
+          "auth-2",
+          "auth-0",
+          "auth-3",
+          "sec-3"
+        ],
+        "recall": 0.8,
+        "ndcg": 0.8687949224876582,
+        "rr": 1,
+        "ms": 3.237625
+      },
+      {
+        "query": "billing question",
+        "hits": [
+          "billing-1",
+          "billing-0",
+          "billing-3",
+          "billing-2",
+          "billing-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 2.859208
+      },
+      {
+        "query": "vector search question",
+        "hits": [
+          "search-1",
+          "search-0",
+          "search-4",
+          "search-2",
+          "logging-2"
+        ],
+        "recall": 0.8,
+        "ndcg": 0.8687949224876582,
+        "rr": 1,
+        "ms": 2.722292
+      },
+      {
+        "query": "logging question",
+        "hits": [
+          "logging-3",
+          "logging-2",
+          "logging-0",
+          "logging-1",
+          "logging-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 2.995208
+      },
+      {
+        "query": "deployment question",
+        "hits": [
+          "deploy-3",
+          "deploy-2",
+          "deploy-0",
+          "deploy-4",
+          "deploy-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 2.733125
+      },
+      {
+        "query": "security question",
+        "hits": [
+          "sec-1",
+          "sec-4",
+          "sec-3",
+          "sec-2",
+          "sec-0"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 2.658
+      }
+    ],
+    "hyde": [
+      {
+        "query": "authentication question",
+        "hits": [
+          "auth-0",
+          "auth-1",
+          "auth-2",
+          "auth-3",
+          "auth-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 5.325375
+      },
+      {
+        "query": "billing question",
+        "hits": [
+          "billing-0",
+          "billing-3",
+          "billing-1",
+          "billing-2",
+          "billing-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 4.777375
+      },
+      {
+        "query": "vector search question",
+        "hits": [
+          "search-1",
+          "search-0",
+          "search-4",
+          "search-2",
+          "search-3"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 4.978375
+      },
+      {
+        "query": "logging question",
+        "hits": [
+          "logging-3",
+          "logging-2",
+          "logging-0",
+          "logging-1",
+          "logging-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 5.128791
+      },
+      {
+        "query": "deployment question",
+        "hits": [
+          "deploy-0",
+          "deploy-4",
+          "deploy-1",
+          "deploy-2",
+          "deploy-3"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 4.840083
+      },
+      {
+        "query": "security question",
+        "hits": [
+          "sec-1",
+          "sec-4",
+          "sec-0",
+          "sec-2",
+          "auth-3"
+        ],
+        "recall": 0.8,
+        "ndcg": 0.8687949224876582,
+        "rr": 1,
+        "ms": 4.717833
+      }
+    ],
+    "compound": [
+      {
+        "query": "authentication question",
+        "hits": [
+          "auth-2",
+          "auth-0",
+          "auth-1",
+          "auth-3",
+          "auth-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 8.771333
+      },
+      {
+        "query": "billing question",
+        "hits": [
+          "billing-0",
+          "billing-1",
+          "billing-3",
+          "billing-2",
+          "billing-4"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 7.408667
+      },
+      {
+        "query": "vector search question",
+        "hits": [
+          "search-1",
+          "search-0",
+          "search-4",
+          "search-2",
+          "search-3"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 7.561417
+      },
+      {
+        "query": "logging question",
+        "hits": [
+          "logging-2",
+          "logging-3",
+          "logging-0",
+          "logging-4",
+          "logging-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 7.733375
+      },
+      {
+        "query": "deployment question",
+        "hits": [
+          "deploy-0",
+          "deploy-4",
+          "deploy-2",
+          "deploy-3",
+          "deploy-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 7.175792
+      },
+      {
+        "query": "security question",
+        "hits": [
+          "sec-1",
+          "sec-4",
+          "sec-0",
+          "sec-2",
+          "auth-3"
+        ],
+        "recall": 0.8,
+        "ndcg": 0.8687949224876582,
+        "rr": 1,
+        "ms": 7.059875
+      }
+    ]
+  },
+  "witness": {
+    "benchmark": "rag-real-text",
+    "timestamp": "2026-05-18T00:27:56.447Z",
+    "commit": "91c8b62b5ebd50208f338542a2b4335491617ebc",
+    "model": "Xenova/all-MiniLM-L6-v2",
+    "corpus": {
+      "id": "f58c57185f8051db859fb9edd6b82b5c94cdc7337c6eef4a2cb9aa79244c605e",
+      "size": 30
+    },
+    "queries": {
+      "id": "657259ac830bf5b3c51b86fe7da350fd6ad95e219a25df3ae40a26c760d8c148",
+      "count": 6
+    },
+    "results": {
+      "plain": {
+        "recallAt5": 0.8999999999999999,
+        "mrr": 1,
+        "ndcgAt5": 0.9255244116680239,
+        "meanLatencyMs": 1.1547083333333334
+      },
+      "mmr": {
+        "recallAt5": 0.3666666666666667,
+        "mrr": 1,
+        "ndcgAt5": 0.4849645485171013,
+        "meanLatencyMs": 1.4214516666666668
+      },
+      "rrf": {
+        "recallAt5": 0.9333333333333332,
+        "mrr": 1,
+        "ndcgAt5": 0.9562649741625527,
+        "meanLatencyMs": 2.8675763333333335
+      },
+      "hyde": {
+        "recallAt5": 0.9666666666666667,
+        "mrr": 1,
+        "ndcgAt5": 0.9781324870812763,
+        "meanLatencyMs": 4.961305333333333
+      },
+      "compound": {
+        "recallAt5": 0.9666666666666667,
+        "mrr": 1,
+        "ndcgAt5": 0.9781324870812763,
+        "meanLatencyMs": 7.618409833333332
+      }
+    },
+    "contentHash": "1568d5fea102b51ff1a51c04b46f4f3f59725198989199ee2a41faaab004e1ec",
+    "signature": "49700a203633e8f250663f3767c0df61ea42e7de1184a6d745503aec227307c42784c7edf302de206f2b3477d9822802978f3070a67ce7bf3125af87b5a47400",
+    "publicKey": "302a300506032b65700321004a3998317807bf2c1c4740533127651ccc0cb3c67ad2f85c45188c76a956c1cd",
+    "signatureAlgorithm": "ed25519"
+  }
+}

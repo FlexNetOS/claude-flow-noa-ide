@@ -132,7 +132,7 @@ function saveCoordStore(store: CoordinationStore): void {
 export const coordinationTools: MCPTool[] = [
   {
     name: 'coordination_topology',
-    description: 'Configure swarm topology',
+    description: 'Configure swarm topology Use when native Task is wrong because the work crosses multiple agents that need to vote/sync/load-balance — TodoWrite + a single Task cannot orchestrate consensus. For one-off subtask dispatch, native Task is fine.',
     category: 'coordination',
     inputSchema: {
       type: 'object',
@@ -203,7 +203,7 @@ export const coordinationTools: MCPTool[] = [
   },
   {
     name: 'coordination_load_balance',
-    description: 'Configure load balancing',
+    description: 'Configure load balancing Use when native Task is wrong because the work crosses multiple agents that need to vote/sync/load-balance — TodoWrite + a single Task cannot orchestrate consensus. For one-off subtask dispatch, native Task is fine.',
     category: 'coordination',
     inputSchema: {
       type: 'object',
@@ -291,7 +291,7 @@ export const coordinationTools: MCPTool[] = [
   },
   {
     name: 'coordination_sync',
-    description: 'Synchronize state across nodes',
+    description: 'Synchronize state across nodes Use when native Task is wrong because the work crosses multiple agents that need to vote/sync/load-balance — TodoWrite + a single Task cannot orchestrate consensus. For one-off subtask dispatch, native Task is fine.',
     category: 'coordination',
     inputSchema: {
       type: 'object',
@@ -363,7 +363,7 @@ export const coordinationTools: MCPTool[] = [
   },
   {
     name: 'coordination_node',
-    description: 'Manage coordination nodes',
+    description: 'Manage coordination nodes Use when native Task is wrong because the work crosses multiple agents that need to vote/sync/load-balance — TodoWrite + a single Task cannot orchestrate consensus. For one-off subtask dispatch, native Task is fine.',
     category: 'coordination',
     inputSchema: {
       type: 'object',
@@ -454,7 +454,7 @@ export const coordinationTools: MCPTool[] = [
   },
   {
     name: 'coordination_consensus',
-    description: 'Manage consensus protocol with BFT, Raft, or Quorum strategies',
+    description: 'Manage consensus protocol with BFT, Raft, or Quorum strategies Use when native Task is wrong because the work crosses multiple agents that need to vote/sync/load-balance — TodoWrite + a single Task cannot orchestrate consensus. For one-off subtask dispatch, native Task is fine.',
     category: 'coordination',
     inputSchema: {
       type: 'object',
@@ -699,7 +699,7 @@ export const coordinationTools: MCPTool[] = [
   },
   {
     name: 'coordination_orchestrate',
-    description: 'Orchestrate multi-agent coordination',
+    description: 'Orchestrate multi-agent coordination Use when native Task is wrong because the work crosses multiple agents that need to vote/sync/load-balance — TodoWrite + a single Task cannot orchestrate consensus. For one-off subtask dispatch, native Task is fine.',
     category: 'coordination',
     inputSchema: {
       type: 'object',
@@ -767,7 +767,7 @@ export const coordinationTools: MCPTool[] = [
   },
   {
     name: 'coordination_metrics',
-    description: 'Get coordination metrics',
+    description: 'Get coordination metrics Use when native Task is wrong because the work crosses multiple agents that need to vote/sync/load-balance — TodoWrite + a single Task cannot orchestrate consensus. For one-off subtask dispatch, native Task is fine.',
     category: 'coordination',
     inputSchema: {
       type: 'object',

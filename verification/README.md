@@ -25,6 +25,7 @@ A regression that deletes the load-bearing line of a fix flips its `markerVerifi
 verification/
   README.md                  ← you are here
   witness-fixes.json         ← input config (OS-independent)
+  mcp-tool-baseline.json     ← ADR-112 — monotone-decreasing tool-discoverability baseline
   results.md                 ← human-readable last-run report
   inventory.json             ← reserved for capability inventory
   linux/
@@ -260,8 +261,8 @@ node plugins/ruflo-core/scripts/witness/history.mjs \
     "gitCommit": "<full sha>",
     "branch": "main",
     "os": "macos",                              // matches the folder
-    "releases": { "ruflo": "3.7.0-alpha.18" },
-    "summary": { "totalFixes": 82, "verified": 82, "missing": 0 },
+    "releases": { "ruflo": "3.7.0-alpha.21", "@claude-flow/plugin-agent-federation": "1.0.0-alpha.15" },
+    "summary": { "totalFixes": 102, "verified": 102, "missing": 0 },
     "fixes": [
       {
         "id": "F1",
@@ -276,6 +277,7 @@ node plugins/ruflo-core/scripts/witness/history.mjs \
   "integrity": {
     "manifestHashAlgo": "sha256",
     "manifestHash": "<64 hex of canonical manifest>",
+    "signature": "<64-byte hex of Ed25519 signature over canonical manifest>",
     "signatureAlgo": "ed25519",
     "publicKey": "<32-byte hex>",
     "signature": "<64-byte hex>",
@@ -335,10 +337,13 @@ node plugins/ruflo-core/scripts/witness/history.mjs \
 |---|---|---|
 | Layer 1 — install smoke | `v3/@claude-flow/memory/scripts/smoke-no-bsqlite.mjs` + CI `smoke-install-no-bsqlite` | `npm install` failures on platforms without prebuilds |
 | Layer 1 — hook smoke | `plugins/ruflo-core/scripts/test-hooks.mjs` + CI `plugin-hooks-smoke` | Plugin/CLI flag drift, parser ambiguity |
+| Layer 1 — MCP protocol smoke | `plugins/ruflo-core/scripts/test-mcp-protocol.mjs` + CI `mcp-protocol-smoke` | HTTP MCP wire-format compliance |
+| Layer 1 — memory-import smoke | `plugins/ruflo-core/scripts/test-memory-import.mjs` + CI `memory-import-smoke` | Memory_import_claude WSL path + key sanitization regressions |
+| Layer 1 — tool-description audit | `scripts/audit-tool-descriptions.mjs` + CI `tool-descriptions-audit` (ADR-112) | Every MCP tool description must have "Use when … is wrong because …" guidance + length ≥ 80 + unique. Baseline at `verification/mcp-tool-baseline.json` monotone-decreasing |
 | **Layer 2 — witness manifest** | **`verification/<os>/manifest.md.json`** + CI `witness-verify` | **Documented fix marker disappearing** |
 | Layer 3 — temporal history | `verification/<os>/history.jsonl` + `history.mjs` | When a regression was introduced |
 
-All four CI jobs gate `publish`. A regression in any layer blocks the release on the platform where it was caught.
+All CI jobs gate `publish`. A regression in any layer blocks the release on the platform where it was caught.
 
 ---
 

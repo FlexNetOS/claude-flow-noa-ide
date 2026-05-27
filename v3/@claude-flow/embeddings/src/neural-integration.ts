@@ -317,14 +317,6 @@ export async function downloadEmbeddingModel(
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-<<<<<<< HEAD
-    // Distinguish "package missing" from real download errors so callers
-    // can surface the right hint to users.
-    if (/Cannot find package 'agentic-flow'|Cannot find module/.test(msg)) {
-      console.warn('[embeddings] agentic-flow not installed — skipping eager model download. ' +
-        'Models will be fetched lazily by @xenova/transformers on first generate. ' +
-        'For pre-downloaded models, run: npm install agentic-flow');
-=======
     // Distinguish "package missing" / "subpath unsupported" from real
     // download errors so callers can surface the right hint to users.
     // #1468: Windows + Node strict-ESM raises
@@ -341,7 +333,6 @@ export async function downloadEmbeddingModel(
       console.warn('[embeddings] agentic-flow neural extras unavailable — skipping eager model download. ' +
         'Models will be fetched lazily by @xenova/transformers on first generate. ' +
         `Reason: ${msg}`);
->>>>>>> pr-1936-head
       return targetDir ?? '.models';
     }
     throw err;

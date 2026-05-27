@@ -266,8 +266,8 @@
     },
     {
       "path": "v3/@claude-flow/memory/src/cache-manager.ts",
-      "accessCount": 13,
-      "lastAccessed": 1779917816676,
+      "accessCount": 14,
+      "lastAccessed": 1779918878009,
       "type": "file"
     },
     {
@@ -302,8 +302,8 @@
     },
     {
       "path": "v3/@claude-flow/memory/src/auto-memory-bridge.ts",
-      "accessCount": 4,
-      "lastAccessed": 1779912239395,
+      "accessCount": 5,
+      "lastAccessed": 1779918861977,
       "type": "file"
     },
     {

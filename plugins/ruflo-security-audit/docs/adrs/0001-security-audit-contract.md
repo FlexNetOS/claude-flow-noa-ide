@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-security-audit plugin contract — pinning, namespace coordination, AIDefence + audit_1776853149979 cross-references, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, security, audit, cve, namespace, smoke-test]
@@ -52,9 +58,15 @@ bash plugins/ruflo-security-audit/scripts/smoke.sh
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention
 - `v3/@claude-flow/cli/src/commands/security.ts` — `security scan|audit|cve|threats|validate|report` CLI command surface
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-security-audit/`. Contract elements implemented: 3-gate pattern alignment with ruflo-aidefence (runtime gates) documented; `audit_1776853149979` shell-injection regression class covered by scanner; namespace `security-findings` claimed; smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

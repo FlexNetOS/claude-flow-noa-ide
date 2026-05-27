@@ -190,6 +190,11 @@ export class PortfolioRiskCalculator {
 
   /**
    * Monte Carlo simulation for portfolio
+   *
+   * Returns an empty array on empty input — matches the sentinel-on-empty
+   * pattern used by calculateVolatility / calculateSharpe / calculateMaxDrawdown.
+   * Without this guard, mean = 0/0 = NaN propagates into every scenario.
+   * See ruvnet/ruflo#2024.
    */
   monteCarloSimulation(
     portfolioReturns: number[],
@@ -197,11 +202,7 @@ export class PortfolioRiskCalculator {
     horizon: number = 252,
     seed?: number
   ): number[] {
-    // Empty input would make mean = 0/0 = NaN and silently poison every scenario.
-    // Match the sentinel-on-empty pattern used elsewhere in this class.
-    if (portfolioReturns.length === 0) {
-      return [];
-    }
+    if (portfolioReturns.length === 0) return [];
 
     // Simple random number generator with seed
     let rng = seed !== undefined ? this.seededRandom(seed) : Math.random;
@@ -384,6 +385,12 @@ export class FinancialEconomyBridge implements EconomyBridge {
   ): Promise<Float32Array> {
     if (!this.initialized) {
       throw new Error('Economy bridge not initialized');
+    }
+
+    // Sentinel-on-empty: WASM path would receive a zero-length covariance and
+    // produce undefined output; the JS fallback's mean would be NaN. See #2024.
+    if (portfolio.length === 0) {
+      return new Float32Array(0);
     }
 
     if (this.wasmModule) {

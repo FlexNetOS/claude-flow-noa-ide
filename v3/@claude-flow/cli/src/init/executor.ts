@@ -9,14 +9,12 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { dirname } from 'path';
 
-import { resolveInstallContext } from '@claude-flow/shared';
-
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import type { InitOptions, InitResult, PlatformInfo } from './types.js';
 import { detectPlatform, DEFAULT_INIT_OPTIONS } from './types.js';
-import { generateSettingsJson, generateSettings, isGlobalInstall } from './settings-generator.js';
+import { generateSettingsJson, generateSettings } from './settings-generator.js';
 import { generateMCPJson } from './mcp-generator.js';
 import { generateStatuslineScript, generateStatuslineHook } from './statusline-generator.js';
 import {
@@ -128,55 +126,16 @@ const AGENTS_MAP: Record<string, string[]> = {
 };
 
 /**
- * #bug9 — Compute the install layout root for the `.claude` tree.
- *
- * For per-project installs (the default), Ruflo writes everything under
- * `<targetDir>/.claude/...`. But when the user runs `ruflo init` directly
- * against the global Claude Code config dir (`targetDir === ~/.claude`),
- * joining another `.claude/` segment produces `~/.claude/.claude/...` — a
- * phantom tree Claude Code never reads from. Detect the global-install case
- * and treat `targetDir` itself as the install root in that situation.
- *
- * Returns the directory where `helpers/`, `skills/`, `commands/`, `agents/`,
- * `settings.json`, and `.mcp.json` should live. Callers should use the
- * returned path as the base for these subdirectories rather than re-joining
- * `.claude/` themselves.
+ * Directory structure to create
  */
-function getInstallRoot(targetDir: string): string {
-  return isGlobalInstall(targetDir) ? targetDir : path.join(targetDir, '.claude');
-}
-
-/**
- * Build the list of `.claude/...` directories to create relative to
- * `targetDir`. Under global install we drop the leading `.claude/` segment
- * since `targetDir` already *is* `.claude`. (#bug9)
- */
-function getClaudeDirsForTarget(targetDir: string): string[] {
-  if (isGlobalInstall(targetDir)) {
-    // targetDir IS .claude — create the subdirs directly under it.
-    // We don't include '' (i.e. the targetDir itself) because mkdirSync with
-    // recursive:true on the subdirs handles it; explicit "''" would resolve
-    // to targetDir which already exists.
-    return ['skills', 'commands', 'agents', 'helpers'];
-  }
-  return [
+const DIRECTORIES = {
+  claude: [
     '.claude',
     '.claude/skills',
     '.claude/commands',
     '.claude/agents',
     '.claude/helpers',
-  ];
-}
-
-/**
- * Directory structure to create
- *
- * NOTE: `.claude/...` paths are now produced by `getClaudeDirsForTarget()`
- * so global installs (`targetDir === ~/.claude`) skip the redundant join.
- * The `.claude-flow/...` runtime tree is unaffected — those paths are
- * sibling to `.claude/`, not nested under it.
- */
-const DIRECTORIES = {
+  ],
   runtime: [
     '.claude-flow',
     '.claude-flow/data',
@@ -443,21 +402,16 @@ export async function executeUpgrade(targetDir: string, upgradeSettings = false)
   };
 
   try {
-    // #bug9 — install-root-aware: under global install (`targetDir === ~/.claude`),
-    // strip the redundant `.claude/` prefix so we don't write to the phantom
-    // `~/.claude/.claude/` tree Claude Code never reads from.
-    const installRoot = getInstallRoot(targetDir);
-    const helpersUpgradeDir = path.join(installRoot, 'helpers');
-
     // Ensure required directories exist
     const dirs = [
-      helpersUpgradeDir,
-      path.join(targetDir, '.claude-flow', 'metrics'),
-      path.join(targetDir, '.claude-flow', 'security'),
-      path.join(targetDir, '.claude-flow', 'learning'),
+      '.claude/helpers',
+      '.claude-flow/metrics',
+      '.claude-flow/security',
+      '.claude-flow/learning',
     ];
 
-    for (const fullPath of dirs) {
+    for (const dir of dirs) {
+      const fullPath = path.join(targetDir, dir);
       if (!fs.existsSync(fullPath)) {
         fs.mkdirSync(fullPath, { recursive: true });
       }
@@ -468,7 +422,7 @@ export async function executeUpgrade(targetDir: string, upgradeSettings = false)
     if (sourceHelpersForUpgrade) {
       const criticalHelpers = ['auto-memory-hook.mjs', 'hook-handler.cjs', 'intelligence.cjs'];
       for (const helperName of criticalHelpers) {
-        const targetPath = path.join(helpersUpgradeDir, helperName);
+        const targetPath = path.join(targetDir, '.claude', 'helpers', helperName);
         const sourcePath = path.join(sourceHelpersForUpgrade, helperName);
         if (fs.existsSync(sourcePath)) {
           if (fs.existsSync(targetPath)) {
@@ -488,7 +442,7 @@ export async function executeUpgrade(targetDir: string, upgradeSettings = false)
         'auto-memory-hook.mjs': generateAutoMemoryHook(),
       };
       for (const [helperName, content] of Object.entries(generatedCritical)) {
-        const targetPath = path.join(helpersUpgradeDir, helperName);
+        const targetPath = path.join(targetDir, '.claude', 'helpers', helperName);
         if (fs.existsSync(targetPath)) {
           result.updated.push(`.claude/helpers/${helperName}`);
         } else {
@@ -500,7 +454,7 @@ export async function executeUpgrade(targetDir: string, upgradeSettings = false)
     }
 
     // 1. ALWAYS update statusline helper (force overwrite)
-    const statuslinePath = path.join(helpersUpgradeDir, 'statusline.cjs');
+    const statuslinePath = path.join(targetDir, '.claude', 'helpers', 'statusline.cjs');
     // Use default options with statusline config
     const upgradeOptions: InitOptions = {
       ...DEFAULT_INIT_OPTIONS,
@@ -593,9 +547,7 @@ export async function executeUpgrade(targetDir: string, upgradeSettings = false)
 
     // 3. Merge settings if requested
     if (upgradeSettings) {
-      // #bug9 — install-root-aware path. Under global install, settings.json
-      // lives at ~/.claude/settings.json (NOT ~/.claude/.claude/settings.json).
-      const settingsPath = path.join(installRoot, 'settings.json');
+      const settingsPath = path.join(targetDir, '.claude', 'settings.json');
       if (fs.existsSync(settingsPath)) {
         try {
           const existingSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
@@ -651,12 +603,10 @@ export async function executeUpgradeWithMissing(targetDir: string, upgradeSettin
   result.addedCommands = [];
 
   try {
-    // #bug9 — install-root-aware paths so global install (`targetDir === ~/.claude`)
-    // doesn't write skills/agents/commands into the phantom ~/.claude/.claude/ tree.
-    const installRoot = getInstallRoot(targetDir);
-    const skillsDir = path.join(installRoot, 'skills');
-    const agentsDir = path.join(installRoot, 'agents');
-    const commandsDir = path.join(installRoot, 'commands');
+    // Ensure target directories exist
+    const skillsDir = path.join(targetDir, '.claude', 'skills');
+    const agentsDir = path.join(targetDir, '.claude', 'agents');
+    const commandsDir = path.join(targetDir, '.claude', 'commands');
 
     for (const dir of [skillsDir, agentsDir, commandsDir]) {
       if (!fs.existsSync(dir)) {
@@ -751,12 +701,8 @@ async function createDirectories(
   options: InitOptions,
   result: InitResult
 ): Promise<void> {
-  // #bug9 — under a global install, `targetDir` IS `.claude`; the helper
-  // strips the redundant `.claude/` prefix so we don't create a phantom
-  // `~/.claude/.claude/...` tree. Per-project installs are unchanged.
-  const claudeDirs = getClaudeDirsForTarget(targetDir);
   const dirs = [
-    ...claudeDirs,
+    ...DIRECTORIES.claude,
     ...(options.components.runtime ? DIRECTORIES.runtime : []),
   ];
 
@@ -777,10 +723,7 @@ async function writeSettings(
   options: InitOptions,
   result: InitResult
 ): Promise<void> {
-  // #bug9 — global install (`targetDir === ~/.claude`) writes settings.json
-  // directly under `targetDir`, not under `<targetDir>/.claude/`.
-  const installRoot = getInstallRoot(targetDir);
-  const settingsPath = path.join(installRoot, 'settings.json');
+  const settingsPath = path.join(targetDir, '.claude', 'settings.json');
   const generated = JSON.parse(generateSettingsJson(options));
 
   if (fs.existsSync(settingsPath) && !options.force) {
@@ -845,29 +788,11 @@ async function writeSettings(
  * surface it in the skipped-message), or null if none found.
  */
 function detectExistingRufloMCP(targetDir: string): string | null {
-<<<<<<< HEAD
-  // STRAT-1: claudeRoot drives the .claude/mcp.json candidate; the
-  // ~/.claude.json file lives one level UP from claudeRoot so we still
-  // derive it from the home directory directly.
   const home = (process.env.HOME ?? process.env.USERPROFILE) ?? '';
-  const installCtx = resolveInstallContext({ forceGlobal: true });
-=======
-  const home = (process.env.HOME ?? process.env.USERPROFILE) ?? '';
->>>>>>> pr-1936-head
   const candidates = new Set<string>();
   // User-global Claude Code config locations
   if (home) {
     candidates.add(path.join(home, '.claude.json'));
-<<<<<<< HEAD
-  }
-  if (installCtx.claudeRoot) {
-    candidates.add(path.join(installCtx.claudeRoot, 'mcp.json'));
-  }
-  // Walk parents of targetDir up to root, checking for .mcp.json at each
-  let dir = path.resolve(targetDir);
-  while (true) {
-    candidates.add(path.join(dir, '.mcp.json'));
-=======
     candidates.add(path.join(home, '.claude', 'mcp.json'));
   }
   // Walk parents of targetDir up to root, checking for .mcp.json at each
@@ -877,27 +802,17 @@ function detectExistingRufloMCP(targetDir: string): string | null {
   while (true) {
     candidates.add(path.join(dir, '.mcp.json'));
     targetAncestors.add(normalizeProjectKey(dir));
->>>>>>> pr-1936-head
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   // Skip the targetDir itself — that's the one we're about to write
-<<<<<<< HEAD
-  candidates.delete(path.join(path.resolve(targetDir), '.mcp.json'));
-=======
   candidates.delete(path.join(targetResolved, '.mcp.json'));
->>>>>>> pr-1936-head
 
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;
     try {
       const parsed = JSON.parse(fs.readFileSync(candidate, 'utf-8'));
-<<<<<<< HEAD
-      if (parsed && typeof parsed === 'object' && parsed.mcpServers && typeof parsed.mcpServers === 'object') {
-        if ('ruflo' in parsed.mcpServers) return candidate;
-      }
-=======
       if (!parsed || typeof parsed !== 'object') continue;
       // (a) Top-level mcpServers (legacy / global form)
       if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
@@ -919,15 +834,12 @@ function detectExistingRufloMCP(targetDir: string): string | null {
           }
         }
       }
->>>>>>> pr-1936-head
     } catch { /* malformed JSON — ignore */ }
   }
   return null;
 }
 
 /**
-<<<<<<< HEAD
-=======
  * Normalize a project path key for cross-platform comparison.
  * Claude Code stores Windows paths like "C:/Users/.../Project" while
  * Node's `path.resolve()` may emit "C:\Users\...\Project". Lowercase +
@@ -938,7 +850,6 @@ function normalizeProjectKey(p: string): string {
 }
 
 /**
->>>>>>> pr-1936-head
  * Write .mcp.json
  */
 async function writeMCPConfig(
@@ -946,12 +857,7 @@ async function writeMCPConfig(
   options: InitOptions,
   result: InitResult
 ): Promise<void> {
-  // #bug9 — under global install, .mcp.json belongs directly in ~/.claude/,
-  // not in ~/.claude/.claude/ (which is the phantom dir Claude Code never
-  // reads). The detectExistingRufloMCP() walk below is unaffected because it
-  // walks ancestors of `targetDir` looking for the legacy `ruflo` key.
-  const installRoot = getInstallRoot(targetDir);
-  const mcpPath = path.join(installRoot, '.mcp.json');
+  const mcpPath = path.join(targetDir, '.mcp.json');
 
   if (fs.existsSync(mcpPath) && !options.force) {
     result.skipped.push('.mcp.json');
@@ -986,9 +892,7 @@ async function copySkills(
   result: InitResult
 ): Promise<void> {
   const skillsConfig = options.skills;
-  // #bug9 — install-root-aware path: under global install this is just
-  // ~/.claude/skills, not ~/.claude/.claude/skills.
-  const targetSkillsDir = path.join(getInstallRoot(targetDir), 'skills');
+  const targetSkillsDir = path.join(targetDir, '.claude', 'skills');
 
   // Determine which skills to copy
   const skillsToCopy: string[] = [];
@@ -1039,8 +943,7 @@ async function copyCommands(
   result: InitResult
 ): Promise<void> {
   const commandsConfig = options.commands;
-  // #bug9 — install-root-aware path.
-  const targetCommandsDir = path.join(getInstallRoot(targetDir), 'commands');
+  const targetCommandsDir = path.join(targetDir, '.claude', 'commands');
 
   // Determine which commands to copy
   const commandsToCopy: string[] = [];
@@ -1095,8 +998,7 @@ async function copyAgents(
   result: InitResult
 ): Promise<void> {
   const agentsConfig = options.agents;
-  // #bug9 — install-root-aware path.
-  const targetAgentsDir = path.join(getInstallRoot(targetDir), 'agents');
+  const targetAgentsDir = path.join(targetDir, '.claude', 'agents');
 
   // Determine which agents to copy
   const agentsToCopy: string[] = [];
@@ -1210,9 +1112,7 @@ async function writeHelpers(
   options: InitOptions,
   result: InitResult
 ): Promise<void> {
-  // #bug9 — install-root-aware path. Under global install this is just
-  // ~/.claude/helpers, where Claude Code's hook commands actually look.
-  const helpersDir = path.join(getInstallRoot(targetDir), 'helpers');
+  const helpersDir = path.join(targetDir, '.claude', 'helpers');
 
   // Find source helpers directory (works for npm package and local dev)
   const sourceHelpersDir = findSourceHelpersDir(options.sourceBaseDir);
@@ -1326,10 +1226,8 @@ async function writeStatusline(
   options: InitOptions,
   result: InitResult
 ): Promise<void> {
-  // #bug9 — install-root-aware paths. Under global install, statusline files
-  // (.sh / .mjs / .cjs) live directly in ~/.claude/ and ~/.claude/helpers/.
-  const claudeDir = getInstallRoot(targetDir);
-  const helpersDir = path.join(claudeDir, 'helpers');
+  const claudeDir = path.join(targetDir, '.claude');
+  const helpersDir = path.join(targetDir, '.claude', 'helpers');
 
   // Find source .claude directory (works for npm package and local dev)
   const sourceClaudeDir = findSourceClaudeDir(options.sourceBaseDir);
@@ -2020,17 +1918,9 @@ async function writeClaudeMd(
   // Also write/append global ~/.claude/CLAUDE.md so ruflo tools are used automatically (#1497).
   // Opt-out via --no-global / options.skipGlobalClaudeMd (#1744 — keeps global rules file pristine
   // for users who don't want a per-machine pointer block).
-<<<<<<< HEAD
-  // STRAT-1: route through the shared resolver so the global-mode path
-  // matches every other consumer (settings-generator, mcp-server, …).
-  const installCtx = resolveInstallContext({ forceGlobal: true });
-  if (installCtx.claudeRoot && !options.skipGlobalClaudeMd) {
-    const globalClaudeDir = installCtx.claudeRoot;
-=======
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   if (homeDir && !options.skipGlobalClaudeMd) {
     const globalClaudeDir = path.join(homeDir, '.claude');
->>>>>>> pr-1936-head
     const globalClaudeMd = path.join(globalClaudeDir, 'CLAUDE.md');
     const rufloBlock = [
       '',

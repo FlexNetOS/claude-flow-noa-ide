@@ -133,7 +133,7 @@ async function getAIDefence(): Promise<AIDefenceInstance> {
  */
 const aidefenceScanTool: MCPTool = {
   name: 'aidefence_scan',
-  description: 'Scan input text for AI manipulation threats (prompt injection, jailbreaks, PII). Returns threat assessment with <10ms latency.',
+  description: 'Scan input text for AI manipulation threats (prompt injection, jailbreaks, PII). Returns threat assessment with <10ms latency. Use when nothing native exists — Claude Code does not have a PII / prompt-injection / adversarial-text scanner. Pair with any tool that ingests untrusted input (browser scrape, federation envelope, memory_import_claude).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -216,7 +216,7 @@ const aidefenceScanTool: MCPTool = {
  */
 const aidefenceAnalyzeTool: MCPTool = {
   name: 'aidefence_analyze',
-  description: 'Deep analysis of input for specific threat types with similar pattern search and mitigation recommendations.',
+  description: 'Deep analysis of input for specific threat types with similar pattern search and mitigation recommendations. Use when nothing native exists — Claude Code does not have a PII / prompt-injection / adversarial-text scanner. Pair with any tool that ingests untrusted input (browser scrape, federation envelope, memory_import_claude).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -302,7 +302,7 @@ const aidefenceAnalyzeTool: MCPTool = {
  */
 const aidefenceStatsTool: MCPTool = {
   name: 'aidefence_stats',
-  description: 'Get AIDefence detection and learning statistics.',
+  description: 'Get AIDefence detection and learning statistics. Use when nothing native exists — Claude Code does not have a PII / prompt-injection / adversarial-text scanner. Pair with any tool that ingests untrusted input (browser scrape, federation envelope, memory_import_claude).',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -354,7 +354,7 @@ const aidefenceStatsTool: MCPTool = {
  */
 const aidefenceLearnTool: MCPTool = {
   name: 'aidefence_learn',
-  description: 'Record detection feedback for pattern learning. Improves future detection accuracy.',
+  description: 'Record detection feedback for pattern learning. Improves future detection accuracy. Use when nothing native exists — Claude Code does not have a PII / prompt-injection / adversarial-text scanner. Pair with any tool that ingests untrusted input (browser scrape, federation envelope, memory_import_claude).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -449,7 +449,7 @@ const aidefenceLearnTool: MCPTool = {
  */
 const aidefenceIsSafeTool: MCPTool = {
   name: 'aidefence_is_safe',
-  description: 'Quick boolean check if input is safe. Fastest option for simple validation.',
+  description: 'Quick boolean check if input is safe. Fastest option for simple validation. Use when nothing native exists — Claude Code does not have a PII / prompt-injection / adversarial-text scanner. Pair with any tool that ingests untrusted input (browser scrape, federation envelope, memory_import_claude).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -504,7 +504,7 @@ const aidefenceIsSafeTool: MCPTool = {
  */
 const aidefenceHasPIITool: MCPTool = {
   name: 'aidefence_has_pii',
-  description: 'Check if input contains PII (emails, SSNs, API keys, passwords, etc.).',
+  description: 'Check if input contains PII (emails, SSNs, API keys, passwords, etc.). Use when nothing native exists — Claude Code does not have a PII / prompt-injection / adversarial-text scanner. Pair with any tool that ingests untrusted input (browser scrape, federation envelope, memory_import_claude).',
   inputSchema: {
     type: 'object',
     properties: {

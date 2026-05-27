@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * RuFlo V3.5 Statusline Generator
- * Displays real-time V3 implementation progress and system status
+ * RuFlo Statusline Generator
+ * Displays real-time V3 implementation progress and system status.
+ * Version is read from the installed @claude-flow/cli package.json at
+ * runtime — #1892 fix: previously hardcoded to V3.5 which drifted from
+ * the actual installed alpha series.
  *
  * Usage: node statusline.js [--json] [--compact]
  */
@@ -9,6 +12,34 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync, execFileSync } = require('child_process');
+
+// #1892 — derive RuFlo banner version from the installed cli package.json
+// so the statusline never drifts from `ruflo doctor`. Falls back to a
+// generic "RuFlo" label only if every resolution path fails.
+function resolveBannerVersion() {
+  const candidates = [
+    // Local-checkout / monorepo case
+    path.join(__dirname, '..', '..', 'package.json'),
+    // npm-installed-as-dep case
+    path.join(__dirname, '..', '..', '..', '@claude-flow', 'cli', 'package.json'),
+    // npm-installed-globally case
+    path.join(__dirname, '..', '..', '..', 'cli', 'package.json'),
+  ];
+  for (const p of candidates) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      if (pkg.name && pkg.name.includes('claude-flow') && typeof pkg.version === 'string') {
+        // Render as "V<major>.<minor>" so the banner stays compact —
+        // patch+pre-release detail still shows under `doctor`.
+        const m = pkg.version.match(/^(\d+)\.(\d+)/);
+        if (m) return `V${m[1]}.${m[2]}`;
+        return `V${pkg.version}`;
+      }
+    } catch {/* try next */}
+  }
+  return ''; // empty → header just says "RuFlo"
+}
+const BANNER_VERSION = resolveBannerVersion();
 
 // Configuration
 const CONFIG = {
@@ -246,8 +277,8 @@ function generateStatusline() {
   const system = getSystemMetrics();
   const lines = [];
 
-  // Header Line
-  let header = `${c.bold}${c.brightPurple}▊ RuFlo V3.5 ${c.reset}`;
+  // Header Line — #1892: BANNER_VERSION resolved at module load from package.json
+  let header = `${c.bold}${c.brightPurple}▊ RuFlo${BANNER_VERSION ? ' ' + BANNER_VERSION : ''} ${c.reset}`;
   header += `${swarm.coordinationActive ? c.brightCyan : c.dim}● ${c.brightCyan}${user.name}${c.reset}`;
   if (user.gitBranch) {
     header += `  ${c.dim}│${c.reset}  ${c.brightBlue}⎇ ${user.gitBranch}${c.reset}`;

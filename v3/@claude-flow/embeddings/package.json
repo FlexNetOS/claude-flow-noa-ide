@@ -1,19 +1,22 @@
 {
   "name": "@claude-flow/embeddings",
-<<<<<<< HEAD
-  "version": "3.0.0-alpha.15",
-=======
-  "version": "3.0.0-alpha.16",
->>>>>>> pr-1936-head
+  "version": "3.0.0-alpha.45",
   "description": "V3 Embedding Service - OpenAI, Transformers.js, Agentic-Flow (ONNX), Mock providers with hyperbolic embeddings, normalization, and chunking",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.js",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./dist/*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
     }
   },
   "files": [
@@ -55,7 +58,12 @@
   "peerDependencies": {
     "@claude-flow/shared": "^3.0.0-alpha.1",
     "agentic-flow": "^2.0.0",
-    "@huggingface/transformers": "^4.0.0"
+    "@huggingface/transformers": "^4.0.0",
+    "ruvector-onnx-embeddings-wasm": "^0.1.2",
+    "@ruvector/core": "^0.1.31",
+    "@ruvector/rabitq-wasm": "^0.1.0",
+    "@ruvector/attention": "^2.2.2",
+    "@ruvector/diskann": "^0.1.0"
   },
   "peerDependenciesMeta": {
     "agentic-flow": {
@@ -63,10 +71,22 @@
     },
     "@huggingface/transformers": {
       "optional": true
+    },
+    "ruvector-onnx-embeddings-wasm": {
+      "optional": true
+    },
+    "@ruvector/core": {
+      "optional": true
+    },
+    "@ruvector/rabitq-wasm": {
+      "optional": true
+    },
+    "@ruvector/attention": {
+      "optional": true
+    },
+    "@ruvector/diskann": {
+      "optional": true
     }
-  },
-  "optionalDependencies": {
-    "@huggingface/transformers": "^4.2.0"
   },
   "engines": {
     "node": ">=20.0.0"

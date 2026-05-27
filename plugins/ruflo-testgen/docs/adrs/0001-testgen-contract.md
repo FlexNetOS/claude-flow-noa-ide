@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-testgen plugin contract — pinning, namespace coordination, testgaps-worker contract, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, testgen, tdd, coverage, namespace, smoke-test]
@@ -49,9 +55,15 @@ bash plugins/ruflo-testgen/scripts/smoke.sh
 - `plugins/ruflo-jujutsu/docs/adrs/0001-jujutsu-contract.md` — diff analysis for PR-time coverage gating
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-testgen/`. Contract elements implemented: `testgaps` background worker dispatch via `hooks_worker-dispatch` documented; `hooks coverage-gaps|coverage-route|coverage-suggest` CLI coverage commands covered; SPARC Refinement-phase ownership cross-linked; namespace `testgen-gaps` claimed; smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

@@ -403,20 +403,6 @@ export class CLI {
     }
 
     const rootName = commandPath[0];
-<<<<<<< HEAD
-    if (rootName === undefined) {
-      await this.showHelp();
-      return;
-    }
-
-    // Try sync first, then lazy load
-    let initial: Command | undefined = getCommand(rootName);
-    if (!initial && hasCommand(rootName)) {
-      initial = await getCommandAsync(rootName);
-    }
-
-    if (!initial) {
-=======
 
     // Try sync first, then lazy load
     let command: Command | undefined = getCommand(rootName);
@@ -425,24 +411,11 @@ export class CLI {
     }
 
     if (!command) {
->>>>>>> pr-1936-head
       this.output.printError(`Unknown command: ${rootName}`);
       return;
     }
 
     // Walk into subcommands following the path so `hive-mind spawn --help`
-<<<<<<< HEAD
-    // renders spawn's help, not hive-mind's parent help.
-    // Use a non-undefined-typed variable so narrowing persists across loop reassignment.
-    let command: Command = initial;
-    const titleParts: string[] = [command.name];
-    for (let i = 1; i < commandPath.length; i++) {
-      const subName = commandPath[i];
-      if (subName === undefined) break;
-      const sub: Command | undefined = command.subcommands?.find(sc => sc.name === subName || sc.aliases?.includes(subName));
-      if (!sub) break; // unknown leaf — fall back to last known
-      command = sub;
-=======
     // renders spawn's help, not hive-mind's parent help. We use a non-null
     // local (`current`) instead of reassigning the optional `command` so
     // TS can prove the value is defined for the rest of the function.
@@ -453,17 +426,12 @@ export class CLI {
       const sub = current.subcommands?.find(sc => sc.name === subName || sc.aliases?.includes(subName));
       if (!sub) break; // unknown leaf — fall back to last known
       current = sub;
->>>>>>> pr-1936-head
       titleParts.push(sub.name);
     }
 
     this.output.writeln();
     this.output.writeln(this.output.bold(`${this.name} ${titleParts.join(' ')}`));
-<<<<<<< HEAD
-    this.output.writeln(command.description);
-=======
     this.output.writeln(current.description);
->>>>>>> pr-1936-head
     this.output.writeln();
 
     // Subcommands

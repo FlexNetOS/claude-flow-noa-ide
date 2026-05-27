@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-observability plugin contract — pinning, namespace-routing fix, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, observability, tracing, metrics, namespace, smoke-test]
@@ -48,9 +54,15 @@ bash plugins/ruflo-observability/scripts/smoke.sh
 - `plugins/ruflo-migrations/docs/adrs/0001-migrations-contract.md` — same bug class
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-observability/`. Contract elements implemented: namespace-routing bug fixed in both skills (switched `agentdb_hierarchical-recall` with namespace arg to `memory_search`/`memory_list`); dual pattern-store path documented in observe-metrics; smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

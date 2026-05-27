@@ -198,6 +198,32 @@ export type {
   GossipConfig,
 } from './consensus/index.js';
 
+// ADR-095 G2.2 — pluggable consensus transport. Re-export so consumers
+// (@claude-flow/cli's hive-consensus-runtime, downstream plugins) don't
+// have to deep-import from ./consensus/* or ./consensus/transport.js.
+export {
+  LocalTransport,
+  LocalTransportRegistry,
+  defaultLocalRegistry,
+  FederationTransport,
+  generateNodeKeyPair,
+  signMessage,
+  verifyMessage,
+  canonicalizeForSigning,
+  messageDigest,
+} from './consensus/index.js';
+
+export type {
+  ConsensusTransport,
+  ConsensusMessage,
+  ConsensusReply,
+  ConsensusMessageHandler,
+  NodeKeyPair,
+  LocalTransportOptions,
+  AgenticFlowTransportLike,
+  FederationTransportOptions,
+} from './consensus/index.js';
+
 // =============================================================================
 // Coordination Components
 // =============================================================================

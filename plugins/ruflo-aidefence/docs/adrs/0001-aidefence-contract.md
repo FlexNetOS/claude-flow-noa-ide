@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-aidefence plugin contract — pinning, namespace coordination, 3-gate pattern, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, aidefence, security, pii, prompt-injection, namespace, smoke-test]
@@ -92,9 +98,15 @@ bash plugins/ruflo-aidefence/scripts/smoke.sh
 - `plugins/ruflo-adr/docs/adrs/0001-adr-plugin-pattern.md`
 - `v3/@claude-flow/cli/src/mcp-tools/security-tools.ts` — 6 `aidefence_*` tool definitions
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-aidefence/`. Contract elements implemented: 3-gate pattern (PII pre-storage gate via `aidefence_has_pii`, sanitization gate via `aidefence_scan`, prompt-injection gate via `aidefence_is_safe`); ADR-097 budget integration deferred (Phase 3); smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

@@ -54,7 +54,6 @@ function saveAgentStore(store: AgentStore): void {
   writeFileSync(getAgentPath(), JSON.stringify(store, null, 2), 'utf-8');
 }
 
-<<<<<<< HEAD
 // #1906 — these were stuck on Claude-3.x ids that the Anthropic API now
 // 404s. Current model ids (Claude 4.x family):
 //   Opus 4.7    → claude-opus-4-7
@@ -67,23 +66,12 @@ const MODEL_MAP: Record<string, string> = {
   sonnet: 'claude-sonnet-4-6',
   opus: 'claude-opus-4-7',
   inherit: DEFAULT_ANTHROPIC_MODEL,
-=======
-const MODEL_MAP: Record<string, string> = {
-  haiku: 'claude-3-5-haiku-latest',
-  sonnet: 'claude-3-5-sonnet-latest',
-  opus: 'claude-3-opus-latest',
-  inherit: 'claude-3-5-sonnet-latest',
->>>>>>> pr-1936-head
 };
 
 export interface AnthropicCallInput {
   prompt: string;
   systemPrompt?: string;
-<<<<<<< HEAD
   model?: string;          // already-resolved Anthropic model id (e.g. 'claude-sonnet-4-6')
-=======
-  model?: string;          // already-resolved Anthropic model id (e.g. 'claude-3-5-sonnet-latest')
->>>>>>> pr-1936-head
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
@@ -115,33 +103,9 @@ export async function callAnthropicMessages(input: AnthropicCallInput): Promise<
   const explicitProvider = (process.env.RUFLO_PROVIDER || '').toLowerCase();
   const ollamaKey = process.env.OLLAMA_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-<<<<<<< HEAD
-  // #2042 — OpenRouter is an OpenAI-compat endpoint that fronts dozens of
-  // providers. Reporter (@ummcke00) had `providers.openrouter.apiKey` in
-  // their config.yaml but agent_execute hardcoded Anthropic. Detect via
-  // explicit RUFLO_PROVIDER=openrouter OR presence of OPENROUTER_API_KEY
-  // when no Anthropic key is available (same precedence as the Ollama
-  // branch above).
-  const openrouterKey = process.env.OPENROUTER_API_KEY;
-  const useOpenRouter =
-    explicitProvider === 'openrouter' || (!anthropicKey && !!openrouterKey);
-  const useOllama =
-    explicitProvider === 'ollama' || (!anthropicKey && !!ollamaKey && !openrouterKey);
-
-  if (useOpenRouter && openrouterKey) {
-    return callOpenAICompat({
-      ...input,
-      apiKey: openrouterKey,
-      baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api',
-      providerLabel: 'openrouter',
-      defaultModel: process.env.OPENROUTER_DEFAULT_MODEL || 'anthropic/claude-3.5-sonnet',
-    });
-  }
-=======
   const useOllama =
     explicitProvider === 'ollama' || (!anthropicKey && !!ollamaKey);
 
->>>>>>> pr-1936-head
   if (useOllama && ollamaKey) {
     return callOllamaCompat({ ...input, apiKey: ollamaKey });
   }
@@ -149,27 +113,15 @@ export async function callAnthropicMessages(input: AnthropicCallInput): Promise<
     return {
       success: false,
       error:
-<<<<<<< HEAD
-        'No LLM provider configured. Set ANTHROPIC_API_KEY (Tier-3), OPENROUTER_API_KEY (#2042), OLLAMA_API_KEY (Tier-2), or ANTHROPIC_BASE_URL with a compatible key.',
-    };
-  }
-  const model = input.model || DEFAULT_ANTHROPIC_MODEL;
-  const baseUrl = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
-=======
         'No LLM provider configured. Set ANTHROPIC_API_KEY (Tier-3) or OLLAMA_API_KEY (Tier-2 Ollama Cloud — see issue #1725).',
     };
   }
-  const model = input.model || 'claude-3-5-sonnet-latest';
->>>>>>> pr-1936-head
+  const model = input.model || DEFAULT_ANTHROPIC_MODEL;
   const startedAt = Date.now();
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
-<<<<<<< HEAD
-    const res = await fetch(`${baseUrl}/v1/messages`, {
-=======
     const res = await fetch('https://api.anthropic.com/v1/messages', {
->>>>>>> pr-1936-head
       method: 'POST',
       headers: {
         'x-api-key': anthropicKey,
@@ -316,99 +268,6 @@ async function callOllamaCompat(
   }
 }
 
-<<<<<<< HEAD
-/**
- * Generic OpenAI-compat caller for OpenRouter and other OpenAI-shaped
- * endpoints. #2042 — reporter (@ummcke00) configured OpenRouter via
- * config.yaml but agent_execute hardcoded the Anthropic fetch. This is
- * the same shape as `callOllamaCompat` but routes to a configurable
- * baseUrl + sends an OpenRouter-friendly default model when none is
- * specified. Logical model names (haiku/sonnet/opus) pass through —
- * OpenRouter accepts vendor-prefixed names like `anthropic/claude-3.5-sonnet`.
- */
-async function callOpenAICompat(
-  input: AnthropicCallInput & {
-    apiKey: string;
-    baseUrl: string;
-    providerLabel: string;
-    defaultModel: string;
-  },
-): Promise<AnthropicCallResult> {
-  const model = resolveOpenAICompatModel(input.model, input.defaultModel);
-  const startedAt = Date.now();
-  const base = input.baseUrl.replace(/\/+$/, '');
-  const url = `${base}/v1/chat/completions`;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
-    const messages: Array<{ role: string; content: string }> = [];
-    if (input.systemPrompt) messages.push({ role: 'system', content: input.systemPrompt });
-    messages.push({ role: 'user', content: input.prompt });
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        'content-type': 'application/json',
-        // OpenRouter convention: identify the integrating app for analytics
-        // and rate-limit tiering. Harmless on other OpenAI-compat backends.
-        'HTTP-Referer': 'https://github.com/ruvnet/ruflo',
-        'X-Title': 'Ruflo',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: input.maxTokens || 1024,
-        temperature: typeof input.temperature === 'number' ? input.temperature : 0.7,
-        messages,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '<unreadable error body>');
-      return { success: false, model, error: `${input.providerLabel} API error ${res.status}: ${errText.slice(0, 400)}` };
-    }
-    const data = await res.json() as {
-      id?: string;
-      model?: string;
-      choices: Array<{ message: { content: string }; finish_reason?: string }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
-    };
-    const textOut = data.choices?.[0]?.message?.content ?? '';
-    const usage = data.usage ?? {};
-    return {
-      success: true,
-      model: data.model || model,
-      messageId: data.id,
-      stopReason: data.choices?.[0]?.finish_reason ?? 'end_turn',
-      output: textOut,
-      usage: {
-        inputTokens: usage.prompt_tokens ?? 0,
-        outputTokens: usage.completion_tokens ?? 0,
-        totalTokens: usage.total_tokens ?? 0,
-      },
-      durationMs: Date.now() - startedAt,
-    };
-  } catch (err) {
-    return {
-      success: false,
-      model,
-      error: err instanceof Error ? err.message : String(err),
-      durationMs: Date.now() - startedAt,
-    };
-  }
-}
-
-function resolveOpenAICompatModel(input: string | undefined, fallback: string): string {
-  if (!input) return fallback;
-  // Logical Claude names → OpenRouter Anthropic-vendored names
-  if (input === 'haiku') return 'anthropic/claude-3.5-haiku';
-  if (input === 'sonnet' || input === 'inherit') return 'anthropic/claude-3.5-sonnet';
-  if (input === 'opus') return 'anthropic/claude-3-opus';
-  return input;
-}
-
-=======
->>>>>>> pr-1936-head
 function resolveOllamaModel(input: string | undefined): string {
   const DEFAULT = 'gpt-oss:120b-cloud';
   if (!input) return DEFAULT;
@@ -425,19 +284,11 @@ function resolveOllamaModel(input: string | undefined): string {
 /**
  * Resolve a model identifier to an Anthropic model ID. Accepts:
  * - logical names: 'haiku', 'sonnet', 'opus', 'inherit'
-<<<<<<< HEAD
  * - prefixed: 'anthropic:claude-sonnet-4-6'
  * - direct: 'claude-sonnet-4-6'
  */
 export function resolveAnthropicModel(input: string | undefined): string {
   if (!input) return DEFAULT_ANTHROPIC_MODEL;
-=======
- * - prefixed: 'anthropic:claude-3-5-sonnet-latest'
- * - direct: 'claude-3-5-sonnet-latest'
- */
-export function resolveAnthropicModel(input: string | undefined): string {
-  if (!input) return 'claude-3-5-sonnet-latest';
->>>>>>> pr-1936-head
   if (input in MODEL_MAP) return MODEL_MAP[input];
   if (input.startsWith('anthropic:')) return input.slice('anthropic:'.length);
   return input;
@@ -466,8 +317,6 @@ export interface AgentExecuteResult {
 }
 
 export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentExecuteResult> {
-<<<<<<< HEAD
-=======
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return {
@@ -478,17 +327,12 @@ export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentE
     };
   }
 
->>>>>>> pr-1936-head
   const store = loadAgentStore();
   const agent = store.agents[input.agentId];
   if (!agent) return { success: false, agentId: input.agentId, error: 'Agent not found' };
   if (agent.status === 'terminated') return { success: false, agentId: input.agentId, error: 'Agent has been terminated' };
 
-<<<<<<< HEAD
   const anthropicModel = MODEL_MAP[agent.model || 'sonnet'] || DEFAULT_ANTHROPIC_MODEL;
-=======
-  const anthropicModel = MODEL_MAP[agent.model || 'sonnet'] || 'claude-3-5-sonnet-latest';
->>>>>>> pr-1936-head
   const systemPrompt = input.systemPrompt ||
     `You are a ${agent.agentType} agent operating as part of a Ruflo swarm. ` +
     `Agent ID: ${input.agentId}. Domain: ${agent.domain ?? 'general'}. ` +
@@ -500,58 +344,6 @@ export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentE
 
   const startedAt = Date.now();
 
-<<<<<<< HEAD
-  // #2042 — delegate to callAnthropicMessages so the v3 provider router
-  // (Anthropic / Ollama / OpenRouter) governs which backend is hit. The
-  // previous inline `fetch('https://api.anthropic.com/...')` bypassed
-  // the router entirely and forced an ANTHROPIC_API_KEY error for every
-  // non-Anthropic deployment. Reporter (@ummcke00) had OpenRouter
-  // configured but the bypass made the agent unreachable.
-  const result = await callAnthropicMessages({
-    model: anthropicModel,
-    prompt: input.prompt,
-    systemPrompt,
-    maxTokens: input.maxTokens,
-    temperature: input.temperature,
-    timeoutMs: input.timeoutMs,
-  });
-
-  agent.status = 'idle';
-  if (result.success) {
-    const out: AgentExecuteResult = {
-      success: true,
-      agentId: input.agentId,
-      messageId: result.messageId,
-      model: result.model,
-      stopReason: result.stopReason,
-      output: result.output,
-      usage: result.usage,
-      durationMs: result.durationMs ?? Date.now() - startedAt,
-    };
-    agent.lastResult = out as unknown as Record<string, unknown>;
-    saveAgentStore(store);
-    return out;
-  }
-
-  saveAgentStore(store);
-  // No-provider-configured error → surface the same actionable message
-  // the router built, with a #2042-aware remediation pointer.
-  const noProvider = (result.error || '').includes('No LLM provider configured');
-  return {
-    success: false,
-    agentId: input.agentId,
-    model: anthropicModel,
-    error: result.error || 'agent_execute failed',
-    durationMs: result.durationMs ?? Date.now() - startedAt,
-    ...(noProvider && {
-      remediation:
-        'Set one of ANTHROPIC_API_KEY, OPENROUTER_API_KEY (+ optional OPENROUTER_BASE_URL), or OLLAMA_API_KEY. ' +
-        'Or set RUFLO_PROVIDER=openrouter|ollama to force a specific provider.',
-    }),
-  };
-}
-
-=======
   try {
     const controller = new AbortController();
     const timeoutMs = input.timeoutMs || 60000;
@@ -633,4 +425,3 @@ export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentE
     };
   }
 }
->>>>>>> pr-1936-head

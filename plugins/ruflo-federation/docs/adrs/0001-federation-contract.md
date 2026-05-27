@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-federation plugin contract — pinning, namespace coordination, 3-gate pattern alignment, ADR-097 budget integration, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, federation, zero-trust, peer-discovery, consensus, budget, namespace, smoke-test]
@@ -60,9 +66,15 @@ bash plugins/ruflo-federation/scripts/smoke.sh
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention
 - `v3/docs/adr/ADR-097-federation-budget-circuit-breaker.md` — host-side enforcement reference
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-federation/`. Contract elements implemented: ADR-097 budget circuit breaker Phase 1 (send-side enforcement) and Phase 2 (peer state machine) documented; Phase 3 (ruflo-cost-tracker integration) deferred; 3-gate pattern alignment via ruflo-aidefence ADR-0001; smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

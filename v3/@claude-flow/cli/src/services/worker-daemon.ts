@@ -22,7 +22,6 @@ import {
   type HeadlessWorkerType,
   type HeadlessExecutionResult,
 } from './headless-worker-executor.js';
-import { QueenDispatcher, type QueenDispatcherConfig } from './queen-dispatcher.js';
 
 // Worker types matching hooks-tools.ts
 export type WorkerType =
@@ -92,21 +91,6 @@ export interface DaemonConfig {
     minFreeMemoryPercent: number;
   };
   workers: WorkerConfig[];
-  /**
-   * Queen-dispatcher config. When `enabled`, the daemon starts a
-   * QueenDispatcher loop alongside the maintenance workers — it polls
-   * `.claude-flow/tasks/store.json` and routes assigned swarm tasks to
-   * HeadlessWorkerExecutor.executeArbitrary. Disabled by default so
-   * existing daemon behaviour is unchanged for users who haven't
-   * opted in. See ADR-072 / #1916.
-   */
-  queenDispatcher?: {
-    enabled: boolean;
-    pollIntervalMs?: number;
-    maxConcurrent?: number;
-    sandbox?: QueenDispatcherConfig['sandbox'];
-    timeoutMs?: number;
-  };
 }
 
 // Worker configuration with staggered offsets to prevent overlap
@@ -149,11 +133,6 @@ export class WorkerDaemon extends EventEmitter {
   private headlessExecutor: HeadlessWorkerExecutor | null = null;
   private headlessAvailable: boolean = false;
 
-  // Queen-dispatcher (opt-in via config.queenDispatcher.enabled).
-  // When set, polls the swarm task store and dispatches assigned
-  // tasks through the headlessExecutor's executeArbitrary path.
-  private queenDispatcher: QueenDispatcher | null = null;
-
   // Preserve the original constructor config so we can detect explicit overrides
   // during state restoration (R1: constructor config takes priority over stale state)
   private originalConfig?: Partial<DaemonConfig>;
@@ -191,16 +170,6 @@ export class WorkerDaemon extends EventEmitter {
         minFreeMemoryPercent: config?.resourceThresholds?.minFreeMemoryPercent ?? fileConfig.minFreeMemoryPercent ?? defaultMinFreeMemory,
       },
       workers: config?.workers ?? DEFAULT_WORKERS,
-      // Constructor config wins over file (parity with other fields).
-      // Either source can flip the gate; default `enabled: false` so
-      // the merged block always has a concrete boolean — the type on
-      // DaemonConfig requires it, and `enabled === false` means "block
-      // present but opted out" which is a valid configured state.
-      queenDispatcher: (() => {
-        const src = config?.queenDispatcher ?? fileConfig.queenDispatcher;
-        if (!src) return undefined;
-        return { enabled: src.enabled === true, ...src };
-      })(),
     };
 
     // Setup graceful shutdown handlers
@@ -329,31 +298,7 @@ export class WorkerDaemon extends EventEmitter {
     workerTimeoutMs?: number;
     maxCpuLoad?: number;
     minFreeMemoryPercent?: number;
-    queenDispatcher?: {
-      enabled?: boolean;
-      pollIntervalMs?: number;
-      maxConcurrent?: number;
-      sandbox?: 'strict' | 'permissive' | 'disabled';
-      timeoutMs?: number;
-    };
   } {
-<<<<<<< HEAD
-    const configPath = join(claudeFlowDir, 'config.json');
-    if (!existsSync(configPath)) {
-      // #1395 / #1844 — daemon settings live in `.claude-flow/config.json` with
-      // dot-notation keys; the structured `.claude-flow/config.yaml` written by
-      // `ruflo init` does not contain daemon settings. Make that explicit in the
-      // warning so users don't quietly run with defaults.
-      const yamlPath = join(claudeFlowDir, 'config.yaml');
-      const ymlPath = join(claudeFlowDir, 'config.yml');
-      if (existsSync(yamlPath) || existsSync(ymlPath)) {
-        this.log(
-          'warn',
-          `Daemon settings are read from .claude-flow/config.json (dot-notation), not from ${existsSync(yamlPath) ? 'config.yaml' : 'config.yml'}. ` +
-            `Running with defaults. To customize, create .claude-flow/config.json with keys like ` +
-            `{"daemon.maxConcurrent":4,"daemon.workerTimeoutMs":960000,"daemon.resourceThresholds.maxCpuLoad":16}.`,
-        );
-=======
     const jsonPath = join(claudeFlowDir, 'config.json');
     const yamlPath = join(claudeFlowDir, 'config.yaml');
     const ymlPath = join(claudeFlowDir, 'config.yml');
@@ -368,7 +313,6 @@ export class WorkerDaemon extends EventEmitter {
         chosenPath = jsonPath;
       } catch {
         return {};
->>>>>>> pr-1936-head
       }
     } else if (existsSync(yamlPath) || existsSync(ymlPath)) {
       const yPath = existsSync(yamlPath) ? yamlPath : ymlPath;
@@ -404,57 +348,12 @@ export class WorkerDaemon extends EventEmitter {
       const rawMinMem = cfg['daemon.resourceThresholds.minFreeMemoryPercent'] ?? raw['daemon.resourceThresholds.minFreeMemoryPercent'];
       const rawMaxConcurrent = cfg['daemon.maxConcurrent'] ?? raw['daemon.maxConcurrent'];
       const rawTimeout = cfg['daemon.workerTimeoutMs'] ?? raw['daemon.workerTimeoutMs'];
-
-      // ADR-072 / #1916: queen-dispatcher block. Supports both nested
-      // (daemon: { queenDispatcher: { enabled: true, ... } }) and the
-      // dot-keyed style used elsewhere in this reader. Dot-keys win
-      // when both forms exist so an operator who already has e.g.
-      // `daemon.queenDispatcher.enabled: true` at the top of the file
-      // gets predictable behaviour.
-      const nestedQd = (cfg?.daemon?.queenDispatcher as Record<string, unknown> | undefined)
-        ?? (raw?.daemon?.queenDispatcher as Record<string, unknown> | undefined)
-        ?? undefined;
-      const flatEnabled = cfg['daemon.queenDispatcher.enabled'] ?? raw['daemon.queenDispatcher.enabled'];
-      const flatPoll = cfg['daemon.queenDispatcher.pollIntervalMs'] ?? raw['daemon.queenDispatcher.pollIntervalMs'];
-      const flatMaxConc = cfg['daemon.queenDispatcher.maxConcurrent'] ?? raw['daemon.queenDispatcher.maxConcurrent'];
-      const flatSandbox = cfg['daemon.queenDispatcher.sandbox'] ?? raw['daemon.queenDispatcher.sandbox'];
-      const flatTimeout = cfg['daemon.queenDispatcher.timeoutMs'] ?? raw['daemon.queenDispatcher.timeoutMs'];
-
-      const qdEnabled = typeof flatEnabled === 'boolean'
-        ? flatEnabled
-        : (typeof nestedQd?.enabled === 'boolean' ? nestedQd.enabled : undefined);
-      const qdPoll = typeof flatPoll === 'number'
-        ? flatPoll
-        : (typeof nestedQd?.pollIntervalMs === 'number' ? nestedQd.pollIntervalMs : undefined);
-      const qdMaxConc = typeof flatMaxConc === 'number'
-        ? flatMaxConc
-        : (typeof nestedQd?.maxConcurrent === 'number' ? nestedQd.maxConcurrent : undefined);
-      const qdSandbox = (typeof flatSandbox === 'string' && ['strict', 'permissive', 'disabled'].includes(flatSandbox))
-        ? (flatSandbox as 'strict' | 'permissive' | 'disabled')
-        : ((typeof nestedQd?.sandbox === 'string' && ['strict', 'permissive', 'disabled'].includes(nestedQd.sandbox as string))
-          ? (nestedQd.sandbox as 'strict' | 'permissive' | 'disabled')
-          : undefined);
-      const qdTimeout = typeof flatTimeout === 'number'
-        ? flatTimeout
-        : (typeof nestedQd?.timeoutMs === 'number' ? nestedQd.timeoutMs : undefined);
-
-      const queenDispatcher = (qdEnabled !== undefined || qdPoll !== undefined || qdMaxConc !== undefined || qdSandbox !== undefined || qdTimeout !== undefined)
-        ? {
-            ...(qdEnabled !== undefined ? { enabled: qdEnabled } : {}),
-            ...(qdPoll !== undefined && qdPoll > 0 ? { pollIntervalMs: qdPoll } : {}),
-            ...(qdMaxConc !== undefined && qdMaxConc > 0 ? { maxConcurrent: qdMaxConc } : {}),
-            ...(qdSandbox !== undefined ? { sandbox: qdSandbox } : {}),
-            ...(qdTimeout !== undefined && qdTimeout > 0 ? { timeoutMs: qdTimeout } : {}),
-          }
-        : undefined;
-
       return {
         autoStart: typeof raw['daemon.autoStart'] === 'boolean' ? raw['daemon.autoStart'] : undefined,
         maxConcurrent: (typeof rawMaxConcurrent === 'number' && rawMaxConcurrent > 0) ? rawMaxConcurrent : undefined,
         workerTimeoutMs: (typeof rawTimeout === 'number' && rawTimeout > 0) ? rawTimeout : undefined,
         maxCpuLoad: (typeof rawCpuLoad === 'number' && rawCpuLoad > 0 && rawCpuLoad < 1000) ? rawCpuLoad : undefined,
         minFreeMemoryPercent: (typeof rawMinMem === 'number' && rawMinMem >= 0 && rawMinMem <= 100) ? rawMinMem : undefined,
-        ...(queenDispatcher ? { queenDispatcher } : {}),
       };
     } catch {
       return {};
@@ -473,11 +372,7 @@ export class WorkerDaemon extends EventEmitter {
 
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
-    // Detached Windows daemons can receive SIGHUP during parent/session changes.
-    // Ignore it there so background workers stay alive.
-    if (process.platform !== 'win32') {
-      process.on('SIGHUP', shutdown);
-    }
+    process.on('SIGHUP', shutdown);
   }
 
   /**
@@ -633,21 +528,7 @@ export class WorkerDaemon extends EventEmitter {
     const freeMem = os.freemem();
     const freePercent = (freeMem / totalMem) * 100;
 
-    // WSL2 reports inflated load averages (200-400 on 4-CPU systems) because Windows-side
-    // process counting is mapped into /proc/loadavg. Skip the CPU gate when running on WSL2
-    // to avoid permanently deferring every worker; honour the gate on native Linux / macOS.
-    const isWsl2 = (() => {
-      if (process.env.WSL_DISTRO_NAME) return true;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const fs = require('fs');
-        const release = fs.readFileSync('/proc/sys/kernel/osrelease', 'utf-8');
-        return /microsoft/i.test(release);
-      } catch {
-        return false;
-      }
-    })();
-    if (!isWsl2 && cpuLoad > this.config.resourceThresholds.maxCpuLoad) {
+    if (cpuLoad > this.config.resourceThresholds.maxCpuLoad) {
       return { allowed: false, reason: `CPU load too high: ${cpuLoad.toFixed(2)}` };
     }
     if (freePercent < this.config.resourceThresholds.minFreeMemoryPercent) {
@@ -783,12 +664,8 @@ export class WorkerDaemon extends EventEmitter {
     try {
       const pid = parseInt(readFileSync(this.pidFile, 'utf-8').trim(), 10);
       if (isNaN(pid)) return null;
-<<<<<<< HEAD
-      // If PID file points to this process, it is not "another" daemon.
-=======
       // #1853: a PID file containing our own PID is not "another daemon".
       // Treat as absent so the start() path proceeds normally.
->>>>>>> pr-1936-head
       if (pid === process.pid) return null;
       // Check if process is alive (signal 0 = existence check)
       process.kill(pid, 0);
@@ -870,38 +747,6 @@ export class WorkerDaemon extends EventEmitter {
       this.queuePollTimer.unref();
     }
 
-<<<<<<< HEAD
-    // ADR-072 / #1916: start the queen-dispatcher when opted in. The
-    // dispatcher polls the canonical swarm task store and routes
-    // assigned tasks through the headlessExecutor's executeArbitrary
-    // path. Opt-in only — existing deployments are unchanged.
-    if (this.config.queenDispatcher?.enabled && this.headlessExecutor) {
-      try {
-        this.queenDispatcher = new QueenDispatcher({
-          projectRoot: this.projectRoot,
-          executor: this.headlessExecutor,
-          pollIntervalMs: this.config.queenDispatcher.pollIntervalMs,
-          maxConcurrent: this.config.queenDispatcher.maxConcurrent,
-          sandbox: this.config.queenDispatcher.sandbox,
-          timeoutMs: this.config.queenDispatcher.timeoutMs,
-        });
-        // Forward the dispatcher's events through the daemon's event
-        // bus so operators / dashboards have one stream to watch.
-        this.queenDispatcher.on('dispatched', (d) => this.emit('queen:dispatched', d));
-        this.queenDispatcher.on('completed', (d) => this.emit('queen:completed', d));
-        this.queenDispatcher.on('failed', (d) => this.emit('queen:failed', d));
-        this.queenDispatcher.on('error', (err) => this.log('warn', `QueenDispatcher error: ${err}`));
-        this.queenDispatcher.start();
-        this.log('info', `QueenDispatcher started (poll: ${this.config.queenDispatcher.pollIntervalMs ?? 5000}ms, maxConcurrent: ${this.config.queenDispatcher.maxConcurrent ?? 2})`);
-      } catch (err) {
-        this.log('warn', `QueenDispatcher failed to start: ${(err as Error).message}`);
-      }
-    } else if (this.config.queenDispatcher?.enabled && !this.headlessExecutor) {
-      this.log('warn', 'QueenDispatcher requested but headlessExecutor unavailable (claude CLI not installed?) — skipped.');
-    }
-
-=======
->>>>>>> pr-1936-head
     // Save state
     this.saveState();
 
@@ -986,17 +831,6 @@ export class WorkerDaemon extends EventEmitter {
       this.queuePollTimer = undefined;
     }
 
-<<<<<<< HEAD
-    // Stop the queen-dispatcher (does NOT cancel in-flight executions;
-    // those finish on their own timeline and write their final result
-    // through the dispatcher's completion callback).
-    if (this.queenDispatcher) {
-      this.queenDispatcher.stop();
-      this.queenDispatcher = null;
-    }
-
-=======
->>>>>>> pr-1936-head
     this.running = false;
     this.removePidFile();
     this.saveState();
@@ -1216,19 +1050,6 @@ export class WorkerDaemon extends EventEmitter {
       try {
         this.log('info', `Running ${workerConfig.type} in headless mode (Claude Code AI)`);
         const result = await this.headlessExecutor.execute(workerConfig.type as HeadlessWorkerType);
-<<<<<<< HEAD
-        // HeadlessWorkerExecutor.execute() returns createErrorResult({success:false}) when its
-        // own isAvailable() check fails, instead of throwing. Without this guard, that error
-        // result is persisted as a successful headless run and downstream consumers cannot
-        // tell a real AI run apart from a silent fallback.
-        if (!result || (result as { success?: boolean }).success !== true) {
-          const errMsg = (result as { error?: string } | undefined)?.error;
-          throw new Error(errMsg ? String(errMsg) : 'headless executor returned success=false');
-        }
-        const headlessOutput = {
-          mode: 'headless' as const,
-          timestamp: new Date().toISOString(),
-=======
         // #1793: persist the headless result to the same metrics files the
         // local workers write to. Without this, AI-mode runs produced rich
         // parsedOutput that lived only in `.claude-flow/logs/headless/*` and
@@ -1241,16 +1062,8 @@ export class WorkerDaemon extends EventEmitter {
         }
         return {
           mode: 'headless',
->>>>>>> pr-1936-head
           ...result,
         };
-        // Persist headless result to the same metrics file the local-fallback
-        // worker would have written (#1793). Without this, AI-driven runs leave
-        // no observable artifact beyond the raw prompt/result logs in
-        // .claude-flow/logs/headless/, so consumers (statusline, memory store,
-        // self-learning hooks) never see the structured findings.
-        this.persistHeadlessResult(workerConfig.type, headlessOutput);
-        return headlessOutput;
       } catch (error) {
         this.log('warn', `Headless execution failed for ${workerConfig.type}, falling back to local mode`);
         this.emit('headless:fallback', {
@@ -1293,18 +1106,6 @@ export class WorkerDaemon extends EventEmitter {
   }
 
   /**
-<<<<<<< HEAD
-   * Persist a headless worker's output to the same .claude-flow/metrics/<file>.json
-   * that the corresponding local-fallback worker writes. Mirrors the per-worker
-   * filename convention used by runMapWorker / runAuditWorkerLocal / etc., so
-   * downstream consumers (statusline, memory store, self-learning hooks) get the
-   * structured AI findings instead of stale local-mode placeholders. Failures
-   * are logged but never propagated — the worker run itself stays a success.
-   * See #1793.
-   */
-  private persistHeadlessResult(type: string, output: unknown): void {
-    const filenameByType: Record<string, string> = {
-=======
    * #1793: persist a headless worker result to the same metrics file the
    * local fallback writes to. Without this, AI-mode workers produced rich
    * structured output (audit findings, perf signals, test-gap analysis)
@@ -1325,37 +1126,10 @@ export class WorkerDaemon extends EventEmitter {
     // performance.json, test-gaps.json) so a downstream reader doesn't
     // care which mode produced the data.
     const filenameMap: Partial<Record<HeadlessWorkerType, string>> = {
->>>>>>> pr-1936-head
       audit: 'security-audit.json',
       optimize: 'performance.json',
       testgaps: 'test-gaps.json',
       document: 'documentation.json',
-<<<<<<< HEAD
-      ultralearn: 'ultralearn.json',
-      refactor: 'refactor.json',
-      deepdive: 'deepdive.json',
-      predict: 'predictions.json',
-    };
-    const filename = filenameByType[type];
-    if (!filename) {
-      // Unknown headless worker — skip rather than guess a path.
-      return;
-    }
-
-    try {
-      const metricsDir = join(this.projectRoot, '.claude-flow', 'metrics');
-      if (!existsSync(metricsDir)) {
-        mkdirSync(metricsDir, { recursive: true });
-      }
-      const metricsFile = join(metricsDir, filename);
-      writeFileSync(metricsFile, JSON.stringify(output, null, 2));
-    } catch (error) {
-      this.log(
-        'warn',
-        `Failed to persist headless ${type} metric file: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-=======
       refactor: 'refactor.json',
       deepdive: 'deepdive.json',
       ultralearn: 'ultralearn.json',
@@ -1382,7 +1156,6 @@ export class WorkerDaemon extends EventEmitter {
     };
 
     writeFileSync(metricsFile, JSON.stringify(persisted, null, 2));
->>>>>>> pr-1936-head
   }
 
   // Worker implementations

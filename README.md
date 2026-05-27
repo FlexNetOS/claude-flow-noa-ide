@@ -1,228 +1,23 @@
 <div align="center">
 
-# SwarmOps
-
-Multi-agent orchestration for Claude Code. Fork of [ruvnet/ruflo](https://github.com/ruvnet/ruflo) with persistent semantic memory (mxbai-embed-large, 1024-dim), prompt-cache shaping, replayable agent traces, and semantic routing into user-installed `~/.claude/agents/`.
-
-[![Stars](https://img.shields.io/github/stars/h4ckm1n-dev/SwarmOps?style=flat-square&logo=github&color=gold)](https://github.com/h4ckm1n-dev/SwarmOps)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-2675%2B-brightgreen?style=flat-square)](https://github.com/h4ckm1n-dev/SwarmOps/tree/main/v3/%40claude-flow/cli/__tests__)
-[![Roadmap](https://img.shields.io/badge/roadmap-research--roadmap%2F-blueviolet?style=flat-square)](./research-roadmap/)
-[![Forked from ruvnet/ruflo](https://img.shields.io/badge/forked_from-ruvnet/ruflo-blue?style=flat-square&logo=git)](https://github.com/ruvnet/ruflo)
-
-</div>
-
-## Quick install
-
-```bash
-git clone https://github.com/h4ckm1n-dev/SwarmOps.git
-cd SwarmOps && npm install && npm link
-ruflo --version  # confirms global symlink
-```
-
-> SwarmOps installs as the `ruflo` binary so it composes with the rest of the Claude Code ecosystem (MCP tools, agents, skills, hooks). The differentiation lives below the surface: real semantic memory, prompt-cache shaping, typed controller dispatch, and a roadmap that ships features upstream isn't building. See [research-roadmap/](./research-roadmap/) for what's coming next.
-
-## Measurable improvements (vs upstream Ruflo)
-
-| Area | Upstream Ruflo | SwarmOps | Δ |
-|---|---|---|---|
-| **`memory_search` (warm)** | 74.2 ms | 1.6 ms | **46× faster** |
-| **`memory_search` (cold first call)** | 355.8 ms | 2.7 ms | **130× faster** |
-| **`memory_store`** | 5.8 ms | 1.3 ms | **4.5× faster** |
-| **Embedding cache hit** | 9.4 ms | 0.01 ms | **1252× faster** |
-| **`ruflo --version` cold start** | 218 ms | 56 ms | **−74%** |
-| **Statusline render** | 361 ms | 295 ms | −18% |
-| **Memory search recall** (paraphrased queries) | 60% (MiniLM 384-dim) | 80% (mxbai-embed-large 1024-dim) | **+33%** |
-| **Hook-route accuracy on user skills** | bag-of-words (false positives like `kali-metasploit` for JWT-auth tasks) | semantic embeddings (`polymarket-analyzer` for "trading bot") | qualitative |
-| **`npm audit` vulnerabilities** | 14 (4 high) | 4 moderate (0 high) | undici/yaml CVEs patched |
-| **Prompt-cache input-token cost** (warm agent loops) | full price every dispatch | cached via 3 `cache_control` breakpoints, 1h TTL | **−50–90%** |
-| **`memory_search_unified` per-namespace work** | N× (1 HNSW pass per namespace) | 1× (single pass, namespace-filter at scoring) | **N → 1** |
-| **`memory-bridge` controller dispatch** | 22 untyped `typeof === 'function'` probes | typed `ControllerCapabilities` interface | architectural |
-| **Silent catch blocks** | 1207 across cli/src, no logging | `swallowError(label, err)` adoption in 8 hot paths (debug-gated) | observability |
-
-## Replayable agent traces
-
-Every agent dispatch writes `TrajectoryData` to `~/.claude/.claude-flow/memory/store.json`. The trace viewer reads it back as a Gantt swimlane: one row per step, time on the X axis, color-coded by action class (tool / MCP / SendMessage / error). Bar click → side panel with full step JSON. HTML is self-contained (inline CSS + vanilla JS, no CDN), ~15 KB for a 5-step trajectory.
-
-```bash
-swarmops trace list                   # browse recent sessions
-swarmops trace replay <id> [--open]   # render HTML, optionally open in browser
-swarmops trace replay latest          # newest by startedAt
-swarmops trace prune --older-than 30d # cleanup
-```
-
-Design notes in [`research-roadmap/GAP-1-DESIGN.md`](./research-roadmap/GAP-1-DESIGN.md). XSS-safe (`safeJson` escapes `</script>`, U+2028, U+2029). Light/dark mode via `prefers-color-scheme`.
-
-## Semantic routing into user-installed agents
-
-`swarm_init({ task, strategy: "specialized" })` reads `~/.claude/{agents,skills,commands,plugins}/` and dispatches to user agents based on task semantics. Upstream's MCP layer is blind to the user registry; SwarmOps indexes it at MCP boot via `agent_list`, `guidance_capabilities`, and `hooks_route`.
-
-Scoring: `0.7·cosine + 0.3·keyword` over `mxbai-embed-large` (1024-dim) embeddings via local Ollama. Examples of correct routing: `"trading bot"` → `polymarket-analyzer`; `"JWT auth"` → `auth-engineer`; `"deploy to k8s"` → `kubernetes-coordinator`. Foreign MCP servers (plugin + claude.ai) are indexed in `guidance_capabilities` and routable too. Falls back to MiniLM if Ollama is unreachable.
-
-## About SwarmOps
-
-SwarmOps is a **production-hardened multi-agent orchestration product** for Claude Code. Forked from [`ruvnet/ruflo`](https://github.com/ruvnet/ruflo) — full credit to [`rUv`](https://ruv.io) and contributors for the original architecture, agent ecosystem, and MCP tooling — but SwarmOps is its own project now, with its own roadmap and release cadence.
-
-We started as a 31-bug audit of ruflo's global-install behavior. We're now a separate product with measurable performance differentiation, an honest test suite (2,400+ tests pass cleanly with zero net regression), and an active roadmap of features upstream isn't building: replayable agent traces (Gantt swimlane HTML viewer), per-agent cost telemetry, and a hardened local-model fallback path.
-
-We track upstream's `main` for shared bug fixes and security patches (last sync: 2026-05-08, clean 4-commit merge). Beyond that, the products diverge.
-
-## Recent changelog (2026-05-08 → 2026-05-09)
-
-Two days shipped the architectural deleveraging the v3.6 audit asked for, four Tier 2 product features (Gap 1 traces, Gap 4 cost telemetry, daemon hardening, routing intelligence), and the meta-improvement (specialist agents now actually get picked over generic `coder`). Each commit landed on `main` after passing the full 2,600+ test suite with zero net regression.
-
-**Tier 0/1 architectural batch** (commit `cd44c55f8`):
-- **3 `cache_control` breakpoints** in agent dispatch (tools / system / CLAUDE.md+project context), all with 1h TTL via the `extended-cache-ttl-2025-04-11` beta header. Healthy agent loops now run **>80% cache-read ratio** after first call. Estimated **50-90% input-token cost cut** on warm dispatches. New `swarmops cache-stats` command tracks rolling-100 hit ratio.
-- **`resolveInstallContext()`** hoisted to `@claude-flow/shared` — single source of truth for `{ packageRoot, claudeRoot, dataDir, isGlobalInstall, projectRoot }`. Eliminates the install-context-derivation pattern that was patched in three separate places (Bugs 1/7/8/9/12 root cause).
-- **`ControllerCapabilities`** typed interface — replaces 19 of 22 untyped `typeof x.foo === 'function'` probes in `memory-bridge.ts`. Real types instead of duck typing.
-- **`searchEntriesMulti(namespaces, opts)`** in memory-bridge — `memory_search_unified` now does one HNSW pass with namespace-filter at scoring time (the most-called search op now does **1× the work instead of N×**).
-- **`swallowError(label, err, hint?)`** helper — adopted in the 8 hottest catch blocks. Silent-failure log line gated by `RUFLO_LOG_LEVEL=debug`. Stops the silent-degradation class that caused 3 of the 8 PR-1828 bugs.
-- **3 hot-path regexes hoisted** to module scope (`production/error-handler.ts`, `ruvector/graph-analyzer.ts`, `init/helpers-generator.ts`).
-- **SEC-1 critical fix**: `skipDangerousModePermissionPrompt` flipped `false` — closed a one-shot prompt-injection-to-RCE chain.
-- **28 zero-byte `tmp.json` scaffolding files** removed.
-
-**Connected-component bug fixes** (commits `09e6023ba`, `a4b8aca86`, `c7b3eec21`):
-- **Bug 44**: `commands/security.ts` now persists scan results to `audit-status.json` so the statusline reflects actual scan state (was: stuck on `PENDING` forever even after a clean scan).
-- **Bug 45**: `Tests` field renders `─` (dim em-dash, "not applicable") when CWD has no project markers (`package.json`, `.git`, `tests/`, …) instead of misleading `●0`.
-- **Bug 46**: `resolveInstallContext()` handles the degenerate case where CWD is itself a `.claude` directory — was returning the very double-`.claude` path the helper was designed to eliminate.
-
-**Tier 2 features**:
-- **Gap 1 — Replayable agent traces** (commit `064b2e365`): the `swarmops trace list / replay / prune` CLI + a self-contained Gantt-swimlane HTML viewer. See the dedicated section above.
-- **Gap 4 — Per-agent cost telemetry** (commits `0327c0083`, `992a620f8`): `swarmops cost stats / session / models / reset` + cost data flows into the trace viewer's HTML header AND per-bar overlays (each Gantt bar shows its individual `$0.0042`). v1.5 (`992a620f8`) closed the per-step granularity loop via an in-process `Map<sessionId, currentStepIndex>` consulted by `callAnthropicMessages` as an auto-fallback — no caller threading needed.
-- **Bug 47 — Daemon path-mismatch detection** (commit prior to `0051aa437`): `detectDaemonPathMismatch()` + `daemon restart --force-path` + `swarmops doctor` warning catch the stale-daemon case (e.g. from `~/.npm/_npx/...` cache).
-- **Bug 48 — Dual daemon-state.json detection** (commit `e0702f9d4`): both `<cwd>/.claude-flow/` and `<homedir>/.claude/.claude-flow/` checked; `daemon restart --force-path` cleans up daemons in either location.
-- **Lazy-load CLI** (commits `0051aa437`, `ab76bf304`): bare-TTY help renders in 60ms (was 180ms); `trace --help` from 200ms → 110ms via `mcp-client.ts` lazy tool registration. 11 + 8 bootstrap tests assert heavy modules (hnswlib, onnxruntime, transformers, tiktoken, better-sqlite3) don't load on early-exit paths.
-- **Routing intelligence** (commit `efddbdc3d`): the `[INFO] Routing task:` notification now detects language tokens (typescript, python, swift, rust), framework tokens (react, fastapi, nextjs), and domain tokens (security, performance, refactor, architecture) — recommends specialists over generic `coder`. New `hooks_route_specialist(task)` MCP tool exposes the same ranker as a queryable API. Verified live in this session.
-
-Full execution dossier in [`research-roadmap/execution/`](./research-roadmap/execution/).
-
-## Capabilities
-
-**1. Works correctly when installed globally at `~/.claude/`** (upstream silently breaks)
-- Hook commands resolve to `$HOME/.claude/helpers/...` instead of double-`.claude` (`/.claude/.claude/...` — `MODULE_NOT_FOUND` chain)
-- `ruflo init --force` writes to the actual install dir, not a phantom `~/.claude/.claude/`
-- Generated helpers (`memory.js`, `session.js`, `intelligence.cjs`) use `resolveFlowPath()` with global fallback — data converges in one place instead of fragmenting per-CWD
-- Bundled statusline templates ship the global-install fixes
-
-**2. Discovers and uses your installed Claude Code content**
-- `agent_list`, `guidance_capabilities`, `hooks_route`, and `swarm_init` all see your `~/.claude/{agents,skills,commands,plugins}/` registry — upstream's MCP layer is blind to it
-- `swarm_init({task, strategy: "specialized"})` auto-picks user-installed agents based on task semantics (Bug 23)
-- Foreign MCP servers (plugin + claude.ai integrations) indexed in `guidance_capabilities` (Bug 39)
-
-**3. Real semantic search via local Ollama**
-- Memory bridge upgraded from bundled `all-MiniLM-L6-v2` (384-dim ONNX) to `mxbai-embed-large` (1024-dim, MTEB 64.68) when Ollama is reachable
-- Skill matcher uses hybrid scoring (`0.7·cosine + 0.3·keyword`) — surfaces conceptual matches like "trading bot" → `polymarket-analyzer` that pure keyword misses
-- Migration tool re-embeds existing entries: `ruflo memory migrate-embeddings`
-- Graceful fallback to MiniLM if Ollama unreachable — no hard dependency
-
-**4. Connected learning loop (was disconnected upstream)**
-- `pending-insights.jsonl` events now drain into `hooks_metrics` counters
-- HNSW counter reads the actual backend size, not a stale JSON cache
-- "Not-loaded" subsystems honestly report `_status: "idle-since-load"` instead of misleading zero-counters
-
-**5. Production performance**
-- In-process DB connection pool eliminates per-call sqlite open (Bug 31, the headline 46× win)
-- mtime-keyed embedding cache skips JSON.parse on hot path (Bug 32, 1252× warm-path)
-- Lazy CLI command loading — `ruflo --version` doesn't load the entire SDK tree
-- Statusline batches git invocations + drops jq forks for bash-native pattern matching
-
-**6. Real security hardening**
-- AIDefence MCP tools now actually wired into `UserPromptSubmit` + `PreToolUse:WebFetch` (upstream ships them but never invokes them)
-- Permission allowlist tightened from prefix wildcards (`Bash(npx claude-flow*)` — exploitable) to exact subcommand grants
-- Deny rules added for `--eval`, pipe-to-shell, wildcard `rm -rf`, `.env`, SSH keys, credentials
-- Path traversal closed in 4 hook sites via session_id regex validation
-- File permissions hardened to `0600` on data files; `ruflo doctor --fix-perms` to remediate
-- 14 npm dependency CVEs patched (undici CRLF + yaml stack overflow)
-
-**7. Better tooling**
-- `ruflo doctor --hooks` detects competing wildcard matchers (e.g., OpenIsland coexistence)
-- `ruflo doctor --fix-perms` chmod's data files to 0600
-- Bare `ruflo` prints help instead of silently launching MCP server
-- `RUFLO_LOG_LEVEL` env var routes init noise to `~/.claude/logs/ruflo.log` instead of polluting stdout (pipes work now)
-- `agent list` table actually readable (no more "Invalid Date" / 13-char truncated names)
-
-**8. Honest test coverage**
-- 2,675+ tests pass cleanly across 100+ test files
-- Smoke tests for the 6,677-LoC untested zone (`commands/hooks.ts` 5%→30-40%, `services/headless-worker-executor.ts` 0%→45-55%)
-- Per-bug regression suite — fixes can't silently regress
-- 9 known-failing tests are all pre-existing in unrelated subsystems (router-bandit's `process.chdir-in-workers` limitation, integration-docker, commands-deep, pq-validation) — not introduced by SwarmOps
-
-**9. Prompt-cache shaping for agent dispatch**
-- Three explicit `cache_control` breakpoints (tools → system → CLAUDE.md/project context), all `ttl: '1h'` via the `extended-cache-ttl-2025-04-11` beta header
-- Per-process memoized CLAUDE.md reader keeps breakpoint 3 byte-stable across dispatches (so cache prefix doesn't bust)
-- Cache-hit ratio logging: `cache_read_input_tokens` / `cache_creation_input_tokens` parsed from every Anthropic response
-- Rolling-100 stats persisted to `.claude-flow/cache-stats.json`, queryable via `swarmops cache-stats [--json] [-n N]`
-- Healthy agent loops run **>80% cache-read ratio** after first call → **50-90% input-token cost cut** on warm dispatches
-
-**10. Architectural typing instead of duck typing**
-- `resolveInstallContext()` in `@claude-flow/shared` — typed `InstallContext` instead of inline `os.homedir()` + `path.join` patterns scattered across 12+ call sites
-- `ControllerCapabilities` interface — `caps.reasoningBank?.recordTrajectory(t)` instead of `if (typeof bridge.reasoningBank?.recordTrajectory === 'function') { ... }` × 22
-- `swallowError(label, err, hint?)` — single recipient for intentional silent catches, debug-level gated. Replaces `} catch { /* defensive */ }` in the 8 hottest sites (memory-bridge, db-pool, embedder-resolver, rabitq-index)
-
-See the Replayable agent traces and Semantic routing sections above for details on the trace viewer (Gap 1) and user-agent routing capabilities.
-
-**11. Per-agent cost telemetry**
-- `swarmops cost stats / session / models / reset` CLI surface
-- Per-step cost attribution flows automatically when running inside a trajectory (in-process `Map<sessionId, currentStepIndex>` tracked by `hooks_intelligence_trajectory-step` and consulted by `callAnthropicMessages`)
-- Each Gantt bar in the trace viewer shows its individual `$0.0042` overlay; HTML header shows aggregate session cost
-- Pricing table covers Claude 4.x (Opus 4.7, Sonnet 4.6, Haiku 4.5) + 3.x legacy aliases; override via `~/.claude/.claude-flow/pricing-override.json`
-- Persistence: `cost-stats.json` rolling-100 with atomic writes
-- Failure-tolerant: persistence errors swallow without breaking dispatch
-
-**12. Smart agent routing**
-- `[INFO] Routing task:` notification detects language tokens (typescript, python, rust, swift, go), framework tokens (react, nextjs, fastapi, django, express), and domain tokens (security, performance, refactor, architecture, database, api, mobile, deploy, debug, test) — recommends `typescript-expert` / `python-expert` / `security-architect` / etc. over the generic `coder` fallback
-- New `hooks_route_specialist({ task, limit, includeGenerics })` MCP tool exposes the ranker as an active query path
-- Specialist-boost: when a specialist matches, generic agents (coder/tester/reviewer/general-purpose) drop out unless no specialist scored above threshold
-- 28 router-pattern tests + 23 hooks-route-specialist tests cover the matcher
-
-### What SwarmOps does NOT add
-
-- New agent types — uses upstream's
-- New MCP categories — operates within upstream's tool surface
-- Anthropic-specific lock-in — works against any Claude Code install
-
-## Roadmap
-
-Full strategic plan in [`research-roadmap/00-SYNTHESIS.md`](./research-roadmap/00-SYNTHESIS.md) — synthesized from 5 independent research agents (upstream pulse, competitive landscape, internal debt, performance frontier, adoption playbook).
-
-**Shipped (2026-05-08 → 2026-05-09)**:
-- ✅ Tier 1 architectural batch — STRAT-1 (`resolveInstallContext`), STRAT-2 (`ControllerCapabilities`), CLASS-1 (`swallowError`), PERF-2 (memory-search N→1 collapse), PROMPT-CACHE shaping
-- ✅ Gap 1 — Replayable agent traces ([design spec](./research-roadmap/GAP-1-DESIGN.md))
-- ✅ Gap 4 v1 + v1.5 — Per-agent cost telemetry with per-step granularity ([design spec](./research-roadmap/GAP-4-DESIGN.md))
-- ✅ Daemon hardening — Bug 47 (stale-path detection), Bug 48 (dual state-file locations), lazy-load (cold-start −120ms), Bug 49 (mcp-client lazy tool registration, `trace --help` 200ms→110ms)
-- ✅ Routing intelligence — language/framework/domain pattern matching + `hooks_route_specialist` MCP tool
-- ✅ Connected-component bug fixes — Bug 44 (security audit persistence), Bug 45 (Tests field shows `─` outside projects), Bug 46 (`resolveInstallContext` cwd-is-`.claude` degenerate case)
-
-**Queued**:
-- **Local-model fallback** — harden the Ollama path memory bridge already uses; "free tier" mode where memory + routing + simple agent work runs on local mxbai + Llama-3, only escalating to Claude for hard tasks. Driven by Anthropic's April 4 2026 policy change blocking Pro/Max subs from third-party agent frameworks. Estimated 1-2 weeks.
-- **Daemon IPC mode** — the 30× warm-path piece. Long-lived daemon hosts a stdio server; CLI dispatches go to running daemon instead of subprocess fork (5-15ms per dispatch instead of 300-500ms). Estimated 1-2 weeks. Defer until measurement justifies.
-- **Deeper `mcp-client.ts` lazy-load** — next 100ms-class target after Bug 49. Estimated 3-5 hours.
-
-See [`ANALYSIS.md`](./ANALYSIS.md) for the original 6-analyst audit and [`research-roadmap/03-internal-debt.md`](./research-roadmap/03-internal-debt.md) for the post-Tier-1 audit.
-
----
-
-# Upstream context: Ruflo README (preserved for credit + reference)
-
-> The text below is the original [`ruvnet/ruflo`](https://github.com/ruvnet/ruflo) README, kept inline for full credit to the upstream project and as reference for the agent ecosystem, MCP tool surface, and CLI vocabulary that SwarmOps inherits. SwarmOps and Ruflo are now separate products with diverging roadmaps; commands like `init`, `mcp add`, `swarm`, `agent`, `memory_search`, etc. exist in both, but SwarmOps's implementations are independent (see the Tier 0/1/2 work above for the diff).
-
-<div align="center">
-
 [![Ruflo Banner](ruflo/assets/ruflo-small.jpeg)](https://flo.ruv.io/)
 
-<<<<<<< HEAD
-[![Star on GitHub (upstream)](https://img.shields.io/github/stars/ruvnet/claude-flow?style=for-the-badge&logo=github&color=gold)](https://github.com/ruvnet/claude-flow)
-=======
 [![Try the UI Beta — flo.ruv.io](https://img.shields.io/badge/_Try_the_UI_Beta-flo.ruv.io-6366f1?style=for-the-badge&logoColor=white&logo=svelte)](https://flo.ruv.io/)
 [![Goal Planner — goal.ruv.io](https://img.shields.io/badge/_Goal_Planner-goal.ruv.io-8b5cf6?style=for-the-badge&logoColor=white&logo=react)](https://goal.ruv.io/)
 [![Live Agents — goal.ruv.io/agents](https://img.shields.io/badge/_Live_Agents-goal.ruv.io%2Fagents-10b981?style=for-the-badge&logoColor=white&logo=react)](https://goal.ruv.io/agents)
+
+[![npm version (ruflo)](https://img.shields.io/npm/v/ruflo?label=ruflo&style=for-the-badge&logo=npm&color=cb3837)](https://www.npmjs.com/package/ruflo)
+[![npm downloads (ruflo)](https://img.shields.io/npm/dm/ruflo?label=ruflo%20downloads&style=for-the-badge&logo=npm&color=cb3837)](https://www.npmjs.com/package/ruflo)
+[![npm version (claude-flow)](https://img.shields.io/npm/v/claude-flow?label=claude-flow&style=for-the-badge&logo=npm&color=blue)](https://www.npmjs.com/package/claude-flow)
+[![npm downloads (claude-flow)](https://img.shields.io/npm/dm/claude-flow?label=claude-flow%20downloads&style=for-the-badge&logo=npm&color=blue)](https://www.npmjs.com/package/claude-flow)
 
 [![Star on GitHub](https://img.shields.io/github/stars/ruvnet/claude-flow?style=for-the-badge&logo=github&color=gold)](https://github.com/ruvnet/claude-flow)
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-D97757?style=for-the-badge&logoColor=white&logo=anthropic)](https://github.com/ruvnet/claude-flow)
 [![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-412991?style=for-the-badge&logoColor=white&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0yMi4yODIgOS44MjFhNS45ODUgNS45ODUgMCAwIDAtLjUxNi00LjkxIDYuMDQ2IDYuMDQ2IDAgMCAwLTYuNTEtMi45QTYuMDY1IDYuMDY1IDAgMCAwIDQuOTgxIDQuMThhNS45ODUgNS45ODUgMCAwIDAtMy45OTggMi45IDYuMDQ2IDYuMDQ2IDAgMCAwIC43NDMgNy4wOTcgNS45OCA1Ljk4IDAgMCAwIC41MSA0LjkxMSA2LjA1MSA2LjA1MSAwIDAgMCA2LjUxNSAyLjlBNS45ODUgNS45ODUgMCAwIDAgMTMuMjYgMjRhNi4wNTYgNi4wNTYgMCAwIDAgNS43NzItNC4yMDYgNS45OSA1Ljk5IDAgMCAwIDMuOTk4LTIuOSA2LjA1NiA2LjA1NiAwIDAgMC0uNzQ3LTcuMDczek0xMy4yNiAyMi40M2E0LjQ3NiA0LjQ3NiAwIDAgMS0yLjg3Ni0xLjA0bC4xNDItLjA4IDQuNzc4LTIuNzU4YS43OTUuNzk1IDAgMCAwIC4zOTMtLjY4MXYtNi43MzdsMi4wMiAxLjE2OGEuMDcxLjA3MSAwIDAgMSAuMDM4LjA1MnY1LjU4M2E0LjUwNCA0LjUwNCAwIDAgMS00LjQ5NSA0LjQ5NHpNMy42IDE4LjMwNGE0LjQ3IDQuNDcgMCAwIDEtLjUzNS0zLjAxNGwuMTQyLjA4NSA0Ljc4MyAyLjc1OWEuNzcxLjc3MSAwIDAgMCAuNzgxIDBsNS44NDMtMy4zNjl2Mi4zMzJhLjA4LjA4IDAgMCAxLS4wMzMuMDYyTDkuNzQgMTkuOTVhNC41IDQuNSAwIDAgMS02LjE0LTEuNjQ2ek0yLjM0IDcuODk2YTQuNDg1IDQuNDg1IDAgMCAxIDIuMzY2LTEuOTczVjExLjZhLjc2Ni43NjYgMCAwIDAgLjM4OC42NzdsNS44MTUgMy4zNTQtMi4wMiAxLjE2OGEuMDc2LjA3NiAwIDAgMS0uMDcyIDBsLTQuODMtMi43ODZBNC41MDQgNC41MDQgMCAwIDEgMi4zNCA3Ljg3MnptMTYuNTk3IDMuODU1LTUuODMzLTMuMzg3IDIuMDE2LTEuMTY1YS4wNzYuMDc2IDAgMCAxIC4wNzEgMGw0LjgzIDIuNzkxYTQuNDk0IDQuNDk0IDAgMCAxLS42NzYgOC4xMDR2LTUuNjc3YS43OS43OSAwIDAgMC0uNDA3LS42Njd6bTIuMDEtMy4wMjMtLjE0MS0uMDg1LTQuNzc0LTIuNzgyYS43NzYuNzc2IDAgMCAwLS43ODUgMEw5LjQwOSA5LjIzVjYuODk3YS4wNjYuMDY2IDAgMCAxIC4wMjgtLjA2Mmw0LjgzLTIuNzg3YTQuNDk5IDQuNDk5IDAgMCAxIDYuNjggNC42NnpNOC4zMDcgMTIuODYzbC0yLjAyLTEuMTY0YS4wOC4wOCAwIDAgMS0uMDM4LS4wNTdWNi4wNzRhNC40OTkgNC40OTkgMCAwIDEgNy4zNzYtMy40NTRsLS4xNDIuMDgtNC43NzggMi43NThhLjc5NS43OTUgMCAwIDAtLjM5My42ODJ6bTEuMDk3LTIuMzY2IDIuNjAyLTEuNSAyLjYwNyAxLjV2Mi45OTlsLTIuNTk3IDEuNS0yLjYwNy0xLjVaIi8%2BPC9zdmc%2B)](https://www.npmjs.com/package/@claude-flow/codex)
 [![🕸️ RuVector Graph Ai](https://img.shields.io/badge/RuVector_Agentic-DB-06b6d4?style=for-the-badge&logoColor=white&logo=graphql)](https://github.com/ruvnet/ruvector)
->>>>>>> pr-1936-head
+
+[![ruFlo Summit — Budapest, June 2–3, 2026](v3/docs/assets/ruFlo-Summit.jpg)](https://github.com/ruvnet/ruflo/issues/1967)
 
 # Ruflo
 
@@ -239,11 +34,7 @@ Orchestrate 100+ specialized AI agents across machines, teams, and trust boundar
 
 ### What Ruflo Does
 
-<<<<<<< HEAD
-One `npx ruflo init` gives Claude Code a nervous system: agents self-organize into swarms, learn from every task, remember across sessions, and — with federation — securely talk to agents on other machines without leaking data. You keep writing code. Ruflo handles the coordination.
-=======
 One `npx ruvflo init` gives Claude Code a nervous system: agents self-organize into swarms, learn from every task, remember across sessions, and — with federation — securely talk to agents on other machines without leaking data. You keep writing code. Ruflo handles the coordination.
->>>>>>> pr-1936-head
 
 ```
 Self-Learning / Self-Optimizing Agent Architecture
@@ -293,88 +84,94 @@ This adds slash commands and agent definitions only. The Ruflo MCP server is NOT
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-core** | Foundation — server, health checks, plugin discovery |
-| **ruflo-swarm** | Coordinate multiple agents as a team |
-| **ruflo-autopilot** | Let agents run autonomously in a loop |
-| **ruflo-loop-workers** | Schedule background tasks on a timer |
-| **ruflo-workflows** | Reusable multi-step task templates |
-| **ruflo-federation** | Agents on different machines collaborate securely |
+| [**ruflo-core**](plugins/ruflo-core/README.md) | Foundation — server, health checks, plugin discovery |
+| [**ruflo-swarm**](plugins/ruflo-swarm/README.md) | Coordinate multiple agents as a team |
+| [**ruflo-autopilot**](plugins/ruflo-autopilot/README.md) | Let agents run autonomously in a loop |
+| [**ruflo-loop-workers**](plugins/ruflo-loop-workers/README.md) | Schedule background tasks on a timer |
+| [**ruflo-workflows**](plugins/ruflo-workflows/README.md) | Reusable multi-step task templates |
+| [**ruflo-federation**](plugins/ruflo-federation/README.md) | Agents on different machines collaborate securely |
 
 #### Memory & Knowledge
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-agentdb** | Fast vector database for agent memory |
-| **ruflo-rag-memory** | Smart retrieval — hybrid search, graph hops, diversity ranking |
-| **ruflo-rvf** | Save and restore agent memory across sessions |
-| **ruflo-ruvector** | [`ruvector`](https://npmjs.com/package/ruvector) — GPU-accelerated search, Graph RAG, 103 tools |
-| **ruflo-knowledge-graph** | Build and traverse entity relationship maps |
+| [**ruflo-agentdb**](plugins/ruflo-agentdb/README.md) | Fast vector database for agent memory |
+| [**ruflo-rag-memory**](plugins/ruflo-rag-memory/README.md) | Smart retrieval — hybrid search, graph hops, diversity ranking |
+| [**ruflo-rvf**](plugins/ruflo-rvf/README.md) | Save and restore agent memory across sessions |
+| [**ruflo-ruvector**](plugins/ruflo-ruvector/README.md) | [`ruvector`](https://npmjs.com/package/ruvector) — GPU-accelerated search, Graph RAG, 103 tools |
+| [**ruflo-knowledge-graph**](plugins/ruflo-knowledge-graph/README.md) | Build and traverse entity relationship maps |
 
 #### Intelligence & Learning
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-intelligence** | Agents learn from past successes and get smarter |
-| **ruflo-daa** | Dynamic agent behavior and cognitive patterns |
-| **ruflo-ruvllm** | Run local LLMs (Ollama, etc.) with smart routing |
-| **ruflo-goals** | Break big goals into plans and track progress |
+| [**ruflo-intelligence**](plugins/ruflo-intelligence/README.md) | Agents learn from past successes and get smarter |
+| [**ruflo-daa**](plugins/ruflo-daa/README.md) | Dynamic agent behavior and cognitive patterns |
+| [**ruflo-ruvllm**](plugins/ruflo-ruvllm/README.md) | Run local LLMs (Ollama, etc.) with smart routing |
+| [**ruflo-goals**](plugins/ruflo-goals/README.md) | Break big goals into plans and track progress |
 
 #### Code Quality & Testing
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-testgen** | Find missing tests and generate them automatically |
-| **ruflo-browser** | Automate browser testing with Playwright |
-| **ruflo-jujutsu** | Analyze git diffs, score risk, suggest reviewers |
-| **ruflo-docs** | Generate and maintain documentation automatically |
+| [**ruflo-testgen**](plugins/ruflo-testgen/README.md) | Find missing tests and generate them automatically |
+| [**ruflo-browser**](plugins/ruflo-browser/README.md) | Automate browser testing with Playwright |
+| [**ruflo-jujutsu**](plugins/ruflo-jujutsu/README.md) | Analyze git diffs, score risk, suggest reviewers |
+| [**ruflo-docs**](plugins/ruflo-docs/README.md) | Generate and maintain documentation automatically |
 
 #### Security & Compliance
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-security-audit** | Scan for vulnerabilities and CVEs |
-| **ruflo-aidefence** | Block prompt injection, detect PII, safety scanning |
+| [**ruflo-security-audit**](plugins/ruflo-security-audit/README.md) | Scan for vulnerabilities and CVEs |
+| [**ruflo-aidefence**](plugins/ruflo-aidefence/README.md) | Block prompt injection, detect PII, safety scanning |
 
 #### Architecture & Methodology
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-adr** | Track architecture decisions with a living record |
-| **ruflo-ddd** | Scaffold domain-driven design — contexts, aggregates, events |
-| **ruflo-sparc** | Guided 5-phase development methodology with quality gates |
+| [**ruflo-adr**](plugins/ruflo-adr/README.md) | Track architecture decisions with a living record |
+| [**ruflo-ddd**](plugins/ruflo-ddd/README.md) | Scaffold domain-driven design — contexts, aggregates, events |
+| [**ruflo-sparc**](plugins/ruflo-sparc/README.md) | Guided 5-phase development methodology with quality gates |
 
 #### DevOps & Observability
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-migrations** | Manage database schema changes safely |
-| **ruflo-observability** | Structured logs, traces, and metrics in one place |
-| **ruflo-cost-tracker** | Track token usage, set budgets, get cost alerts |
+| [**ruflo-migrations**](plugins/ruflo-migrations/README.md) | Manage database schema changes safely |
+| [**ruflo-observability**](plugins/ruflo-observability/README.md) | Structured logs, traces, and metrics in one place |
+| [**ruflo-cost-tracker**](plugins/ruflo-cost-tracker/README.md) | Track token usage, set budgets, get cost alerts |
 
 #### Extensibility
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-wasm** | Run sandboxed WebAssembly agents |
-| **ruflo-plugin-creator** | Scaffold, validate, and publish your own plugins |
+| [**ruflo-agent**](plugins/ruflo-agent/README.md) | Run agents — local WASM sandbox (rvagent) + Anthropic Claude Managed Agents (cloud) |
+| [**ruflo-plugin-creator**](plugins/ruflo-plugin-creator/README.md) | Scaffold, validate, and publish your own plugins |
 
 #### Domain-Specific
 
 | Plugin | What it does |
 |--------|-------------|
-| **ruflo-iot-cognitum** | IoT device management — trust scoring, anomaly detection, fleets |
-| **ruflo-neural-trader** | [`neural-trader`](https://npmjs.com/package/neural-trader) — AI trading with 4 agents, backtesting, 112+ tools |
-| **ruflo-market-data** | Ingest market data, vectorize OHLCV, detect patterns |
+| [**ruflo-iot-cognitum**](plugins/ruflo-iot-cognitum/README.md) | IoT device management — trust scoring, anomaly detection, fleets |
+| [**ruflo-neural-trader**](plugins/ruflo-neural-trader/README.md) | [`neural-trader`](https://npmjs.com/package/neural-trader) — AI trading with 4 agents, backtesting, 112+ tools |
+| [**ruflo-market-data**](plugins/ruflo-market-data/README.md) | Ingest market data, vectorize OHLCV, detect patterns |
 
 </details>
 
 ### CLI Install
 
-```bash
-# One-line install
-curl -fsSL https://cdn.jsdelivr.net/gh/ruvnet/ruflo@main/scripts/install.sh | bash
+**macOS / Linux / WSL / Git-Bash:**
 
-# Or via npx (interactive setup)
+```bash
+# One-line install (POSIX shells only — see Windows note below)
+curl -fsSL https://cdn.jsdelivr.net/gh/ruvnet/ruflo@main/scripts/install.sh | bash
+```
+
+**All platforms (including native Windows PowerShell / cmd):**
+
+```bash
+# Interactive setup wizard — runs identically on every platform
 npx ruflo@latest init wizard
 
 # Quick non-interactive init
@@ -383,6 +180,8 @@ npx ruflo@latest init wizard
 # Or install globally
 npm install -g ruflo@latest
 ```
+
+> 💡 **Windows users:** the `curl ... | bash` form needs a POSIX shell (Git-Bash, WSL, MSYS). The `npx ruflo@latest init wizard` line works natively in PowerShell and cmd. If you hit an `'bash' is not recognized` error, use the `npx` line instead — both end up running the same init flow.
 
 ### MCP Server
 
@@ -479,6 +278,8 @@ The difference: some channels are trusted, some aren't. [`@claude-flow/plugin-ag
 
 You don't configure handshakes or manage certificates. You `federation init`, `federation join`, and your agents start talking. The protocol handles identity, the PII pipeline handles data safety, and the audit trail handles compliance.
 
+> **📘 Full user guide:** [`docs/federation/`](./docs/federation/) — setup, MCP tools, trust levels, circuit breaker, and the (opt-in) WireGuard mesh layer that ties packet-layer reachability to federation trust. ADR-111 deep-dive at [`docs/federation/phase7-mesh-bringup.md`](./docs/federation/phase7-mesh-bringup.md).
+
 <details>
 <summary><strong>Federation capabilities</strong></summary>
 
@@ -497,17 +298,17 @@ You don't configure handshakes or manage certificates. You `federation init`, `f
 
 ```bash
 # Team A: initialize federation and generate keypair
-npx ruflo@latest federation init
+npx claude-flow@latest federation init
 
 # Team A: join Team B's federation endpoint
-npx ruflo@latest federation join wss://team-b.example.com:8443
+npx claude-flow@latest federation join wss://team-b.example.com:8443
 
 # Team A: send a task — PII is stripped automatically before it leaves
-npx ruflo@latest federation send --to team-b --type task-request \
+npx claude-flow@latest federation send --to team-b --type task-request \
   --message "Analyze transaction patterns for account anomalies"
 
 # Team A: check peer trust levels and session health
-npx ruflo@latest federation status
+npx claude-flow@latest federation status
 ```
 
 </details>
@@ -519,7 +320,7 @@ See [issue #1669](https://github.com/ruvnet/ruflo/issues/1669) for the complete 
 /plugin install ruflo-federation@ruflo
 
 # Or via CLI
-npx ruflo@latest plugins install @claude-flow/plugin-agent-federation
+npx claude-flow@latest plugins install @claude-flow/plugin-agent-federation
 ```
 
 <details>

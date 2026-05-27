@@ -72,9 +72,9 @@
       "description": "Advanced git workflows with diff analysis, risk scoring, and reviewer recommendations"
     },
     {
-      "name": "ruflo-wasm",
-      "source": "./plugins/ruflo-wasm",
-      "description": "Sandboxed WASM agent creation, execution, and gallery sharing"
+      "name": "ruflo-agent",
+      "source": "./plugins/ruflo-agent",
+      "description": "Agent runtimes — local WASM-sandboxed agents (rvagent) + Anthropic Claude Managed Agents (cloud); one interface, local-vs-cloud backends"
     },
     {
       "name": "ruflo-workflows",

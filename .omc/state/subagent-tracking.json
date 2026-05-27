@@ -1,0 +1,15 @@
+{
+  "agents": [
+    {
+      "agent_id": "a0ad271f08477dcdc",
+      "agent_type": "code-analyzer",
+      "started_at": "2026-05-27T21:54:07.477Z",
+      "parent_mode": "none",
+      "status": "running"
+    }
+  ],
+  "total_spawned": 1,
+  "total_completed": 0,
+  "total_failed": 0,
+  "last_updated": "2026-05-27T21:57:36.027Z"
+}

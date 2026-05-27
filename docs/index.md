@@ -39,7 +39,7 @@ RuFlo provides native Claude Code plugins for multi-agent orchestration, /loop w
 | **ruflo-aidefence** | AI safety scanning, PII detection, prompt defense | `/plugin install ruflo-aidefence@ruflo` |
 | **ruflo-browser** | Playwright browser automation, testing, scraping | `/plugin install ruflo-browser@ruflo` |
 | **ruflo-jujutsu** | Git diff analysis, risk scoring, reviewer recs | `/plugin install ruflo-jujutsu@ruflo` |
-| **ruflo-wasm** | Sandboxed WASM agents and gallery sharing | `/plugin install ruflo-wasm@ruflo` |
+| **ruflo-agent** | Sandboxed WASM agents and gallery sharing | `/plugin install ruflo-agent@ruflo` |
 | **ruflo-workflows** | Workflow templates, orchestration, lifecycle | `/plugin install ruflo-workflows@ruflo` |
 | **ruflo-daa** | Dynamic Agentic Architecture, cognitive patterns | `/plugin install ruflo-daa@ruflo` |
 | **ruflo-ruvllm** | Local LLM inference, MicroLoRA, chat formatting | `/plugin install ruflo-ruvllm@ruflo` |

@@ -28,6 +28,66 @@
 npm install @claude-flow/memory
 ```
 
+## Standalone use (without the Ruflo CLI)
+
+This package works on its own — you don't need `@claude-flow/cli` or the
+full Ruflo install. Use it any time you want HNSW vector search, an
+AgentDB façade, or the v3 controller registry from your own app.
+
+Two recipes that exercise the most-installed surface:
+
+### Recipe 1 — HNSW index with built-in quantization (no other deps)
+
+```typescript
+// recipe.mjs
+import { HNSWIndex } from '@claude-flow/memory';
+
+const index = new HNSWIndex({
+  dimensions: 8,
+  M: 16,
+  efConstruction: 200,
+  metric: 'cosine',
+});
+
+// Add a few vectors
+await index.addPoint('doc-a', new Float32Array([1, 0, 0, 0, 0, 0, 0, 0]));
+await index.addPoint('doc-b', new Float32Array([0.9, 0.1, 0, 0, 0, 0, 0, 0]));
+await index.addPoint('doc-c', new Float32Array([0, 1, 0, 0, 0, 0, 0, 0]));
+
+// Search — top 2 nearest to "doc-a"-shaped query
+const hits = await index.search(new Float32Array([1, 0, 0, 0, 0, 0, 0, 0]), 2);
+console.log(hits); // [{ id: 'doc-a', distance: 0 }, { id: 'doc-b', distance: ~0.005 }]
+```
+
+### Recipe 2 — Drive the controller registry against your own AgentDB
+
+The registry coordinates 15+ memory controllers (learning bridge, memory
+graph, tiered cache, vector backend, etc.) on top of an AgentDB instance
+you own. Useful when you already have an AgentDB lifecycle and just
+want the v3 governance layer (issue #2019 added the `agentdb` injection
+field that makes this clean).
+
+```typescript
+import { ControllerRegistry } from '@claude-flow/memory';
+import { AgentDB } from 'agentdb';
+
+const agentdb = new AgentDB({ dbPath: ':memory:' });
+await agentdb.initialize();
+
+const registry = new ControllerRegistry();
+await registry.initialize({ agentdb });
+
+// Now everything backed by AgentDB is reachable through the registry
+const reflexion = registry.get('reflexion');     // ReflexionMemory
+const vectorBackend = registry.get('vectorBackend'); // live vector backend
+const enabled = registry.isEnabled('skills');    // true
+
+const health = await registry.healthCheck();
+console.log(`${health.activeControllers}/${health.controllers.length} controllers active`);
+
+await registry.shutdown();
+```
+
 ## Quick Start
 
 ```typescript

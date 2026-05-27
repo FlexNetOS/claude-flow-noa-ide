@@ -309,12 +309,44 @@ export class MCPServerManager extends EventEmitter {
    * Handles stdin/stdout directly like V2 implementation
    */
   private async startStdioServer(): Promise<void> {
-    // Import the tool registry. After Bug #49 importing mcp-client.js is
-    // cheap (no eager tool registration); the heavy tool graph is loaded by
-    // the explicit `ensureMcpToolsLoaded()` await below. We must populate
-    // the registry before the first tools/list arrives.
-    const { listMCPTools, callMCPTool, hasTool, ensureMcpToolsLoaded } = await import('./mcp-client.js');
-    await ensureMcpToolsLoaded();
+    // ruflo#1910 — protect the JSON-RPC stdout from any stray
+    // console.log/info/debug emitted by lazily-loaded modules
+    // (@ruvector/router, @claude-flow/neural, transformers.js, ONNX,
+    // semantic-router init, etc.). Codex closes the MCP transport
+    // the moment it sees a non-JSON line on stdout, and one such
+    // line during a tool batch bricked the whole session.
+    //
+    // Strategy: replace console.log/info/debug with stderr writers
+    // for the rest of the process. JSON-RPC frames go out via the
+    // dedicated `writeFrame()` helper below (process.stdout.write
+    // with the original native binding, NOT console.log), so the
+    // hijack can't accidentally redirect protocol frames too.
+    process.env.MCP_STDIO_MODE = '1';
+    const originalLog = console.log;  // eslint-disable-line no-console
+    console.log = (...args: unknown[]) => process.stderr.write('[stdout→stderr] ' + args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ') + '\n');
+    console.info = (...args: unknown[]) => process.stderr.write('[stdout→stderr] ' + args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ') + '\n');
+    console.debug = (...args: unknown[]) => process.stderr.write('[stdout→stderr] ' + args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ') + '\n');
+
+    /** Send a single JSON-RPC frame to the real stdout. Use this instead
+     * of `console.log` so the hijack above can't redirect protocol frames. */
+    const writeFrame = (msg: unknown): void => {
+      process.stdout.write(JSON.stringify(msg) + '\n');
+    };
+    // Reference originalLog to keep the eslint-disable meaningful — also
+    // gives us an escape hatch if a test wants to verify it was replaced.
+    void originalLog;
+
+    // Catch fatal errors that would otherwise close the transport
+    // mid-batch with no JSON-RPC error returned to the client.
+    process.on('uncaughtException', (err) => {
+      process.stderr.write(`[mcp-stdio] uncaughtException: ${err.stack || err.message}\n`);
+    });
+    process.on('unhandledRejection', (reason) => {
+      process.stderr.write(`[mcp-stdio] unhandledRejection: ${reason instanceof Error ? reason.stack || reason.message : String(reason)}\n`);
+    });
+
+    // Import the tool registry
+    const { listMCPTools, callMCPTool, hasTool } = await import('./mcp-client.js');
 
     const VERSION = '3.0.0';
     const sessionId = `mcp-${Date.now()}-${randomUUID().slice(0, 8)}`;
@@ -368,7 +400,7 @@ export class MCPServerManager extends EventEmitter {
     }));
 
     // Send server initialization notification
-    console.log(JSON.stringify({
+    writeFrame({
       jsonrpc: '2.0',
       method: 'server.initialized',
       params: {
@@ -381,7 +413,7 @@ export class MCPServerManager extends EventEmitter {
           },
         },
       },
-    }));
+    });
 
     // Handle stdin messages (S-5: bounded buffer to prevent OOM)
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB
@@ -395,10 +427,10 @@ export class MCPServerManager extends EventEmitter {
           `[${new Date().toISOString()}] ERROR [claude-flow-mcp] Buffer exceeded ${MAX_BUFFER_SIZE} bytes, rejecting`
         );
         buffer = '';
-        console.log(JSON.stringify({
+        writeFrame({
           jsonrpc: '2.0',
           error: { code: -32600, message: 'Request too large' },
-        }));
+        });
         return;
       }
 
@@ -412,7 +444,7 @@ export class MCPServerManager extends EventEmitter {
             const message = JSON.parse(line);
             const response = await this.handleMCPMessage(message, sessionId);
             if (response) {
-              console.log(JSON.stringify(response));
+              writeFrame(response);
             }
           } catch (error) {
             console.error(
@@ -457,10 +489,7 @@ export class MCPServerManager extends EventEmitter {
     message: { jsonrpc: string; id?: string | number; method?: string; params?: unknown },
     sessionId: string
   ): Promise<{ jsonrpc: string; id?: string | number; result?: unknown; error?: { code: number; message: string } } | null> {
-    // Bug #49: ensure the tool registry is populated before the sync
-    // listMCPTools/hasTool calls below run. Idempotent — no-op once loaded.
-    const { listMCPTools, callMCPTool, hasTool, ensureMcpToolsLoaded } = await import('./mcp-client.js');
-    await ensureMcpToolsLoaded();
+    const { listMCPTools, callMCPTool, hasTool } = await import('./mcp-client.js');
 
     if (!message.method) {
       return {

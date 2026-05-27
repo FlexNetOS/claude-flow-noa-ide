@@ -10,8 +10,9 @@ You are a trading strategist agent that orchestrates the `neural-trader` npm pac
 All trading operations go through the `neural-trader` CLI. Install once, then invoke via npx:
 
 ```bash
-# Ensure installed
-npm ls neural-trader 2>/dev/null || npm install neural-trader
+# Ensure installed. --ignore-scripts skips the upstream `install` hook that
+# fork-bombs on non-linux-x64 hosts — see #1974 + the README's prereq.
+npm ls neural-trader 2>/dev/null || npm install --ignore-scripts neural-trader
 
 # Core commands
 npx neural-trader --strategy <type> --symbol <TICKER> [options]

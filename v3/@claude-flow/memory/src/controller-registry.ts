@@ -113,9 +113,6 @@ export interface RuntimeConfig {
   /** Vector dimension (default: 384 for MiniLM) */
   dimension?: number;
 
-  /** Vector backend to use (default: 'auto') */
-  vectorBackend?: 'auto' | 'rvf' | 'hnswlib';
-
   /** Embedding generator function */
   embeddingGenerator?: EmbeddingGenerator;
 
@@ -139,6 +136,16 @@ export interface RuntimeConfig {
 
   /** Backend instance to use (if pre-created) */
   backend?: IMemoryBackend;
+
+  /**
+   * Pre-initialized AgentDB instance to use. When provided, the
+   * registry skips its own dynamic-import / initialize cycle and uses
+   * this instance as-is — useful for testing, multi-registry sharing,
+   * and consumers that already hold an AgentDB they want governed by
+   * the registry. Issue #2019 added the regression tests that depend
+   * on this injection point.
+   */
+  agentdb?: unknown;
 }
 
 /**
@@ -330,13 +337,20 @@ export class ControllerRegistry extends EventEmitter {
       return entry.instance as T;
     }
 
-    // Fall back to AgentDB internal controllers
-    if (this.agentdb && typeof this.agentdb.getController === 'function') {
-      try {
-        const controller = this.agentdb.getController(name);
-        if (controller) return controller as T;
-      } catch {
-        // Controller not available in AgentDB
+    // Fall back to AgentDB internal controllers. Issue #2019:
+    // probe `agentdb[name]` first so we don't depend on the upstream
+    // getController switch knowing about every field it carries.
+    if (this.agentdb) {
+      const agentdb: any = this.agentdb;
+      const direct = agentdb[name];
+      if (direct) return direct as T;
+      if (typeof agentdb.getController === 'function') {
+        try {
+          const controller = agentdb.getController(name);
+          if (controller) return controller as T;
+        } catch {
+          // Upstream switch threw for an unknown name — fine, fall through.
+        }
       }
     }
 
@@ -350,12 +364,16 @@ export class ControllerRegistry extends EventEmitter {
     const entry = this.controllers.get(name);
     if (entry?.enabled) return true;
 
-    // Check AgentDB internal controllers
-    if (this.agentdb && typeof this.agentdb.getController === 'function') {
-      try {
-        return this.agentdb.getController(name) !== null;
-      } catch {
-        return false;
+    // Issue #2019: same direct-then-fallback shape as get() above.
+    if (this.agentdb) {
+      const agentdb: any = this.agentdb;
+      if (agentdb[name]) return true;
+      if (typeof agentdb.getController === 'function') {
+        try {
+          return agentdb.getController(name) !== null;
+        } catch {
+          return false;
+        }
       }
     }
 
@@ -461,6 +479,14 @@ export class ControllerRegistry extends EventEmitter {
    * Initialize AgentDB instance with dynamic import and fallback chain.
    */
   private async initAgentDB(config: RuntimeConfig): Promise<void> {
+    // Caller-supplied agentdb wins — used by tests (#2019 regression
+    // guards) and by consumers that own the AgentDB lifecycle.
+    if (config.agentdb) {
+      this.agentdb = config.agentdb;
+      this.emit('agentdb:initialized');
+      return;
+    }
+
     try {
       // Validate dbPath to prevent path traversal
       const dbPath = config.dbPath || ':memory:';
@@ -483,11 +509,7 @@ export class ControllerRegistry extends EventEmitter {
         return;
       }
 
-      this.agentdb = new AgentDBClass({
-        dbPath,
-        vectorBackend: config.vectorBackend ?? 'auto',
-        vectorDimension: config.dimension ?? 384,
-      });
+      this.agentdb = new AgentDBClass({ dbPath });
 
       // Suppress agentdb's noisy info-level output during init
       // using stderr redirect instead of monkey-patching console.log
@@ -914,22 +936,30 @@ export class ControllerRegistry extends EventEmitter {
 
       case 'vectorBackend':
       case 'graphAdapter': {
-        // These are accessed via AgentDB internal state, not direct construction
+        // These are accessed via AgentDB internal state, not direct
+        // construction. Issue #2019: agentdb@3.0.0-alpha.14's
+        // `getController()` switch only handles
+        // memory/reflexion/skills/causal/causalGraph and throws
+        // `Unknown controller: vectorBackend` for everything else —
+        // which a try/catch silently swallowed, leaving the controller
+        // permanently `enabled: false` even though the field is right
+        // there on the agentdb instance (`agentdb.vectorBackend` is
+        // assigned in AgentDB.initialize()).
+        //
+        // Prefer the direct-property access. Fall back to
+        // `getController` only if the field is absent — preserves
+        // forward-compat with a future agentdb that wires
+        // vectorBackend / graphAdapter into the switch but stops
+        // exposing them as public fields.
         if (!this.agentdb) return null;
+        const agentdb: any = this.agentdb;
+        const direct = agentdb[name];
+        if (direct) return direct;
         try {
-          // vectorBackend is exposed as a direct property on AgentDB instance.
-          // Note: agentdb.getController() does not support 'vectorBackend'
-          // (only reflexion/skills/causalGraph). Accessing via direct property
-          // is intentional — if AgentDB changes internals, this should be
-          // replaced by a proper getController('vectorBackend') upstream.
-          // TODO: request getController('vectorBackend') support in agentdb.
-          if (name === 'vectorBackend' && this.agentdb.vectorBackend) {
-            return this.agentdb.vectorBackend;
+          if (typeof agentdb.getController === 'function') {
+            return agentdb.getController(name) ?? null;
           }
-          if (typeof this.agentdb.getController === 'function') {
-            return this.agentdb.getController(name) ?? null;
-          }
-        } catch { /* fallthrough */ }
+        } catch { /* upstream switch threw for an unknown name */ }
         return null;
       }
 

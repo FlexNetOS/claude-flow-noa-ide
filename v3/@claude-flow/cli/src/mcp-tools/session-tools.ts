@@ -4,7 +4,7 @@
  * Tool definitions for session management with file persistence.
  */
 
-import { existsSync, readFileSync, readdirSync, unlinkSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type MCPTool, getProjectCwd } from './types.js';
 import {
@@ -140,7 +140,7 @@ function loadRelatedStores(options: { includeMemory?: boolean; includeTasks?: bo
 export const sessionTools: MCPTool[] = [
   {
     name: 'session_save',
-    description: 'Save current session state',
+    description: 'Save current session state Use when native conversation memory is wrong because you need durable cross-session state — restoring agent definitions, swarm topology, memory store, breaker history. For in-session continuation only, no tool needed. Pair with session_save before exiting and session_restore on resume.',
     category: 'session',
     inputSchema: {
       type: 'object',
@@ -205,7 +205,7 @@ export const sessionTools: MCPTool[] = [
   },
   {
     name: 'session_restore',
-    description: 'Restore a saved session',
+    description: 'Restore a saved session Use when native conversation memory is wrong because you need durable cross-session state — restoring agent definitions, swarm topology, memory store, breaker history. For in-session continuation only, no tool needed. Pair with session_save before exiting and session_restore on resume.',
     category: 'session',
     inputSchema: {
       type: 'object',
@@ -306,7 +306,7 @@ export const sessionTools: MCPTool[] = [
   },
   {
     name: 'session_list',
-    description: 'List saved sessions',
+    description: 'List saved sessions Use when native conversation memory is wrong because you need durable cross-session state — restoring agent definitions, swarm topology, memory store, breaker history. For in-session continuation only, no tool needed. Pair with session_save before exiting and session_restore on resume.',
     category: 'session',
     inputSchema: {
       type: 'object',
@@ -374,7 +374,7 @@ export const sessionTools: MCPTool[] = [
   },
   {
     name: 'session_delete',
-    description: 'Delete a saved session',
+    description: 'Delete a saved session Use when native conversation memory is wrong because you need durable cross-session state — restoring agent definitions, swarm topology, memory store, breaker history. For in-session continuation only, no tool needed. Pair with session_save before exiting and session_restore on resume.',
     category: 'session',
     inputSchema: {
       type: 'object',
@@ -409,7 +409,7 @@ export const sessionTools: MCPTool[] = [
   },
   {
     name: 'session_info',
-    description: 'Get detailed session information',
+    description: 'Get detailed session information Use when native conversation memory is wrong because you need durable cross-session state — restoring agent definitions, swarm topology, memory store, breaker history. For in-session continuation only, no tool needed. Pair with session_save before exiting and session_restore on resume.',
     category: 'session',
     inputSchema: {
       type: 'object',
@@ -449,6 +449,111 @@ export const sessionTools: MCPTool[] = [
       return {
         sessionId,
         error: 'Session not found',
+      };
+    },
+  },
+  {
+    // #1916: `ruflo session current` referenced an unregistered
+    // `session_current` tool. Returns the most-recently-saved session.
+    name: 'session_current',
+    description: 'Return the most-recently-saved session (id, name, stats) — the de-facto "current" one. Use when native conversation memory is wrong because you need to know which durable session is active before exporting/restoring it. For in-session continuation only, no tool needed. Pair with session_export / session_restore.',
+    category: 'session',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => {
+      const dir = getSessionDir();
+      if (!existsSync(dir)) return { sessionId: '', status: 'none', startedAt: '', error: 'No saved sessions' };
+      const files = readdirSync(dir).filter(f => f.endsWith('.json'));
+      if (files.length === 0) return { sessionId: '', status: 'none', startedAt: '', error: 'No saved sessions' };
+      let newest = files[0]; let newestMtime = 0;
+      for (const f of files) {
+        const mt = statSync(join(dir, f)).mtimeMs;
+        if (mt >= newestMtime) { newestMtime = mt; newest = f; }
+      }
+      const sessionId = newest.replace(/\.json$/, '');
+      const session = loadSession(sessionId);
+      if (!session) return { sessionId, status: 'unknown', startedAt: '', error: 'Session file unreadable' };
+      return {
+        sessionId: session.sessionId,
+        name: session.name,
+        status: 'active',
+        startedAt: session.savedAt,
+        stats: session.stats,
+      };
+    },
+  },
+  {
+    // #1916: `ruflo session export <id> -o <file>` referenced an unregistered
+    // `session_export` tool. Writes the session JSON to a file (if given) and
+    // returns the session payload.
+    name: 'session_export',
+    description: 'Export a saved session (agents, tasks, memory snapshot) to a JSON file and/or return the payload. Use when native Write is wrong because the data is the structured session record (not a freeform file) and you want it serialized consistently for transfer/backup. For writing arbitrary content, native Write is fine. Pair with session_import on the other end.',
+    category: 'session',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Session ID to export' },
+        outputPath: { type: 'string', description: 'File path to write the export to (optional)' },
+        includeMemory: { type: 'boolean', description: 'Include the memory snapshot (advisory — already in the saved record)' },
+      },
+      required: ['sessionId'],
+    },
+    handler: async (input) => {
+      const vId = validateIdentifier(input.sessionId, 'sessionId');
+      if (!vId.valid) return { success: false, error: vId.error };
+      const sessionId = input.sessionId as string;
+      const session = loadSession(sessionId);
+      if (!session) return { sessionId, error: 'Session not found' };
+      let path: string | null = null;
+      const outputPath = input.outputPath ? String(input.outputPath) : null;
+      if (outputPath) {
+        try { writeFileSync(outputPath, JSON.stringify(session, null, 2), 'utf-8'); path = outputPath; }
+        catch (e) { return { sessionId, error: `Could not write ${outputPath}: ${(e as Error).message}` }; }
+      }
+      return { sessionId, name: session.name, data: session, path, exportedAt: new Date().toISOString() };
+    },
+  },
+  {
+    // #1916: `ruflo session import <file>` referenced an unregistered
+    // `session_import` tool. Reads a session JSON and re-saves it locally.
+    name: 'session_import',
+    description: 'Import a session JSON file (produced by session_export) into the local session store and optionally activate it. Use when native Read is wrong because the file is a structured session record that must be re-registered (new id, stats recomputed) rather than just read. For reading the file, native Read is fine. Pair with session_export on the source.',
+    category: 'session',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        inputPath: { type: 'string', description: 'Path to the session JSON file to import' },
+        name: { type: 'string', description: 'Override the imported session name' },
+        activate: { type: 'boolean', description: 'Make the imported session the current one (advisory)' },
+      },
+      required: ['inputPath'],
+    },
+    handler: async (input) => {
+      const inputPath = String(input.inputPath ?? '');
+      if (!inputPath || !existsSync(inputPath)) return { error: `File not found: ${inputPath || '(empty)'}` };
+      let parsed: SessionRecord;
+      try { parsed = JSON.parse(readFileSync(inputPath, 'utf-8')); }
+      catch (e) { return { error: `Invalid session JSON: ${(e as Error).message}` }; }
+      const newId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const stats = parsed.stats || { tasks: 0, agents: 0, memoryEntries: 0, totalSize: 0 };
+      const session: SessionRecord = {
+        sessionId: newId,
+        name: input.name ? String(input.name) : (parsed.name || 'imported-session'),
+        description: parsed.description,
+        savedAt: new Date().toISOString(),
+        stats,
+        data: parsed.data,
+      };
+      saveSession(session);
+      return {
+        sessionId: newId,
+        name: session.name,
+        importedAt: session.savedAt,
+        stats: {
+          agentsImported: stats.agents,
+          tasksImported: stats.tasks,
+          memoryEntriesImported: stats.memoryEntries,
+        },
+        activated: input.activate === true,
       };
     },
   },

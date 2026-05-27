@@ -141,7 +141,7 @@ function hasGhCli(): boolean {
 export const githubTools: MCPTool[] = [
   {
     name: 'github_repo_analyze',
-    description: 'Analyze a GitHub repository',
+    description: 'Analyze a GitHub repository Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     category: 'github',
     inputSchema: {
       type: 'object',
@@ -225,7 +225,7 @@ export const githubTools: MCPTool[] = [
   },
   {
     name: 'github_pr_manage',
-    description: 'Manage pull requests',
+    description: 'Manage pull requests Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     category: 'github',
     inputSchema: {
       type: 'object',
@@ -346,7 +346,7 @@ export const githubTools: MCPTool[] = [
   },
   {
     name: 'github_issue_track',
-    description: 'Track and manage issues',
+    description: 'Track and manage issues Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     category: 'github',
     inputSchema: {
       type: 'object',
@@ -452,7 +452,7 @@ export const githubTools: MCPTool[] = [
   },
   {
     name: 'github_workflow',
-    description: 'Manage GitHub Actions workflows',
+    description: 'Manage GitHub Actions workflows Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     category: 'github',
     inputSchema: {
       type: 'object',
@@ -536,7 +536,7 @@ export const githubTools: MCPTool[] = [
   },
   {
     name: 'github_metrics',
-    description: 'Get repository metrics and statistics',
+    description: 'Get repository metrics and statistics Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     category: 'github',
     inputSchema: {
       type: 'object',

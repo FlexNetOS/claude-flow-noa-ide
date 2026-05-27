@@ -83,7 +83,7 @@ function saveTerminalStore(store: TerminalStore): void {
 export const terminalTools: MCPTool[] = [
   {
     name: 'terminal_create',
-    description: 'Create a new terminal session',
+    description: 'Create a new terminal session Use when native Bash is wrong because you need a persistent terminal session across turns/agents with output capture and replay. For one-shot shell commands, native Bash is fine.',
     category: 'terminal',
     inputSchema: {
       type: 'object',
@@ -138,7 +138,7 @@ export const terminalTools: MCPTool[] = [
   },
   {
     name: 'terminal_execute',
-    description: 'Execute a command in a terminal session',
+    description: 'Execute a command in a terminal session Use when native Bash is wrong because you need a persistent terminal session across turns/agents with output capture and replay. For one-shot shell commands, native Bash is fine.',
     category: 'terminal',
     inputSchema: {
       type: 'object',
@@ -231,7 +231,7 @@ export const terminalTools: MCPTool[] = [
   },
   {
     name: 'terminal_list',
-    description: 'List all terminal sessions',
+    description: 'List all terminal sessions Use when native Bash is wrong because you need a persistent terminal session across turns/agents with output capture and replay. For one-shot shell commands, native Bash is fine.',
     category: 'terminal',
     inputSchema: {
       type: 'object',
@@ -266,7 +266,7 @@ export const terminalTools: MCPTool[] = [
   },
   {
     name: 'terminal_close',
-    description: 'Close a terminal session',
+    description: 'Close a terminal session Use when native Bash is wrong because you need a persistent terminal session across turns/agents with output capture and replay. For one-shot shell commands, native Bash is fine.',
     category: 'terminal',
     inputSchema: {
       type: 'object',
@@ -301,7 +301,7 @@ export const terminalTools: MCPTool[] = [
   },
   {
     name: 'terminal_history',
-    description: 'Get command history for a terminal session',
+    description: 'Get command history for a terminal session Use when native Bash is wrong because you need a persistent terminal session across turns/agents with output capture and replay. For one-shot shell commands, native Bash is fine.',
     category: 'terminal',
     inputSchema: {
       type: 'object',

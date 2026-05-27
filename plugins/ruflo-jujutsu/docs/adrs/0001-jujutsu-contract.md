@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-jujutsu plugin contract — pinning, namespace coordination, ADR-compliance integration, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, jujutsu, git, diff, risk-analysis, namespace, smoke-test]
@@ -48,9 +54,15 @@ bash plugins/ruflo-jujutsu/scripts/smoke.sh
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention
 - `v3/@claude-flow/cli/src/mcp-tools/analyze-tools.ts` — 6 `analyze_*` tools
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-jujutsu/`. Contract elements implemented: all 6 `analyze_*` MCP tools covered; namespace `jujutsu-diffs` claimed; `/adr check` cross-link to ruflo-adr ADR-0001 documented; smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

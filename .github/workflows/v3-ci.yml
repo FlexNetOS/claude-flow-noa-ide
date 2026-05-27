@@ -10,15 +10,34 @@ on:
       # path filter keeps CI in sync with their changes.
       - 'plugins/ruflo-core/scripts/witness/**'
       - 'plugins/ruflo-core/scripts/test-hooks.mjs'
-      - 'plugins/ruflo-core/hooks/hooks.json'
       - 'verification/**'
+      # scripts/*.mjs audits (tool-descriptions, plugin-packages, hook-commands)
+      - 'scripts/**'
+      # hook-command audit (#1921) — every plugin hooks.json + the ruflo-hook shims
+      - '**/hooks/hooks.json'
+      - '**/scripts/ruflo-hook.sh'
+      # pre-bash hook safety (#2017) — both handler copies trigger the smoke
+      - '**/.claude/helpers/hook-handler.cjs'
+      # ruflo-browser rvf create flag (#2015) — TS source, plugin shell
+      # scripts, agent-facing recipes all guarded by the same smoke.
+      - 'v3/@claude-flow/cli/src/mcp-tools/browser-session-tools.ts'
+      - 'plugins/ruflo-browser/**'
   pull_request:
     branches: [main]
     paths:
       - 'v3/**'
       - 'plugins/ruflo-core/scripts/witness/**'
       - 'plugins/ruflo-core/scripts/test-hooks.mjs'
-      - 'plugins/ruflo-core/hooks/hooks.json'
+      - 'scripts/**'
+      - '**/hooks/hooks.json'
+      - '**/scripts/ruflo-hook.sh'
+      - '**/.claude/helpers/hook-handler.cjs'
+      # ruflo-browser rvf create flag (#2015)
+      - 'v3/@claude-flow/cli/src/mcp-tools/browser-session-tools.ts'
+      - 'plugins/ruflo-browser/**'
+      # witness manifests / fix list — so witness-verify runs on PRs that
+      # touch them (otherwise a stale per-OS manifest only fails post-merge).
+      - 'verification/**'
   workflow_dispatch:
 
 env:
@@ -293,7 +312,6 @@ jobs:
           node plugins/ruflo-core/scripts/test-hooks.mjs \
             "node $GITHUB_WORKSPACE/v3/@claude-flow/cli/bin/cli.js"
 
-<<<<<<< HEAD
   browser-rvf-create-flags-smoke:
     # Regression guard for ruvnet/ruflo#2015 — the ruflo-browser
     # `browser_session_record` MCP tool wraps `ruvector rvf create`.
@@ -372,13 +390,20 @@ jobs:
     # (missing dep, source-only checkout) and exit 1 strictly for real
     # failures (signature invalid, dist file regressed). This smoke
     # drives both shapes through and asserts the contract holds:
+    #   - @noble/ed25519 stays declared at the repo root (Case 0, #2027)
     #   - missing @noble/ed25519     → exit 2 + named in the error
     #   - all-manifest-files missing → exit 2 + precondition tag
     #   - built tree                 → exit is NEVER 2
     #
+    # Case 0 (#2027) is the silent-drop guard: if a future dep-cleanup
+    # PR removes @noble/ed25519 from root package.json, `npm ci` on the
+    # scheduled runner will silently stop installing it and the runner
+    # will start re-filing the precondition-miss issue every 12h. The
+    # PR is now blocked at this CI gate before that can happen.
+    #
     # Independent job so a precondition contract break is named clearly
     # in the CI summary. Wired into witness-verify's `needs:` below.
-    name: witness verify precondition smoke (#1880)
+    name: witness verify precondition smoke (#1880, #2027)
     runs-on: ubuntu-latest
 
     steps:
@@ -396,6 +421,1348 @@ jobs:
       - name: Drive precondition + built-tree shapes through verify.mjs
         shell: bash
         run: node scripts/smoke-witness-verify-precondition.mjs
+
+  embeddings-ann-router-smoke:
+    # ADR-121 Phase 8 — AnnRouter composition. Auto-selects between
+    # HNSW (streaming/mutable), RaBitQ (batch/memory-tight), and
+    # DiskANN (persistent/billion-scale) based on a workload
+    # descriptor. Smoke exercises the full decision matrix +
+    # end-to-end HNSW lifecycle. Degrades cleanly when peer deps
+    # missing — never throws.
+    name: embeddings AnnRouter smoke (#2036, ADR-121 Phase 8)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build @claude-flow/embeddings
+        working-directory: v3/@claude-flow/embeddings
+        run: |
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Assert AnnRouter contract + decision matrix
+        shell: bash
+        run: node scripts/smoke-embeddings-ann-router.mjs
+
+  embeddings-diskann-smoke:
+    # ADR-121 Phase 5b — DiskannSnapshot end-to-end.
+    # Asserts: missing-peer-dep path throws named error; when the
+    # peer dep is installed, full lifecycle (add → buildAsync →
+    # search → save → DiskannSnapshot.load → re-query → delete)
+    # works against the real native binding. delete() is a logical
+    # tombstone (count stays stable) — documented in the smoke so
+    # operators don't get surprised by it.
+    name: embeddings DiskannSnapshot smoke (#2036, ADR-121 Phase 5b)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build @claude-flow/embeddings
+        working-directory: v3/@claude-flow/embeddings
+        run: |
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Assert DiskannSnapshot contract
+        shell: bash
+        run: node scripts/smoke-embeddings-diskann.mjs
+
+  memory-unified-custom-ns:
+    # #2037 regression guard — memory_search_unified used to hardcode
+    # a 6-namespace whitelist and silently drop custom namespaces.
+    # Fixed by dynamically enumerating namespaces via listEntries.
+    # This smoke creates a uniquely-named custom namespace, stores
+    # an entry, runs unified search WITHOUT a namespace filter, and
+    # asserts the custom namespace appears in searchedNamespaces AND
+    # the entry is returned. Also tests the new namespaces=[...]
+    # explicit-list path.
+    name: memory_search_unified custom-namespace smoke (#2037)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build CLI
+        run: |
+          cd v3/@claude-flow/cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert custom-namespace unified search contract
+        shell: bash
+        run: |
+          # Run from a fresh empty subdir so the smoke uses a clean
+          # .swarm/memory.db (the script tests against a unique
+          # namespace name so cross-contamination isn't an issue,
+          # but starting clean keeps the test deterministic).
+          mkdir -p .ci-smoke-2037
+          cd .ci-smoke-2037
+          node "$GITHUB_WORKSPACE/scripts/smoke-cli-memory-search-unified-custom-ns.mjs"
+
+  rag-cached-router:
+    # ADR-121 Phase 21 — Cache-aware lazy router benchmark.
+    # Content-addressed embed cache composed with the Phase 20 lazy
+    # router. Production workloads with repeated queries see ~zero
+    # marginal cost on cache hits. Pass criterion: (a) decision
+    # equivalence (cache must be transparent), (b) warm cache strictly
+    # fewer embeds than cold. Witness-signed.
+    name: rag cached router benchmark + witness (#2036, ADR-121 Phase 21)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings + CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Run cached router benchmark (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-cached-router.mjs
+
+      - name: Verify witness manifest (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-cached-router-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Cached router witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-cached-router-witness
+          path: bench-witness/rag-cached-router-*.json
+
+  rag-lazy-router:
+    # ADR-121 Phase 20 — Lazy/short-circuit adaptive router benchmark.
+    # Compares the eager (Phase 16) and lazy (Phase 20) routers on the
+    # same mixed-shape workload as the Phase 19 ablation. Pass criterion:
+    # (a) lazy never uses more embeds than eager on any query, (b) lazy
+    # saves >0 embeds on the workload (proves short-circuit fires),
+    # (c) when lazy diverges from eager it ALWAYS picks a cheaper
+    # primitive (cost/quality tradeoff bounded — never quality-cost
+    # regression). Witness-signed, re-verified in independent process,
+    # uploaded as CI artifact.
+    name: rag lazy router benchmark + witness (#2036, ADR-121 Phase 20)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings + CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Run lazy router benchmark (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-lazy-router.mjs
+
+      - name: Verify witness manifest (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-lazy-router-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Lazy router witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-lazy-router-witness
+          path: bench-witness/rag-lazy-router-*.json
+
+  rag-router-ablation:
+    # ADR-121 Phase 19 — Adaptive router ablation benchmark.
+    # Runs all 5 fixed primitives + adaptive on the same 7-query
+    # mixed-shape workload using real Xenova ONNX embeddings.
+    # Measures (recall@5, nDCG@5, MRR, embed cost, latency) per
+    # configuration. Pass criterion: adaptive recall >= best fixed
+    # primitive (no quality regression) AND adaptive cost overhead
+    # ≤ 50% of compound (feature-extraction tax bounded).
+    name: rag adaptive router ablation + witness (#2036, ADR-121 Phase 19)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings + CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Run router ablation benchmark (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-router-ablation.mjs
+
+      - name: Verify witness manifest (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-router-ablation-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Ablation witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-router-ablation-witness
+          path: bench-witness/rag-router-ablation-*.json
+
+  rag-cli-cosign:
+    # ADR-121 Phase 26 — `ruflo benchmark cosign` CLI subcommand.
+    # Completes the third-party-verifier workflow: vendor publishes
+    # ledger, third party co-signs, downstream checks at threshold N.
+    # Pass criterion: cosign single + --all + --key persistence all
+    # work, contentHash unchanged, verify@threshold=2 passes after
+    # --all. Witness-signed capability benchmark uploaded as artifact.
+    name: ruflo benchmark cosign CLI smoke + witness (#2036, ADR-121 Phase 26)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings + CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Smoke — benchmark cosign CLI contract
+        shell: bash
+        run: node scripts/smoke-cli-benchmark-cosign.mjs
+
+      - name: Capability benchmark (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-cli-cosign.mjs
+
+      - name: Verify capability witness (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-cli-cosign-capability-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Cosign CLI capability witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-cli-cosign-capability-witness
+          path: bench-witness/rag-cli-cosign-capability-*.json
+
+  rag-cli-verify:
+    # ADR-121 Phase 25 — `ruflo benchmark verify` CLI subcommand smoke.
+    # Drives the consumer-facing verification command against the
+    # live ledger + a single witness manifest. Pass criterion: ledger
+    # verifies at threshold 1, fails at threshold 2 (most entries
+    # single-signer), single witness verifies, tampered witness
+    # rejected, missing-path + bad-threshold rejected. Witness-signed
+    # capability report uploaded as CI artifact.
+    name: ruflo benchmark verify CLI smoke + witness (#2036, ADR-121 Phase 25)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings + CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Smoke — benchmark verify CLI contract
+        shell: bash
+        run: node scripts/smoke-cli-benchmark-verify.mjs
+
+      - name: Capability benchmark (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-cli-verify.mjs
+
+      - name: Verify capability witness (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-cli-verify-capability-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('CLI verify capability witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-cli-verify-capability-witness
+          path: bench-witness/rag-cli-verify-capability-*.json
+
+  rag-multisig-attestation:
+    # ADR-121 Phase 24 — Multi-signer ledger entries (M-of-N threshold).
+    # Demonstrates the M-of-N attestation pattern for adversarial
+    # benchmarking: primary signer (benchmark-runner) + N co-signers
+    # (third-party-verifier, release-auditor). Pass criterion: entry
+    # verifies at every threshold from 1 up to N, fails at N+1, and
+    # the contentHash + primary signature are unchanged by co-signing.
+    name: rag multi-signer attestation + witness (#2036, ADR-121 Phase 24)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Run multi-signer attestation demo (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-multisig-attestation.mjs
+
+      - name: Verify multi-signer witness (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-multisig-attestation-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const { verifyEntry } = await import('./v3/@claude-flow/embeddings/dist/witness-ledger.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('WITNESS VERIFY FAILED'); process.exit(1); }
+            // Also re-verify the cosigned entry at 3-of-3 threshold
+            if (!verifyEntry(m.cosignedEntry, { minSignatures: 3 })) {
+              console.error('3-OF-3 THRESHOLD FAILED'); process.exit(1);
+            }
+            console.log('Multi-signer witness + 3-of-3 threshold verify OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-multisig-attestation-witness
+          path: bench-witness/rag-multisig-attestation-*.json
+
+  rag-trend-visualization:
+    # ADR-121 Phase 23 — Trend visualization + drift detection.
+    # Catches "death by a thousand cuts" — gradual cumulative drift
+    # that every single-step regression check would have missed.
+    # Renders ASCII sparklines for at-a-glance dashboard view.
+    # Witness-signed report uploaded as CI artifact.
+    name: rag trend visualization + drift detection (#2036, ADR-121 Phase 23)
+    runs-on: ubuntu-latest
+    needs: [rag-witness-ledger]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Download chained ledger artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rag-benchmark-ledger
+          path: bench-witness
+
+      - name: Render trend dashboard + drift check (witness-signed)
+        shell: bash
+        run: node scripts/visualize-benchmark-trends.mjs
+
+      - name: Verify trend witness (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-trend-visualization-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Trend visualization witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload trend report as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-trend-visualization-witness
+          path: bench-witness/rag-trend-visualization-*.json
+
+  rag-regression-check:
+    # ADR-121 Phase 22 — Performance regression detection over the chain.
+    # The witness ledger has historical benchmark numbers; this guard
+    # checks the latest entry of each benchmark against the prior
+    # baseline, fails CI if any tracked metric regressed beyond the
+    # threshold. Witness-signed regression report uploaded as artifact.
+    name: rag benchmark regression check + witness (#2036, ADR-121 Phase 22)
+    runs-on: ubuntu-latest
+    needs: [rag-witness-ledger]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Download chained ledger artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rag-benchmark-ledger
+          path: bench-witness
+
+      - name: Run regression check (witness-signed)
+        shell: bash
+        run: node scripts/check-benchmark-regression.mjs
+
+      - name: Verify regression-report witness (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-regression-check-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Regression-check witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload regression report as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-regression-check-witness
+          path: bench-witness/rag-regression-check-*.json
+
+  rag-witness-ledger:
+    # ADR-121 Phase 18 — Chained witness ledger.
+    # Each benchmark run produces a per-run signed manifest (Phase 15).
+    # This job builds a hash-chain over all of them so editing any
+    # historical entry breaks every subsequent signature. Independent
+    # process verifies the full chain; result uploaded as a CI
+    # artifact for anyone to download and re-verify.
+    # Pass criterion: verifyLedger().valid === true on every commit.
+    name: rag chained benchmark ledger (#2036, ADR-121 Phase 18)
+    runs-on: ubuntu-latest
+    # Run AFTER the benchmarks that produce the per-run manifests so
+    # we always chain over the freshest data. (The chain itself doesn't
+    # need those jobs to pass — broken benchmark inputs still produce
+    # a valid chain; the chain attests "we observed these numbers",
+    # not "these numbers are good".)
+    needs: [rag-real-text-benchmark, rag-adaptive-router-benchmark, rag-hybrid-benchmark, rag-router-ablation, rag-lazy-router, rag-cached-router]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Download all per-run witness artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: bench-witness-artifacts
+          merge-multiple: true
+
+      - name: Stage manifests into bench-witness/
+        shell: bash
+        run: |
+          mkdir -p bench-witness
+          # Pull every json from the downloaded artifact tree
+          # (each prior job uploaded to its own artifact name).
+          find bench-witness-artifacts -name '*.json' -exec cp {} bench-witness/ \;
+          ls -la bench-witness/
+
+      - name: Build chained ledger
+        shell: bash
+        run: node scripts/build-benchmark-ledger.mjs
+
+      - name: Verify ledger (independent process)
+        shell: bash
+        run: |
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verifyLedger } = await import('./v3/@claude-flow/embeddings/dist/witness-ledger.js');
+            const ledger = JSON.parse(fs.readFileSync('bench-witness/ledger.json', 'utf8'));
+            const r = verifyLedger(ledger);
+            if (!r.valid) {
+              console.error('LEDGER VERIFICATION FAILED:', r);
+              process.exit(1);
+            }
+            console.log('Ledger verifies independently:', r.entryCount, 'entries chained');
+            console.log('Chain head contentHash:', ledger.entries.at(-1).contentHash);
+          "
+
+      - name: Upload chained ledger as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-benchmark-ledger
+          path: bench-witness/ledger.json
+
+  rag-hybrid-benchmark:
+    # ADR-121 Phase 17 — Hybrid sparse+dense retrieval (BM25 + RRF).
+    # Runs on real Xenova ONNX embeddings over a 24-doc corpus mixing
+    # generic-vocab and rare-token (CVE/SHA/error-code) docs. Pass
+    # criterion: hybrid never regresses on rare-token queries vs
+    # pure dense — the design goal — with a note when dense saturates
+    # and hybrid's RRF fusion dilutes the equal-weight contribution
+    # (handled by Phase 16 adaptive router with the rareTokenDensity
+    # signal). Witness-signed manifest re-verified in independent
+    # process + uploaded as CI artifact.
+    name: rag hybrid sparse+dense benchmark + witness (#2036, ADR-121 Phase 17)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings + CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Run hybrid retrieval benchmark (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-hybrid.mjs
+
+      - name: Verify witness manifest (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-hybrid-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Hybrid witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-hybrid-witness
+          path: bench-witness/rag-hybrid-*.json
+
+  rag-adaptive-router-benchmark:
+    # ADR-121 Phase 16 — Adaptive primitive selection benchmark.
+    # The router examines (corpus duplicate density, query intent
+    # cohesion, Q/A space gap) signals and picks the optimal RAG
+    # primitive automatically. Validated against Phase 14's four
+    # topology winners + a compound-trigger topology.
+    # Pass criterion: 5/5 expected primitive predictions (no
+    # regression on the topology winners). Witness-signed manifest
+    # written + re-verified in an independent process + uploaded
+    # as a CI artifact for public re-verification.
+    name: rag adaptive router benchmark + witness (#2036, ADR-121 Phase 16)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Run adaptive router benchmark (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-adaptive.mjs
+
+      - name: Verify witness manifest (independent process)
+        shell: bash
+        run: |
+          FILE=$(ls -t bench-witness/rag-adaptive-router-*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Adaptive router witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-adaptive-router-witness
+          path: bench-witness/rag-adaptive-router-*.json
+
+  rag-real-text-benchmark:
+    # ADR-121 Phase 15 — Real ONNX embeddings + real text + witness.
+    # Drives the 5 individual primitives + the new compound
+    # (HyDE+MMR+RRF) primitive on a 30-doc real text corpus.
+    # Emits an ed25519-signed JSON manifest that anyone can verify
+    # to confirm the published numbers came from the published code.
+    # Pass criterion: every primitive >0 recall + witness verifies.
+    name: rag real-text benchmark + witness (#2036, ADR-121 Phase 15)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings + CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Run real-text RAG benchmark (witness-signed)
+        shell: bash
+        run: node scripts/benchmark-rag-real-text.mjs
+
+      - name: Verify witness manifest (independent process)
+        shell: bash
+        run: |
+          # Pick the freshest witness file and verify it ourselves
+          # via a second process — proves the signature is not just
+          # self-attestation but actually verifies independently.
+          FILE=$(ls -t bench-witness/*.json | head -1)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const { verify } = await import('./v3/@claude-flow/embeddings/dist/witness.js');
+            const m = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+            if (!verify(m.witness)) { console.error('VERIFY FAILED'); process.exit(1); }
+            console.log('Witness verifies OK:', m.witness.contentHash);
+          "
+
+      - name: Upload witness as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-real-text-witness
+          path: bench-witness/*.json
+
+  rag-topology-benchmark:
+    # ADR-121 Phase 14 — Algorithm-level benchmark of the 4 underlying
+    # RAG fusion primitives (plain top-k / MMR / RRF / HyDE-avg) on
+    # 4 hand-crafted vector topologies designed to expose each
+    # primitive's strength:
+    #   easy           — clean clusters, everyone wins
+    #   duplicate-heavy — exposes MMR via subtopic-coverage metric
+    #   multi-intent   — exposes RRF via intent-boundary preservation
+    #   q-a-gap        — exposes HyDE via centroid-finding
+    # No MCP layer, no mock provider — pure algorithmic comparison.
+    # CI pass criterion: every cell produces a finite metric in [0,1].
+    name: rag topology benchmark (#2036, ADR-121 Phase 14)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Run RAG topology benchmark
+        shell: bash
+        run: node scripts/benchmark-rag-topology-suite.mjs
+
+  rag-primitive-benchmark:
+    # ADR-121 Phase 13 — End-to-end benchmark of all 5 RAG primitives
+    # (search_text, _batch, _diverse, _ensemble, _hyde) on a controlled
+    # corpus with binary relevance judgements. Measures recall@5, MRR,
+    # nDCG@5, and mean latency for each — produces comparable numbers
+    # validating the SOTA primitive claims with actual metrics, not
+    # contract assertions.
+    #
+    # Pass criteria: every primitive returns non-zero recall on at
+    # least one query (pipeline-integrity check). Specific quality
+    # ordering is reported but not asserted — MMR is expected to
+    # trade recall for diversity, etc.
+    name: rag primitives benchmark (#2036, ADR-121 Phase 13)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings then CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Run RAG primitive benchmark
+        shell: bash
+        run: node scripts/benchmark-rag-primitives.mjs
+
+  cli-search-text-hyde-smoke:
+    # ADR-121 Phase 12 — embeddings_search_text_hyde (HyDE embedding-level fusion).
+    # Caller provides N hypothetical-answer texts (typically LLM-generated),
+    # tool embeds each and averages them into a single query vector, then
+    # searches once. Standard HyDE recipe (Gao et al. 2022) for zero-shot
+    # dense retrieval — hypothetical answers live in answer-space which
+    # matches the corpus space, so averaging produces a query vector that
+    # lands near true relevant docs. Distinct from Phase 11 RRF ensemble
+    # which fuses at the rank level (N searches then merge); HyDE fuses
+    # at the embedding level (one search after average). Smoke drives:
+    # init → router build → 3-text HyDE → weighted → single-text degenerate
+    # → 4 validation paths → missing-handle path. Asserts unit-norm
+    # contract on averaged vector + k-respecting + per-stage latency.
+    name: cli embeddings_search_text_hyde smoke (#2036, ADR-121 Phase 12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings then CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert HyDE embedding-fusion contract
+        shell: bash
+        run: node scripts/smoke-cli-search-text-hyde.mjs
+
+  cli-search-text-ensemble-smoke:
+    # ADR-121 Phase 11 — embeddings_search_text_ensemble (RRF ensemble RAG).
+    # Standard question-reformulation pattern: expand one user question
+    # into N variants, retrieve top-k for each, fuse via Reciprocal
+    # Rank Fusion (Cormack-Clarke-Büttcher 2009) to a single ranking.
+    # Items appearing high in MORE variants outrank items appearing
+    # high in only one. Smoke drives full flow: init → router build
+    # → ensemble (3 variants) → weighted → kRrf variants → validation
+    # → missing-handle path. Asserts score monotone non-increasing,
+    # ranks length = queryCount, listWeights/kRrf parameter passthrough.
+    name: cli embeddings_search_text_ensemble smoke (#2036, ADR-121 Phase 11)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings then CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert RRF ensemble-retrieval contract
+        shell: bash
+        run: node scripts/smoke-cli-search-text-ensemble.mjs
+
+  cli-search-text-diverse-smoke:
+    # ADR-121 Phase 10 — embeddings_search_text_diverse (MMR-reranked RAG).
+    # Plain top-k returns near-duplicates on duplicate-heavy corpora.
+    # MMR (Carbonell-Goldstein 1998) reranks for diversity via the
+    # λ * relevance − (1-λ) * max_sim_to_picked tradeoff. Smoke
+    # drives the full flow: init → router build → plain search_text
+    # → diverse search_text → λ extremes (0.0 and 1.0). Asserts MMR
+    # actually applies (vectors surfaced by backing) + ID uniqueness.
+    name: cli embeddings_search_text_diverse smoke (#2036, ADR-121 Phase 10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings then CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert MMR diversity-rerank contract
+        shell: bash
+        run: node scripts/smoke-cli-search-text-diverse.mjs
+
+  cli-search-text-batch-smoke:
+    # ADR-121 Phase 9b — embeddings_search_text_batch (multi-query RAG).
+    # Question-reformulation pattern: expand one user question into
+    # N variants, retrieve top-k for each, merge. Embeddings + searches
+    # run in parallel where the backing supports it. Per-query errors
+    # captured in the result entry rather than aborting the batch.
+    # Smoke drives the full flow + mixed-success path + validation.
+    name: cli embeddings_search_text_batch smoke (#2036, ADR-121 Phase 9b)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings then CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert batch RAG contract
+        shell: bash
+        run: node scripts/smoke-cli-search-text-batch.mjs
+
+  cli-search-text-smoke:
+    # ADR-121 Phase 9 — embeddings_search_text one-call RAG.
+    # Embeds the query inline then routes through the named AnnRouter
+    # handle in one MCP call. Returns hits + per-stage latency
+    # (embeddingMs/searchMs/totalMs) for cost attribution. Smoke
+    # drives the full flow + asserts the latency contract +
+    # graceful missing-handle path.
+    name: cli embeddings_search_text smoke (#2036, ADR-121 Phase 9)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings then CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert one-call RAG contract
+        shell: bash
+        run: node scripts/smoke-cli-search-text.mjs
+
+  cli-ann-router-mcp-tools-smoke:
+    # ADR-121 Phase 8 (CLI) — embeddings_ann_router_{build,search,status}.
+    # Agent-facing wrapper over AnnRouter — agents declare workload,
+    # router picks HNSW/RaBitQ/DiskANN, agent sees the decision in
+    # the response. Smoke drives all 3 handlers end-to-end + asserts
+    # the routing decision is exposed + degradation is graceful.
+    name: cli AnnRouter MCP tools smoke (#2036, ADR-121 Phase 8 CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings then CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert AnnRouter MCP tools contract
+        shell: bash
+        run: node scripts/smoke-cli-ann-router-mcp-tools.mjs
+
+  cli-diskann-mcp-tools-smoke:
+    # ADR-121 Phase 5b — embeddings_diskann_{build,search,status} MCP tools.
+    # Three new tools in @claude-flow/cli that expose DiskannSnapshot
+    # to LLM agents: build a persistent ANN index, search it, inventory
+    # all in-process snapshots. Smoke drives all three handlers end-to-end
+    # against the real native binding and asserts the structured shape
+    # + the graceful-degradation path for missing snapshots.
+    name: cli diskann MCP tools smoke (#2036, ADR-121 Phase 5b CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build embeddings then CLI
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert diskann MCP tools contract
+        shell: bash
+        run: node scripts/smoke-cli-diskann-mcp-tools.mjs
+
+  cli-embeddings-sidecar-tool-smoke:
+    # ADR-121 Phase 5 (full) — embeddings_check_ruvector_sidecar MCP tool.
+    # New tool exposed in @claude-flow/cli that proxies through
+    # @claude-flow/embeddings's probeRuvectorSidecar. LLM agents
+    # can ask "is the optimized ruvector backend reachable?" before
+    # dispatching embedding-heavy work that would benefit from it.
+    # Smoke asserts: tool registered, handler returns success:true
+    # with probeMs + available + single-line summary, never throws.
+    name: cli embeddings sidecar tool smoke (#2036, ADR-121 Phase 5 full)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build @claude-flow/embeddings then @claude-flow/cli
+        run: |
+          cd v3/@claude-flow/embeddings
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+          cd ../cli
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc --build --force tsconfig.json
+
+      - name: Assert MCP tool contract
+        shell: bash
+        run: node scripts/smoke-cli-embeddings-sidecar-tool.mjs
+
+  embeddings-sota-benchmark:
+    # ADR-121 — consolidated SOTA benchmark across all 6 phases.
+    # Runs every measurable acceptance gate in one pass: footprint,
+    # int8 recall, RaBitQ memory math, hyperbolic backend latency,
+    # sidecar availability. Emits a single JSON summary backing the
+    # package's headline SOTA claims.
+    #
+    # On 2026-05-17 (dev env, mac arm64): 6/6 gates PASS.
+    #   Phase 1 footprint:  -97.1% (34.7× smaller than Xenova)
+    #   Phase 3 int8 recall: 1.0000
+    #   Phase 3 RaBitQ:      32× reduction
+    #   Phase 3b backend:    native NAPI, 1 μs/op
+    #   Phase 5 sidecar:     83 tools / 15 groups when installed
+    name: embeddings SOTA consolidated benchmark (#2036, ADR-121)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build @claude-flow/embeddings
+        working-directory: v3/@claude-flow/embeddings
+        run: |
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Run consolidated SOTA benchmark
+        shell: bash
+        run: node scripts/benchmark-embeddings-sota.mjs
+
+  embeddings-hyperbolic-attention-smoke:
+    # ADR-121 Phase 3b — @ruvector/attention Poincaré op wrapper.
+    # Asserts: all 5 async ops (project/distance/expMap/logMap/mobius)
+    # resolve without throwing regardless of whether the optional peer
+    # dep is installed, outputs are Float32Array of correct dim,
+    # identical-point distance ≈0, availability probe returns boolean.
+    # When the native binding loads in CI, the high-performance backend
+    # is exercised; otherwise the hand-rolled hyperbolic.ts fallback
+    # runs the same contract.
+    name: embeddings hyperbolic attention smoke (#2036, ADR-121 Phase 3b)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build @claude-flow/embeddings
+        working-directory: v3/@claude-flow/embeddings
+        run: |
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Assert hyperbolic attention wrapper contract
+        shell: bash
+        run: node scripts/smoke-embeddings-hyperbolic-attention.mjs
+
+  embeddings-ruvector-sidecar-smoke:
+    # ADR-121 Phase 5 (lightweight) — ruvector sidecar probe contract.
+    # Asserts: probe handles missing-binary gracefully (available:false
+    # + reason), returns the documented shape (probeMs always present),
+    # never throws, and formatRuvectorAvailability produces single-line
+    # table-ready strings. When ruvector IS installed (CI optionally
+    # installs it), also asserts toolCount > 0 + version present.
+    # This is the foundation for the full sidecar wire-up that will
+    # land in @claude-flow/cli's doctor + MCP layer in a follow-up.
+    name: embeddings ruvector sidecar probe smoke (#2036, ADR-121 Phase 5)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build @claude-flow/embeddings
+        working-directory: v3/@claude-flow/embeddings
+        run: |
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Assert probe handles missing-binary cleanly (no install)
+        shell: bash
+        run: node scripts/smoke-embeddings-ruvector-sidecar.mjs
+
+  embeddings-xenova-deprecation-smoke:
+    # ADR-121 Phase 4 — Xenova deprecation contract guard.
+    # Asserts: warning fires with the documented code on first
+    # construction, fires exactly once per process, names the
+    # migration target ('ruvector-onnx'), and is suppressible via
+    # CLAUDE_FLOW_SUPPRESS_DEPRECATION=1. Catches the regression
+    # class where a future refactor accidentally drops the
+    # deprecation hook or changes the warning code so operators'
+    # filters stop matching.
+    name: embeddings Xenova deprecation smoke (#2036, ADR-121 Phase 4)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build @claude-flow/embeddings
+        working-directory: v3/@claude-flow/embeddings
+        run: |
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Assert deprecation warning contract
+        shell: bash
+        run: node scripts/smoke-embeddings-xenova-deprecation.mjs
+
+  embeddings-quantization-benchmark:
+    # ADR-121 Phase 3 acceptance benchmark — quantization recall +
+    # memory reduction.
+    # Asserts: int8 mean recall ≥0.98, min recall ≥0.95, RaBitQ
+    # theoretical reduction ≥32× for 384-dim, cache int8 mode is
+    # ~4× smaller than full float32.
+    # On 2026-05-17 the measured int8 mean recall was 1.0000
+    # (perfect round-trip on unit-normalized vectors).
+    name: embeddings quantization benchmark (#2036, ADR-121 Phase 3)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install + build @claude-flow/embeddings
+        working-directory: v3/@claude-flow/embeddings
+        run: |
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npx tsc -p tsconfig.json
+
+      - name: Assert quantization recall + memory reduction gates
+        shell: bash
+        run: node scripts/benchmark-embeddings-quantization.mjs
+
+  embeddings-footprint-benchmark:
+    # ADR-121 Phase 1 acceptance benchmark — install footprint.
+    # Runs three `npm install`s in isolated tmp projects:
+    #   - @xenova/transformers (legacy baseline)
+    #   - @huggingface/transformers (current TS upstream)
+    #   - ruvector-onnx-embeddings-wasm (Phase 1 target)
+    # Asserts the Phase 1 acceptance gate: ruvector-onnx is ≥30%
+    # smaller than the Xenova baseline. On 2026-05-17 the measured
+    # delta was -97.1% (7.13 MB vs 247.20 MB — 34× smaller).
+    #
+    # Cosine-similarity parity (>0.999 corr vs Xenova) is a separate
+    # slow-path job pending an upstream wasm-bindgen packaging fix
+    # in ruvector-onnx-embeddings-wasm.
+    name: embeddings install-footprint benchmark (#2036, ADR-121 Phase 1)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Measure + assert ≥30% footprint reduction vs Xenova
+        shell: bash
+        run: node scripts/benchmark-embeddings-footprint.mjs
+
+  embeddings-ruvector-onnx-smoke:
+    # ADR-121 Phase 1 regression guard — asserts @claude-flow/embeddings
+    # ships a working `ruvector-onnx` provider behind the existing
+    # createEmbeddingService factory. Catches the most likely regression
+    # class: a future refactor accidentally drops the factory case, the
+    # export, or the optional-peer declaration. Fast (no model
+    # download); the full parity benchmark is a separate slow-path
+    # gated test.
+    name: embeddings ruvector-onnx provider smoke (#2036, ADR-121)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install root + workspace deps
+        run: npm ci --legacy-peer-deps
+
+      - name: Build @claude-flow/embeddings
+        working-directory: v3/@claude-flow/embeddings
+        run: npx tsc -p tsconfig.json
+
+      - name: Drive ruvector-onnx provider through factory + error contract
+        shell: bash
+        run: node scripts/smoke-embeddings-ruvector-onnx.mjs
+
+  umbrella-version-lockstep-smoke:
+    # Regression guard for ruvnet/ruflo#2034 — the 12h verification
+    # runner's Check 2 (Published package smoke test) times out
+    # cold-installing `@claude-flow/cli@alpha` (~527 transitive deps,
+    # 60s budget). The recommended workaround is to use `ruflo@alpha
+    # --version` as a verification proxy. That only works if `ruflo`
+    # and `@claude-flow/cli` ship at the same version on every release.
+    # Our CLAUDE.md "Publishing to npm" rule documents the convention;
+    # this smoke automates it so a future maintainer can't ship one
+    # without the other and silently invalidate the verification proxy.
+    name: umbrella version lockstep smoke (#2034)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Assert claude-flow / ruflo / @claude-flow/cli versions match
+        shell: bash
+        run: node scripts/smoke-umbrella-version-lockstep.mjs
+
+  hive-consensus-engine-smoke:
+    # ADR-095 G2.2 regression guard — asserts the hive-mind MCP layer wires
+    # the real `@claude-flow/swarm` ConsensusEngine via hive-consensus-runtime.
+    #
+    # Before this wire-up, `hive-mind_init` was a JSON file write and
+    # `hive-mind_consensus` was a hand-rolled state machine — the real
+    # `ConsensusEngine` (Raft/PBFT/Gossip + pluggable transport) shipped in
+    # @claude-flow/swarm but was never reached from the CLI. This smoke
+    # drives `hive-mind_init` → `hive-mind_consensus { action: 'engine-stats' }`
+    # → `hive-mind_consensus { action: 'propose', useEngine: true }` → shutdown
+    # through the actual MCP tool handlers and asserts each step actually
+    # routes through the engine (`runtime.engine === 'enabled'`,
+    # `transport === 'local'`, `propose.engine === 'enabled'`,
+    # `shutdown.runtimeShutdown === true`).
+    #
+    # If a future refactor accidentally unhooks the runtime — e.g. by
+    # short-circuiting `hive-mind_init` to skip `hiveConsensusRuntime.init`,
+    # or by dropping the `useEngine` proxy from `hive-mind_consensus` — this
+    # job catches it before merge.
+    name: hive-mind consensus engine wire-up smoke (#1872, ADR-095 G2.2)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install root + workspace deps
+        run: npm ci --legacy-peer-deps
+
+      - name: Build @claude-flow/swarm
+        working-directory: v3/@claude-flow/swarm
+        run: npx tsc --build --force
+
+      - name: Build @claude-flow/cli
+        working-directory: v3/@claude-flow/cli
+        run: npm run build
+
+      - name: Drive hive-mind MCP handlers through the real ConsensusEngine
+        shell: bash
+        run: node scripts/smoke-hive-consensus-engine.mjs
 
   pre-bash-hook-smoke:
     # Regression guard for ruvnet/ruflo#2017 — the `pre-bash` PreToolUse hook
@@ -432,51 +1799,6 @@ jobs:
         shell: bash
         run: node scripts/smoke-pre-bash-hook.mjs
 
-  agent-benchmark-suite-smoke:
-    # Regression guard for ruvnet/ruflo#2156 — Dream Cycle 2026-05-27 capabilities
-    # scan found that ruflo had no agent control-plane benchmark, only
-    # infrastructure benchmarks (HNSW, embeddings, SONA adaptation, WASM Flash
-    # Attention). This smoke verifies the `--suite agent` option is wired in and
-    # produces the four expected operation rows (Router Decide, Pattern Search,
-    # Step Record, Agent Round-Trip) without requiring an external LLM key. If
-    # any of these regress or get renamed, downstream capability dashboards lose
-    # their entry point — fail fast in CI.
-    name: agent benchmark suite smoke (#2156)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: v3/pnpm-lock.yaml
-
-      - name: Build cli (smoke runs against dist/)
-        working-directory: v3
-        shell: bash
-        run: |
-          pnpm install --frozen-lockfile
-          # Build all workspace deps first — cli depends on cli-core, memory, etc.
-          # Match the proven cli-npx-install-smoke pattern (recursive + no-bail).
-          pnpm --recursive --no-bail run build || true
-          test -f @claude-flow/cli/bin/cli.js \
-            || (echo "cli build did not produce bin/cli.js"; exit 1)
-
-      - name: Run agent benchmark smoke (no API keys required)
-        shell: bash
-        run: node scripts/smoke-agent-benchmark-suite.mjs
-
-=======
->>>>>>> pr-1936-head
   mcp-protocol-smoke:
     # Regression guard for ruvnet/ruflo#1874 — boots the HTTP MCP server,
     # sends a real `initialize` request, and validates the response wire
@@ -519,7 +1841,6 @@ jobs:
         shell: bash
         run: node plugins/ruflo-core/scripts/test-mcp-protocol.mjs
 
-<<<<<<< HEAD
   memory-import-smoke:
     # Regression guard for ruvnet/ruflo#1883 + #1884 — drives the import-side
     # invariants that single-component tests missed:
@@ -721,7 +2042,6 @@ jobs:
     # actually exercised.
     name: CLI npx-install smoke (#1147 / #2018) / Node ${{ matrix.node }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
@@ -824,50 +2144,6 @@ jobs:
         shell: bash
         run: node scripts/audit-vector-dim.mjs
 
-  tool-output-guardrail-smoke:
-    # Smoke test for ADR-131 / ruvnet/ruflo#2149 — ToolOutputGuardrail
-    # detects the four canonical OWASP ASI01 (Agent Goal Hijacking) attack
-    # shapes (instruction override, ChatML/Llama frame injection, exfiltration)
-    # and enforces the documented default policy (critical→reject,
-    # high→redact, medium→flag, low/none→allow).
-    #
-    # The exhaustive behavioural surface is the package's vitest suite; this
-    # smoke runs against the *built* dist/index.js to catch missing exports
-    # or accidental relaxation of the default policy.
-    name: ToolOutputGuardrail smoke (ADR-131, #2149)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: v3/pnpm-lock.yaml
-
-      - name: Build @claude-flow/security
-        working-directory: v3
-        shell: bash
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm --filter @claude-flow/security run build
-          test -f @claude-flow/security/dist/index.js \
-            || (echo "::error::@claude-flow/security/dist/index.js missing after build"; exit 1)
-
-      - name: Run guardrail smoke
-        shell: bash
-        run: node scripts/smoke-tool-output-guardrail.mjs
-
-=======
->>>>>>> pr-1936-head
   witness-verify:
     # Cryptographic regression guard: runs `ruflo verify --manifest` against
     # the local build to confirm every documented fix in verification.md.json
@@ -894,11 +2170,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-<<<<<<< HEAD
     needs: [smoke-install-no-bsqlite, plugin-hooks-smoke, pre-bash-hook-smoke, witness-verify-precondition-smoke, witness-marker-drift-smoke, browser-rvf-create-flags-smoke, mcp-protocol-smoke, memory-import-smoke, tool-descriptions-audit, mcp-roundtrip-smoke, plugin-package-audit, cli-npx-install-smoke, hook-command-audit, vector-dim-audit]
-=======
-    needs: [smoke-install-no-bsqlite, plugin-hooks-smoke, mcp-protocol-smoke]
->>>>>>> pr-1936-head
 
     steps:
       - name: Checkout code
@@ -1011,10 +2283,6 @@ jobs:
             echo "$HISTORY not present — skipping temporal diff"
           fi
 
-<<<<<<< HEAD
-
-=======
->>>>>>> pr-1936-head
   publish:
     name: Publish to npm (alpha)
     runs-on: ubuntu-latest

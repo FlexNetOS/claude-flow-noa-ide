@@ -118,6 +118,19 @@ describe('FinancialEconomyBridge', () => {
       expect(result).toBeInstanceOf(Float32Array);
       expect(result.length).toBeGreaterThan(0);
     });
+
+    // Regression guard for #2024 — empty portfolio used to fill the result
+    // with NaN (mean = 0/0 in the JS fallback). Must return an empty
+    // Float32Array now, matching the sentinel-on-empty pattern used by the
+    // other PortfolioRiskCalculator methods.
+    it('should return empty Float32Array for empty portfolio (regression #2024)', async () => {
+      const result = await bridge.simulateMonteCarlo(new Float32Array([]), 10, 5);
+
+      expect(result).toBeInstanceOf(Float32Array);
+      expect(result.length).toBe(0);
+      // Explicitly assert no NaN propagation
+      expect(Array.from(result).some(Number.isNaN)).toBe(false);
+    });
   });
 
   describe('Risk Calculation Methods', () => {

@@ -12,7 +12,6 @@ import { validateIdentifier, validateText } from './validate-input.js';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanClaudeCodeRegistry } from '../registry/claude-code-registry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -65,7 +64,7 @@ interface CapabilityArea {
 const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   'agent-management': {
     name: 'Agent Management',
-    description: 'Spawn, manage, and monitor individual AI agents with lifecycle control.',
+    description: 'Spawn, manage, and monitor individual AI agents with lifecycle control. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['agent_spawn', 'agent_list', 'agent_status', 'agent_stop', 'agent_metrics', 'agent_pool', 'agent_health', 'agent_logs'],
     commands: ['agent spawn', 'agent list', 'agent status', 'agent stop', 'agent metrics', 'agent pool', 'agent health', 'agent logs'],
     agents: ['coder', 'tester', 'reviewer', 'researcher', 'planner'],
@@ -74,7 +73,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'swarm-orchestration': {
     name: 'Swarm Orchestration',
-    description: 'Multi-agent coordination with topology-aware communication and consensus.',
+    description: 'Multi-agent coordination with topology-aware communication and consensus. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['swarm_init', 'swarm_status', 'swarm_spawn', 'swarm_terminate', 'swarm_topology', 'swarm_metrics'],
     commands: ['swarm init', 'swarm status', 'swarm spawn', 'swarm terminate'],
     agents: ['hierarchical-coordinator', 'mesh-coordinator', 'adaptive-coordinator', 'queen-coordinator', 'collective-intelligence-coordinator'],
@@ -83,7 +82,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'memory-knowledge': {
     name: 'Memory & Knowledge',
-    description: 'Persistent memory with HNSW vector search, AgentDB storage, and embeddings.',
+    description: 'Persistent memory with HNSW vector search, AgentDB storage, and embeddings. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['memory_store', 'memory_retrieve', 'memory_search', 'memory_list', 'memory_delete', 'memory_init', 'memory_export', 'memory_import_claude', 'memory_stats', 'memory_compact', 'memory_namespace'],
     commands: ['memory store', 'memory retrieve', 'memory search', 'memory list', 'memory delete', 'memory init'],
     agents: ['swarm-memory-manager', 'v3-memory-specialist'],
@@ -92,7 +91,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'intelligence-learning': {
     name: 'Intelligence & Learning',
-    description: 'Neural pattern training (SONA), RL loops, Flash Attention, EWC++ consolidation.',
+    description: 'Neural pattern training (SONA), RL loops, Flash Attention, EWC++ consolidation. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['neural_train', 'neural_predict', 'neural_status', 'neural_patterns', 'neural_optimize'],
     commands: ['neural train', 'neural predict', 'neural status', 'neural patterns', 'neural optimize'],
     agents: ['sona-learning-optimizer', 'safla-neural'],
@@ -101,7 +100,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'hooks-automation': {
     name: 'Hooks & Automation',
-    description: '17 lifecycle hooks + 12 background workers for automated learning and coordination.',
+    description: '17 lifecycle hooks + 12 background workers for automated learning and coordination. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['hooks_pre_task', 'hooks_post_task', 'hooks_pre_edit', 'hooks_post_edit', 'hooks_route', 'hooks_explain'],
     commands: [
       'hooks pre-task', 'hooks post-task', 'hooks pre-edit', 'hooks post-edit',
@@ -116,16 +115,16 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'hive-mind': {
     name: 'Hive Mind Consensus',
-    description: 'Queen-led Byzantine fault-tolerant distributed consensus with multiple strategies.',
-    tools: ['hive_mind_init', 'hive_mind_task', 'hive_mind_status', 'hive_mind_propose', 'hive_mind_vote', 'hive_mind_consensus', 'hive_mind_metrics'],
-    commands: ['hive-mind init', 'hive-mind status', 'hive_mind_task', 'hive-mind consensus', 'hive-mind sessions', 'hive-mind spawn', 'hive-mind stop'],
+    description: 'Queen-led Byzantine fault-tolerant distributed consensus with multiple strategies. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
+    tools: ['hive_mind_init', 'hive_mind_status', 'hive_mind_propose', 'hive_mind_vote', 'hive_mind_consensus', 'hive_mind_metrics'],
+    commands: ['hive-mind init', 'hive-mind status', 'hive-mind consensus', 'hive-mind sessions', 'hive-mind spawn', 'hive-mind stop'],
     agents: ['byzantine-coordinator', 'raft-manager', 'gossip-coordinator', 'crdt-synchronizer', 'quorum-manager'],
     skills: ['hive-mind-advanced'],
     whenToUse: 'When multiple agents need to reach agreement on decisions using BFT, Raft, or CRDT.',
   },
   'security': {
     name: 'Security & Compliance',
-    description: 'Security scanning, CVE remediation, input validation, claims-based authorization.',
+    description: 'Security scanning, CVE remediation, input validation, claims-based authorization. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['security_scan', 'security_audit', 'security_cve', 'security_threats', 'security_validate', 'security_report', 'claims_check', 'claims_grant', 'claims_revoke', 'claims_list'],
     commands: ['security scan', 'security audit', 'security cve', 'security threats', 'claims check', 'claims grant'],
     agents: ['v3-security-architect'],
@@ -134,7 +133,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'performance': {
     name: 'Performance & Profiling',
-    description: 'Benchmarking, profiling, metrics collection, and optimization recommendations.',
+    description: 'Benchmarking, profiling, metrics collection, and optimization recommendations. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['performance_benchmark', 'performance_profile', 'performance_metrics', 'performance_optimize', 'performance_report'],
     commands: ['performance benchmark', 'performance profile', 'performance metrics', 'performance optimize', 'performance report'],
     agents: ['v3-performance-engineer'],
@@ -143,7 +142,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'github-integration': {
     name: 'GitHub Integration',
-    description: 'PR management, code review, issue tracking, release automation, multi-repo coordination.',
+    description: 'PR management, code review, issue tracking, release automation, multi-repo coordination. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['github_pr_manage', 'github_code_review', 'github_issue_track', 'github_repo_analyze', 'github_sync_coord', 'github_metrics'],
     commands: [],
     agents: ['pr-manager', 'code-review-swarm', 'issue-tracker', 'release-manager', 'repo-architect', 'workflow-automation', 'multi-repo-swarm', 'project-board-sync', 'swarm-pr', 'swarm-issue', 'sync-coordinator', 'github-modes', 'release-swarm'],
@@ -152,26 +151,16 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'session-workflow': {
     name: 'Session & Workflow',
-    description: 'Session state management, workflow execution, task lifecycle, and daemon scheduling.',
+    description: 'Session state management, workflow execution, task lifecycle, and daemon scheduling. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['session_start', 'session_end', 'session_restore', 'session_list', 'workflow_execute', 'workflow_create', 'task_create', 'task_assign', 'task_status'],
-    commands: [
-  'session start',
-  'session end',
-  'session restore',
-  'workflow execute',
-  'workflow create',
-  'task create',
-  'task assign',
-  'daemon start',
-  'daemon stop'
-  ],
+    commands: ['session start', 'session end', 'session restore', 'workflow execute', 'workflow create', 'task create', 'daemon start', 'daemon stop'],
     agents: [],
     skills: [],
     whenToUse: 'When managing long-running sessions, executing workflow templates, or scheduling tasks.',
   },
   'embeddings-vectors': {
     name: 'Embeddings & Vector Search',
-    description: 'Vector embeddings with sql.js, HNSW indexing, hyperbolic embeddings, ONNX integration.',
+    description: 'Vector embeddings with sql.js, HNSW indexing, hyperbolic embeddings, ONNX integration. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['embeddings_embed', 'embeddings_batch', 'embeddings_search', 'embeddings_init'],
     commands: ['embeddings embed', 'embeddings batch', 'embeddings search', 'embeddings init'],
     agents: [],
@@ -180,7 +169,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'wasm-agents': {
     name: 'WASM Sandboxed Agents',
-    description: 'Sandboxed AI agents running in WebAssembly with virtual filesystem, no OS access.',
+    description: 'Sandboxed AI agents running in WebAssembly with virtual filesystem, no OS access. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['wasm_agent_create', 'wasm_agent_prompt', 'wasm_agent_tool', 'wasm_agent_list', 'wasm_agent_terminate', 'wasm_agent_files', 'wasm_agent_export', 'wasm_gallery_list', 'wasm_gallery_search', 'wasm_gallery_create'],
     commands: [],
     agents: [],
@@ -189,7 +178,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'ruvllm-inference': {
     name: 'RuVLLM Inference',
-    description: 'WASM-based HNSW routing, SONA instant adaptation, MicroLoRA, chat formatting.',
+    description: 'WASM-based HNSW routing, SONA instant adaptation, MicroLoRA, chat formatting. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['ruvllm_status', 'ruvllm_hnsw_create', 'ruvllm_sona_create', 'ruvllm_microlora_create', 'ruvllm_chat_format', 'ruvllm_kvcache_create'],
     commands: [],
     agents: [],
@@ -198,7 +187,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'code-analysis': {
     name: 'Code Analysis & Diff',
-    description: 'AST analysis, diff classification, coverage routing, dependency graph analysis.',
+    description: 'AST analysis, diff classification, coverage routing, dependency graph analysis. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['analyze_diff', 'analyze_coverage', 'analyze_graph'],
     commands: [],
     agents: ['code-analyzer'],
@@ -207,7 +196,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'sparc-methodology': {
     name: 'SPARC Methodology',
-    description: 'Specification, Pseudocode, Architecture, Refinement, Completion — structured development.',
+    description: 'Specification, Pseudocode, Architecture, Refinement, Completion — structured development. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: [],
     commands: [],
     agents: ['specification', 'pseudocode', 'architecture', 'refinement'],
@@ -216,7 +205,7 @@ const CAPABILITY_CATALOG: Record<string, CapabilityArea> = {
   },
   'config-system': {
     name: 'Configuration & System',
-    description: 'Configuration management, provider setup, system diagnostics, shell completions.',
+    description: 'Configuration management, provider setup, system diagnostics, shell completions. Use when native Bash / file tools are wrong because this MCP tool exposes Ruflo-specific state or controllers that have no shell equivalent. For tasks that fit a one-line native command, prefer that.',
     tools: ['config_get', 'config_set', 'config_list', 'config_provider'],
     commands: ['config get', 'config set', 'config list', 'config provider', 'doctor', 'status', 'providers list', 'completions'],
     agents: [],
@@ -369,11 +358,9 @@ function discoverSkills(): string[] {
 
 // ── MCP Tool Definitions ────────────────────────────────────
 
-// #bug39 — exported by name so the regression test can call the handler
-// directly without going through the MCP dispatch layer.
-export const guidanceCapabilities: MCPTool = {
+const guidanceCapabilities: MCPTool = {
   name: 'guidance_capabilities',
-  description: 'List all capability areas with their tools, commands, agents, and skills. Use this to discover what Ruflo can do.',
+  description: 'List all capability areas with their tools, commands, agents, and skills. Use this to discover what Ruflo can do. Use when generic "what tool should I use?" guessing is wrong — Ruflo\'s guidance system uses the live tool index + your workflow context to recommend. Pair with hooks_route at task start. For trivial native-only tasks, no guidance call is needed.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -394,46 +381,20 @@ export const guidanceCapabilities: MCPTool = {
 
     if (area) { const v = validateIdentifier(area, 'area'); if (!v.valid) return { content: [{ type: 'text', text: JSON.stringify({ error: v.error }, null, 2) }], isError: true }; }
 
-    // #bug22.2 — surface user-installed agents/skills/commands as a first-class
-    // capability area so guidance_capabilities is not blind to ~/.claude/.
-    const userArea = await buildUserInstalledArea();
-    // #bug39 — surface foreign MCP servers (plugin + claude.ai) so the
-    // router can suggest e.g. `mcp__plugin_mongodb_mongodb__find` for a
-    // "search MongoDB" task instead of falling back to a generic agent.
-    const foreignMcpArea = await buildForeignMcpArea();
-
     if (area) {
-      if (area === 'user-installed') {
-        return { content: [{ type: 'text', text: JSON.stringify(userArea.detailed, null, 2) }] };
-      }
-      if (area === 'foreign-mcp-servers') {
-        return { content: [{ type: 'text', text: JSON.stringify(foreignMcpArea.detailed, null, 2) }] };
-      }
       const cap = CAPABILITY_CATALOG[area];
       if (!cap) {
-        const available = [...Object.keys(CAPABILITY_CATALOG), 'user-installed', 'foreign-mcp-servers'].join(', ');
+        const available = Object.keys(CAPABILITY_CATALOG).join(', ');
         return { content: [{ type: 'text', text: JSON.stringify({ error: `Unknown area: ${area}`, available }, null, 2) }], isError: true };
       }
       return { content: [{ type: 'text', text: JSON.stringify(cap, null, 2) }] };
     }
 
     if (format === 'detailed') {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            ...CAPABILITY_CATALOG,
-            'user-installed': userArea.detailed,
-            'foreign-mcp-servers': foreignMcpArea.detailed,
-          }, null, 2),
-        }],
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(CAPABILITY_CATALOG, null, 2) }] };
     }
 
-    // #bug39 — `summary` mixes built-in/user (no serverCount) and foreign-mcp
-    // (has serverCount + serverNames). Widen the element type so the foreign
-    // entry can be pushed without TS rejecting the extra fields.
-    const summary: Array<Record<string, unknown>> = Object.entries(CAPABILITY_CATALOG).map(([key, val]) => ({
+    const summary = Object.entries(CAPABILITY_CATALOG).map(([key, val]) => ({
       area: key,
       name: val.name,
       description: val.description,
@@ -442,121 +403,14 @@ export const guidanceCapabilities: MCPTool = {
       skillCount: val.skills.length,
       whenToUse: val.whenToUse,
     }));
-    summary.push(userArea.summary);
-    summary.push(foreignMcpArea.summary);
 
     return { content: [{ type: 'text', text: JSON.stringify({ areas: summary, totalAreas: summary.length }, null, 2) }] };
   },
 };
 
-// #bug22.2 — Build the synthetic "user-installed" capability area from the
-// filesystem registry. Returns BOTH the summary (for the list view) and the
-// detailed shape (for `area: 'user-installed'`). Failures during scanning
-// degrade to an empty area rather than throwing — this MUST never break
-// the rest of guidance_capabilities.
-async function buildUserInstalledArea(): Promise<{
-  summary: { area: string; name: string; description: string; toolCount: number; agentCount: number; skillCount: number; whenToUse: string };
-  detailed: CapabilityArea & { commands: string[]; plugins: string[] };
-}> {
-  let registry: { agents: { name: string }[]; skills: { name: string }[]; commands: { name: string }[]; plugins: { name: string }[] };
-  try {
-    registry = await scanClaudeCodeRegistry();
-  } catch {
-    registry = { agents: [], skills: [], commands: [], plugins: [] };
-  }
-
-  const agentNames = registry.agents.map(a => a.name).sort();
-  const skillNames = registry.skills.map(s => s.name).sort();
-  const commandNames = registry.commands.map(c => c.name).sort();
-  const pluginNames = registry.plugins.map(p => p.name).sort();
-
-  return {
-    summary: {
-      area: 'user-installed',
-      name: 'User-Installed (Claude Code)',
-      description: `Agents/skills/commands/plugins discovered on disk under ~/.claude/. Loaded dynamically — counts are accurate as of this scan (cached 60s).`,
-      toolCount: 0,
-      agentCount: agentNames.length,
-      skillCount: skillNames.length,
-      whenToUse: 'When the task matches a user-installed skill domain (polymarket, geo-audit, kali-osint, ceo, polybot-ops, etc.) — these are not in the built-in catalog but are first-class on the user\'s machine.',
-    },
-    detailed: {
-      name: 'User-Installed (Claude Code)',
-      description: `Agents/skills/commands/plugins discovered on disk under ~/.claude/. ${agentNames.length} agents, ${skillNames.length} skills, ${commandNames.length} commands, ${pluginNames.length} plugins.`,
-      tools: [],
-      commands: commandNames,
-      agents: agentNames,
-      skills: skillNames,
-      plugins: pluginNames,
-      whenToUse: 'When the task matches a user-installed skill domain (polymarket, geo-audit, kali-osint, ceo, polybot-ops, etc.).',
-    },
-  };
-}
-
-/**
- * #bug39 — Build the synthetic "foreign-mcp-servers" capability area from
- * the registry's MCP scan. These are NOT ruflo tools — they're third-party
- * MCP servers (plugin-bundled or claude.ai integrations) that the LLM can
- * call directly via their `mcp__<server>__*` tool prefix. Surfacing them
- * here closes the routing-blindspot from the integration audit (mongodb,
- * pinecone, context7, chrome-devtools, Notion, Gmail, Drive, etc. were
- * previously invisible to ruflo's discovery surface).
- *
- * `source: 'user'` entries (ruflo / claude-flow / flow-nexus / ruv-swarm)
- * are EXCLUDED — those are already first-class via the built-in catalog.
- *
- * Failures during the scan degrade to an empty area rather than throwing.
- */
-async function buildForeignMcpArea(): Promise<{
-  summary: { area: string; name: string; description: string; toolCount: number; agentCount: number; skillCount: number; serverCount: number; serverNames: string[]; whenToUse: string };
-  detailed: CapabilityArea & { serverCount: number; serverNames: string[]; servers: Array<{ name: string; source: string; command?: string }> };
-}> {
-  let registry: { foreignMcpServers?: Array<{ name: string; source: string; command?: string }> };
-  try {
-    registry = await scanClaudeCodeRegistry();
-  } catch {
-    registry = { foreignMcpServers: [] };
-  }
-
-  // Drop our own servers — only `plugin` and `claude-ai` are "foreign"
-  // for the purposes of the discovery surface.
-  const foreign = (registry.foreignMcpServers ?? []).filter(s => s.source !== 'user');
-
-  // Cap the inline summary list at 20 names — long lists make the
-  // `summary` view unreadable. The full list lives in `detailed`.
-  const serverNames = foreign.map(s => s.name).sort();
-  const previewNames = serverNames.slice(0, 20);
-
-  return {
-    summary: {
-      area: 'foreign-mcp-servers',
-      name: 'Foreign MCP Servers',
-      description: 'MCP servers from Claude Code config (plugins, claude.ai integrations) — not ruflo-managed but accessible via mcp__<server>__* tools.',
-      toolCount: 0,
-      agentCount: 0,
-      skillCount: 0,
-      serverCount: foreign.length,
-      serverNames: previewNames,
-      whenToUse: 'When the task matches a non-ruflo MCP server (e.g., "search MongoDB" → mongodb server, "look up React docs" → context7).',
-    },
-    detailed: {
-      name: 'Foreign MCP Servers',
-      description: `${foreign.length} foreign MCP servers discovered across .mcp.json files. Call their tools via the mcp__<server>__<tool> prefix.`,
-      tools: [],
-      commands: [],
-      agents: [],
-      skills: [],
-      whenToUse: 'When the task matches a non-ruflo MCP server (mongodb, pinecone, context7, chrome-devtools, playwright, microsoft-learn, Notion, Gmail, Drive, Calendar, Canva, HuggingFace, etc.).',
-      serverCount: foreign.length,
-      serverNames,
-      servers: foreign.map(s => ({ name: s.name, source: s.source, command: s.command })),
-    },
-  };
-}
-
 const guidanceRecommend: MCPTool = {
   name: 'guidance_recommend',
-  description: 'Given a task description, recommend which capability areas, tools, agents, and workflow to use.',
+  description: 'Given a task description, recommend which capability areas, tools, agents, and workflow to use. Use when generic "what tool should I use?" guessing is wrong — Ruflo\'s guidance system uses the live tool index + your workflow context to recommend. Pair with hooks_route at task start. For trivial native-only tasks, no guidance call is needed.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -644,7 +498,7 @@ const guidanceRecommend: MCPTool = {
 
 const guidanceDiscover: MCPTool = {
   name: 'guidance_discover',
-  description: 'Discover all available agents and skills from the .claude/ directory. Returns live filesystem data.',
+  description: 'Discover all available agents and skills from the .claude/ directory. Returns live filesystem data. Use when generic "what tool should I use?" guessing is wrong — Ruflo\'s guidance system uses the live tool index + your workflow context to recommend. Pair with hooks_route at task start. For trivial native-only tasks, no guidance call is needed.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -676,7 +530,7 @@ const guidanceDiscover: MCPTool = {
 
 const guidanceWorkflow: MCPTool = {
   name: 'guidance_workflow',
-  description: 'Get a recommended workflow template for a task type. Includes steps, agents, and topology.',
+  description: 'Get a recommended workflow template for a task type. Includes steps, agents, and topology. Use when generic "what tool should I use?" guessing is wrong — Ruflo\'s guidance system uses the live tool index + your workflow context to recommend. Pair with hooks_route at task start. For trivial native-only tasks, no guidance call is needed.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -728,7 +582,7 @@ const guidanceWorkflow: MCPTool = {
 
 const guidanceQuickRef: MCPTool = {
   name: 'guidance_quickref',
-  description: 'Quick reference card for common operations. Returns the most useful commands for a given domain.',
+  description: 'Quick reference card for common operations. Returns the most useful commands for a given domain. Use when generic "what tool should I use?" guessing is wrong — Ruflo\'s guidance system uses the live tool index + your workflow context to recommend. Pair with hooks_route at task start. For trivial native-only tasks, no guidance call is needed.',
   inputSchema: {
     type: 'object',
     properties: {

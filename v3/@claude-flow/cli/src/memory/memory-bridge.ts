@@ -19,6 +19,7 @@
 
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { createRequire } from 'node:module';
 
 // ===== Lazy singleton =====
 
@@ -28,18 +29,40 @@ let bridgeAvailable: boolean | null = null;
 
 /**
  * Resolve database path with path traversal protection.
- * Only allows paths within or below the project's .swarm directory,
+ * Only allows paths within or below the project's working directory,
  * or the special ':memory:' path.
+ *
+ * #1945: the previous hard-coded `<cwd>/.swarm/memory.db` default ignored
+ * `CLAUDE_FLOW_MEMORY_PATH` / `claude-flow.config.json#memory.persistPath`
+ * — so users with non-default memory paths had `memory init` write to e.g.
+ * `data/memory/memory.db` while `bridgeStoreEntry()` wrote to
+ * `.swarm/memory.db`. CLI store reported success against the wrong file and
+ * a fresh process reading the configured path saw nothing.
+ *
+ * Use `getMemoryRoot()` (from memory-initializer) so the bridge and the
+ * initializer agree on the same file. Imported via require() to avoid a
+ * circular ESM dep between memory-initializer.ts and memory-bridge.ts.
  */
 function getDbPath(customPath?: string): string {
-  const swarmDir = path.resolve(process.cwd(), '.swarm');
-  if (!customPath) return path.join(swarmDir, 'memory.db');
+  let defaultDir = path.resolve(process.cwd(), '.swarm');
+  try {
+    // `getMemoryRoot()` honors $CLAUDE_FLOW_MEMORY_PATH, then the
+    // claude-flow.config.json `memory.persistPath`, then defaults to `.swarm`.
+    const cjsRequire = createRequire(import.meta.url);
+    const mod = cjsRequire('./memory-initializer.js') as { getMemoryRoot?: () => string };
+    if (typeof mod.getMemoryRoot === 'function') {
+      defaultDir = mod.getMemoryRoot();
+    }
+  } catch {
+    /* memory-initializer not resolvable in this build — keep `.swarm/` default */
+  }
+  if (!customPath) return path.join(defaultDir, 'memory.db');
   if (customPath === ':memory:') return ':memory:';
   const resolved = path.resolve(customPath);
-  // Ensure the path doesn't escape the working directory
+  // Ensure the path doesn't escape the working directory.
   const cwd = process.cwd();
   if (!resolved.startsWith(cwd)) {
-    return path.join(swarmDir, 'memory.db'); // fallback to safe default
+    return path.join(defaultDir, 'memory.db'); // fallback to safe default
   }
   return resolved;
 }
@@ -508,19 +531,6 @@ function getDb(registry: any): any | null {
   return { db, agentdb };
 }
 
-/**
- * Flush both AgentDB databases to disk (sql.js uses in-memory SQLite).
- * Must be called after every write operation to persist data.
- */
-function flushDb(ctx: any): void {
-  try {
-    if (ctx?.db?.save) ctx.db.save();
-  } catch { /* db.save() not available (e.g. better-sqlite3) */ }
-  try {
-    if (ctx?.agentdb?.save) ctx.agentdb.save();
-  } catch { /* agentdb.save() not available */ }
-}
-
 // ===== Bridge functions — match memory-initializer.ts signatures =====
 
 /**
@@ -598,6 +608,17 @@ export async function bridgeStoreEntry(options: {
           tags, metadata, created_at, updated_at, expires_at, status
         ) VALUES (?, ?, ?, ?, 'semantic', ?, ?, ?, ?, ?, ?, ?, ?, 'active')`;
 
+    // #1941: provision a `vector_indexes` row for this namespace before the
+    // entry insert. AgentDB's HNSW/router keys lookups by namespace via this
+    // table — if it has no row for e.g. `claude-memories`, `memory_search`
+    // returns 0 results even when memory_entries holds hundreds of rows for
+    // that namespace. INSERT OR IGNORE so existing index rows are preserved.
+    try {
+      ctx.db
+        .prepare(`INSERT OR IGNORE INTO vector_indexes (id, name, dimensions) VALUES (?, ?, ?)`)
+        .run(namespace, namespace, dimensions || 384);
+    } catch { /* vector_indexes may not exist on legacy DBs — fall through */ }
+
     const stmt = ctx.db.prepare(insertSql);
     stmt.run(
       id, key, namespace, value,
@@ -607,16 +628,6 @@ export async function bridgeStoreEntry(options: {
       now, now,
       ttl ? now + (ttl * 1000) : null
     );
-    flushDb(ctx);
-
-    // Flush sql.js in-memory data to disk (agentdb sql.js wrapper only saves on close())
-    if (ctx.db && typeof ctx.db.save === 'function') {
-      try { ctx.db.save(); } catch (e) {
-        // Persistence failed; entry exists in-memory but will be lost on exit.
-        // Warn (not throw) to preserve the store-success contract for callers.
-        console.warn(`[memory-bridge] sql.js flush to disk failed: ${e instanceof Error ? e.message : String(e)}. Entry exists in-memory only.`);
-      }
-    }
 
     // Phase 2: Write-through to TieredCache
     const safeNs = String(namespace).replace(/:/g, '_');
@@ -786,7 +797,6 @@ export async function bridgeListEntries(options: {
     id: string;
     key: string;
     namespace: string;
-    value: string;
     size: number;
     accessCount: number;
     createdAt: string;
@@ -836,7 +846,6 @@ export async function bridgeListEntries(options: {
           id: String(row.id).substring(0, 20),
           key: row.key || String(row.id).substring(0, 15),
           namespace: row.namespace || 'default',
-          value: row.content ?? '',
           size: (row.content || '').length,
           accessCount: row.access_count ?? 0,
           createdAt: row.created_at || new Date().toISOString(),
@@ -934,7 +943,6 @@ export async function bridgeGetEntry(options: {
       ctx.db.prepare(
         `UPDATE memory_entries SET access_count = access_count + 1, last_accessed_at = ? WHERE id = ?`
       ).run(Date.now(), row.id);
-      flushDb(ctx);
     } catch {
       // Non-fatal
     }
@@ -1005,7 +1013,6 @@ export async function bridgeDeleteEntry(options: {
         SET status = 'deleted', updated_at = ?
         WHERE key = ? AND namespace = ? AND status = 'active'
       `).run(Date.now(), key, namespace);
-      flushDb(ctx);
       changes = result?.changes ?? 0;
     } catch {
       return null;
@@ -1690,10 +1697,6 @@ export async function bridgeDeleteHierarchical(options: {
           SET status = 'deleted', updated_at = ?
           WHERE key = ? AND namespace LIKE 'hierarchical%' AND status = 'active'
         `).run(Date.now(), key);
-<<<<<<< HEAD
-        flushDb(ctx);
-=======
->>>>>>> pr-1936-head
         const changes = result?.changes ?? 0;
         if (changes > 0) {
           await logAttestation(registry, 'delete', key, { namespace: 'hierarchical', tier });
@@ -1787,10 +1790,6 @@ export async function bridgeDeleteCausalEdge(options: {
           SET status = 'deleted', updated_at = ?
           WHERE key = ? AND namespace = 'causal-edges' AND status = 'active'
         `).run(Date.now(), edgeKey);
-<<<<<<< HEAD
-        flushDb(ctx);
-=======
->>>>>>> pr-1936-head
         const changes = result?.changes ?? 0;
         if (changes > 0) {
           await logAttestation(registry, 'delete', edgeKey, { namespace: 'causal-edges', relation });
@@ -1879,10 +1878,6 @@ export async function bridgeDeleteCausalNode(options: {
           AND status = 'active'
           AND (key LIKE ? OR key LIKE ?)
       `).run(Date.now(), `${nodeId}→%`, `%→${nodeId}`);
-<<<<<<< HEAD
-      flushDb(ctx);
-=======
->>>>>>> pr-1936-head
       deletedEdges = edgeResult?.changes ?? 0;
 
       const nodeResult = ctx.db.prepare(`
@@ -1890,10 +1885,6 @@ export async function bridgeDeleteCausalNode(options: {
         SET status = 'deleted', updated_at = ?
         WHERE key = ? AND status = 'active'
       `).run(Date.now(), nodeId);
-<<<<<<< HEAD
-      flushDb(ctx);
-=======
->>>>>>> pr-1936-head
       deletedNode = (nodeResult?.changes ?? 0) > 0;
 
       await logAttestation(registry, 'delete', nodeId, { namespace: 'causal-nodes', deletedEdges });
@@ -2132,40 +2123,6 @@ export async function bridgeHealthCheck(
 // ===== Phase 7: Hierarchical memory, consolidation, batch, context, semantic route =====
 
 /**
- * Public bridge result types. All bridge functions return `null` when the
- * underlying AgentDB registry is unreachable; otherwise an envelope.
- */
-export type BridgeStoreResult =
-  | null
-  | { success: false; error: string }
-  | { success: true; id?: string; key: string; tier: string };
-
-export type BridgeRecallResult =
-  | null
-  | { results: unknown[]; controller: string; error?: undefined }
-  | { results: unknown[]; error: string; controller?: undefined };
-
-export type BridgeConsolidateResult =
-  | null
-  | { success: false; error: string }
-  | { success: true; consolidated: unknown };
-
-export type BridgeBatchResult =
-  | null
-  | { success: false; error: string }
-  | { success: true; operation: string; count: number; result: unknown };
-
-export type BridgeSynthesisResult =
-  | null
-  | { success: false; error: string }
-  | { success: true; synthesis: unknown };
-
-export type BridgeRouteResult =
-  | null
-  | { route: unknown; controller: string; error?: undefined; recommendation?: string }
-  | { route: null; error: string; controller: string; recommendation?: string };
-
-/**
  * Store to hierarchical memory with tier.
  * Valid tiers: working, episodic, semantic
  *
@@ -2174,7 +2131,7 @@ export type BridgeRouteResult =
  * Stub API (fallback):
  *   store(key, value, tier) — synchronous
  */
-export async function bridgeHierarchicalStore(params: { key: string; value: string; tier?: string; importance?: number }): Promise<BridgeStoreResult> {
+export async function bridgeHierarchicalStore(params: { key: string; value: string; tier?: string; importance?: number }): Promise<any> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2206,7 +2163,7 @@ export async function bridgeHierarchicalStore(params: { key: string; value: stri
  * Stub API (fallback):
  *   recall(query: string, topK: number) → synchronous array
  */
-export async function bridgeHierarchicalRecall(params: { query: string; tier?: string; topK?: number }): Promise<BridgeRecallResult> {
+export async function bridgeHierarchicalRecall(params: { query: string; tier?: string; topK?: number }): Promise<any> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2245,7 +2202,7 @@ export async function bridgeHierarchicalRecall(params: { query: string; tier?: s
  * Stub API (fallback):
  *   consolidate() → { promoted, pruned, timestamp }
  */
-export async function bridgeConsolidate(params: { minAge?: number; maxEntries?: number }): Promise<BridgeConsolidateResult> {
+export async function bridgeConsolidate(params: { minAge?: number; maxEntries?: number }): Promise<any> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2262,7 +2219,7 @@ export async function bridgeConsolidate(params: { minAge?: number; maxEntries?: 
  * - delete: calls bulkDelete(table, conditions) on episodes table
  * - update: calls bulkUpdate(table, updates, conditions) on episodes table
  */
-export async function bridgeBatchOperation(params: { operation: string; entries: any[] }): Promise<BridgeBatchResult> {
+export async function bridgeBatchOperation(params: { operation: string; entries: any[] }): Promise<any> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2315,7 +2272,7 @@ export async function bridgeBatchOperation(params: { operation: string; entries:
  * Synthesize context from memories.
  * ContextSynthesizer.synthesize is a static method that takes MemoryPattern[] (not a string).
  */
-export async function bridgeContextSynthesize(params: { query: string; maxEntries?: number }): Promise<BridgeSynthesisResult> {
+export async function bridgeContextSynthesize(params: { query: string; maxEntries?: number }): Promise<any> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2353,7 +2310,7 @@ export async function bridgeContextSynthesize(params: { query: string; maxEntrie
  * Available since agentdb 3.0.0-alpha.10 — uses @ruvector/router for
  * semantic matching with keyword fallback.
  */
-export async function bridgeSemanticRoute(params: { input: string }): Promise<BridgeRouteResult> {
+export async function bridgeSemanticRoute(params: { input: string }): Promise<any> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {

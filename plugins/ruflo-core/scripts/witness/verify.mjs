@@ -9,8 +9,18 @@
  *
  * Exit codes:
  *   0  — signature valid + all fixes pass or drift (marker present)
+<<<<<<< HEAD
  *   1  — signature invalid OR any fix regressed/missing
  *   2  — bad arguments / file not found
+=======
+ *   1  — signature invalid OR any fix regressed/missing (real failure)
+ *   2  — bad arguments / file not found OR precondition not met
+ *        (e.g. @noble/ed25519 not installed, or dist files not built —
+ *         source-only checkout without `npm ci && npm run build`).
+ *        Issue #1880: scheduled runners use this to distinguish a
+ *        "needs install+build" environment from a real verification
+ *        failure, so we stop filing recurring issues on every cron run.
+>>>>>>> pr-2031-head
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -33,6 +43,23 @@ const witness = JSON.parse(readFileSync(manifestPath, 'utf8'));
 // ─── signature ────────────────────────────────────────────────────
 const sig = await verifySignature(witness, repoRoot);
 
+<<<<<<< HEAD
+=======
+// Issue #1880 — if @noble/ed25519 isn't installed, this is a
+// precondition failure, not a verification failure. Exit 2 so the
+// scheduled runner can distinguish "install needed" from a real
+// regression and stop filing duplicate issues every 12 hours.
+if (sig.reason === 'noble-ed25519-not-installed') {
+  if (asJson) {
+    console.log(JSON.stringify(
+      { ok: false, precondition: 'noble-ed25519-not-installed', signature: sig },
+      null, 2
+    ));
+  }
+  process.exit(2);
+}
+
+>>>>>>> pr-2031-head
 // ─── per-fix marker check ─────────────────────────────────────────
 const fileResults = witness.manifest.fixes.map((fix) => {
   const installed = join(repoRoot, fix.file);
@@ -53,6 +80,38 @@ const summary = {
   regressed: fileResults.filter(r => r.status === 'regressed').length,
   missing: fileResults.filter(r => r.status === 'missing').length,
 };
+<<<<<<< HEAD
+=======
+
+// Issue #1880 — heuristic: if *every* manifest entry is missing AND at
+// least one references a `/dist/` path, the checkout was source-only
+// (no `npm run build`). That's a precondition failure, not a regression.
+// Anything more nuanced (partial dist build, real regressions, etc.)
+// still lands in the normal exit-1 path.
+const allMissing = fileResults.length > 0
+                && summary.missing === fileResults.length;
+const referencesDist = fileResults.some(r => r.file && r.file.includes(`${sep}dist${sep}`)
+                                          || (r.file && r.file.includes('/dist/')));
+if (allMissing && referencesDist) {
+  if (asJson) {
+    console.log(JSON.stringify(
+      { ok: false, precondition: 'dist-not-built', signature: sig, summary },
+      null, 2
+    ));
+  } else {
+    console.error(
+      `verify.mjs: every manifest entry is missing and the manifest references\n` +
+      `dist/ artifacts. The checkout appears to be source-only (no build run).\n` +
+      `\n` +
+      `Fix: from the repo root, run \`npm ci && npm run build\` (or the\n` +
+      `equivalent for the workspaces witness markers reference) before\n` +
+      `invoking this script. See #1880 for the full diagnosis.`
+    );
+  }
+  process.exit(2);
+}
+
+>>>>>>> pr-2031-head
 const ok = sig.signatureValid && sig.manifestHashOk && sig.publicKeyReproducible
         && summary.regressed === 0 && summary.missing === 0;
 
@@ -100,8 +159,33 @@ async function verifySignature(witness, repoRoot) {
     catch (e) { probeErr = e; }
   }
   if (!ed) {
+<<<<<<< HEAD
     console.error(`verify.mjs: could not load @noble/ed25519 from any of:\n  ${probes.join('\n  ')}\n  last error: ${probeErr?.message ?? '?'}`);
     return { manifestHashOk: false, publicKeyReproducible: false, signatureValid: false };
+=======
+    // ruflo#1880 — the scheduled 12h verification has bounced off this
+    // 6+ times. Spell out the fix in the error message instead of
+    // leaving the operator to chase it.
+    console.error(
+      `verify.mjs: could not load @noble/ed25519 from any of:\n` +
+      `  ${probes.join('\n  ')}\n` +
+      `  last error: ${probeErr?.message ?? '?'}\n` +
+      `\n` +
+      `Fix: from the repo root, run \`npm install\` (the dep is declared\n` +
+      `in the root package.json under @noble/ed25519). If your runner\n` +
+      `is a source-only checkout, your verification pipeline must run\n` +
+      `\`npm ci && npm run build\` before invoking this script. See #1880\n` +
+      `for the full diagnosis.`
+    );
+    return {
+      manifestHashOk: false,
+      publicKeyReproducible: false,
+      signatureValid: false,
+      // Machine-parseable hint for the scheduled runner so it can
+      // distinguish "missing dep" from a real signature failure.
+      reason: 'noble-ed25519-not-installed',
+    };
+>>>>>>> pr-2031-head
   }
 
   ed.etc.sha512Sync = (...m) => { const h = createHash('sha512'); for (const x of m) h.update(x); return h.digest(); };

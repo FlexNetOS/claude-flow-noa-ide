@@ -3,47 +3,8 @@
  * Creates .claude/settings.json with V3-optimized hook configurations
  */
 
-import os from 'os';
-import path from 'path';
-
-import { resolveInstallContext } from '@claude-flow/shared';
-
 import type { InitOptions, HooksConfig, PlatformInfo } from './types.js';
 import { detectPlatform } from './types.js';
-
-/**
- * Detect a global install — when init writes into `~/.claude` itself
- * (rather than a per-project `<project>/.claude`). Under a global install,
- * Claude Code sets `CLAUDE_PROJECT_DIR=/Users/<u>/.claude`, and the historical
- * hook command `${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/...` resolves to
- * `~/.claude/.claude/helpers/...` (double `.claude`) → MODULE_NOT_FOUND
- * (#bug8). We instead emit `$HOME/.claude/helpers/...` directly so the path
- * is correct regardless of CLAUDE_PROJECT_DIR.
- *
- * Per-project installs are unaffected: hookCmd keeps its previous shape.
- *
- * Exported because the init executor (#bug9) also needs to detect this case
- * to avoid joining a redundant `.claude/` segment on top of `targetDir` when
- * `targetDir` already *is* `~/.claude`. Without this guard, every re-init of
- * the global install writes to a phantom `~/.claude/.claude/...` tree while
- * the real `~/.claude/helpers/` (where Claude Code reads from) is never
- * updated.
- */
-export function isGlobalInstall(targetDir: string | undefined): boolean {
-  if (!targetDir) return false;
-  try {
-    // STRAT-1: route through the shared resolver so this stays in sync with
-    // every other site that asks the same question. The resolver returns
-    // claudeRoot = ~/.claude when global; we then check whether targetDir
-    // sits inside it.
-    const ctx = resolveInstallContext({ home: os.homedir() });
-    const homeClaude = ctx.isGlobalInstall ? ctx.claudeRoot : path.join(os.homedir(), '.claude');
-    const resolvedTarget = path.resolve(targetDir);
-    return resolvedTarget === homeClaude || resolvedTarget.startsWith(homeClaude + path.sep);
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Generate the complete settings.json content
@@ -51,12 +12,6 @@ export function isGlobalInstall(targetDir: string | undefined): boolean {
 export function generateSettings(options: InitOptions): object {
   const settings: Record<string, unknown> = {};
 
-<<<<<<< HEAD
-  // Detect global vs per-project install for hook-command path emission (#bug8).
-  const globalInstall = isGlobalInstall(options.targetDir);
-
-=======
->>>>>>> pr-1936-head
   // Add hooks if enabled. CRITICAL (#1744 #3): only emit the hooks block when
   // the helpers directory will also be bundled. The hook commands point at
   // .claude/helpers/hook-handler.cjs; if that file isn't created (as in
@@ -64,64 +19,25 @@ export function generateSettings(options: InitOptions): object {
   // fails to find its handler. Either bundle the helpers OR drop the hooks —
   // the option this fix takes is the latter (minimal stays minimal).
   if (options.components.settings && options.components.helpers) {
-<<<<<<< HEAD
-    settings.hooks = generateHooksConfig(options.hooks, { globalInstall });
-=======
     settings.hooks = generateHooksConfig(options.hooks);
->>>>>>> pr-1936-head
   }
 
   // Add statusLine configuration if enabled
   if (options.statusline.enabled) {
-    settings.statusLine = generateStatusLineConfig(options, { globalInstall });
+    settings.statusLine = generateStatusLineConfig(options);
   }
 
   // Add permissions
-  // #bug10.1 — MCP permission glob is `mcp__<server>__<tool>` (no colon). The
-  // historical literal `mcp__claude-flow__:*` matched zero tools and was dead.
-  // #bug10.2 — `.env` deny rules must be repo-wide globs, not project-relative.
-  // `Read(./.env)` only blocks when cwd is the same dir as the file; switching
-  // to `Read(**/.env*)` catches `.env`, `.env.local`, `.env.production`, … in
-  // any subdirectory.
-  // #bug34 — replace bare `Bash(npx claude-flow*)` prefix-wildcards with exact-
-  // subcommand grants. The old patterns were wide enough that
-  // `npx claude-flow-anything --eval` slipped through the allow list and ran
-  // without prompting. Audit also flagged the deny list as too thin — added
-  // the universally dangerous patterns (eval bypass, pipe-to-shell,
-  // download-and-exec, total wipe, fork bomb) and broader credential globs.
   settings.permissions = {
     allow: [
-      'Bash(npx @claude-flow/cli * mcp start)',
-      'Bash(npx claude-flow doctor)',
-      'Bash(npx claude-flow doctor --fix)',
-      'Bash(npx claude-flow init)',
-      'Bash(npx claude-flow init --*)',
-      'Bash(npx claude-flow memory *)',
-      'Bash(npx claude-flow swarm *)',
-      'Bash(npx claude-flow daemon *)',
-      'Bash(npx claude-flow hooks *)',
-      'Bash(npx ruflo doctor)',
-      'Bash(npx ruflo doctor --fix)',
-      'Bash(npx ruflo init)',
-      'Bash(npx ruflo init --*)',
-      'Bash(npx ruflo memory *)',
-      'Bash(npx ruflo swarm *)',
-      'Bash(npx ruflo daemon *)',
-      'Bash(npx ruflo hooks *)',
-      'Bash(node $HOME/.claude/helpers/*)',
-      'mcp__claude-flow__*',
+      'Bash(npx @claude-flow*)',
+      'Bash(npx claude-flow*)',
+      'Bash(node .claude/*)',
+      'mcp__claude-flow__:*',
     ],
     deny: [
-      'Read(**/.env*)',
-      'Read(**/credentials.json)',
-      'Read(**/.ssh/id_*)',
-      'Bash(*--eval*)',
-      'Bash(*| sh*)',
-      'Bash(*| bash*)',
-      'Bash(curl *| sh*)',
-      'Bash(wget *| sh*)',
-      'Bash(rm -rf /*)',
-      'Bash(:(){ :|:& };:*)',
+      'Read(./.env)',
+      'Read(./.env.*)',
     ],
   };
 
@@ -227,16 +143,13 @@ export function generateSettings(options: InitOptions): object {
     },
     adr: {
       autoGenerate: true,
-      // #bug10.3 — must be repo-relative. `/docs/adr` resolves to filesystem
-      // root and ADR auto-generation fails with EACCES.
-      directory: 'docs/adr',
+      directory: '/docs/adr',
       template: 'madr',
     },
     ddd: {
       trackDomains: true,
       validateBoundedContexts: true,
-      // #bug10.4 — same root-path bug as #bug10.3.
-      directory: 'docs/ddd',
+      directory: '/docs/ddd',
     },
     security: {
       autoScan: true,
@@ -255,94 +168,104 @@ export function generateSettings(options: InitOptions): object {
 const IS_WINDOWS = process.platform === 'win32';
 
 /**
- * Build a hook command with reliable $CLAUDE_PROJECT_DIR expansion.
- * Wraps in `sh -c` to guarantee shell expansion on all platforms (macOS zsh,
- * Linux bash). Falls back to "." if CLAUDE_PROJECT_DIR is unset, since
- * Claude Code runs hooks from the project root.
- * On Windows, uses `cmd /c` with %CLAUDE_PROJECT_DIR%.
+ * Build a hook command that resolves to the right helpers dir on every
+ * install layout. `ruflo init` can land helpers either project-locally
+ * (`<project>/.claude/helpers/…`, when run from a project root) or globally
+ * (`$HOME/.claude/helpers/…`, when settings.json gets merged into the
+ * user-level Claude Code config). The earlier `${CLAUDE_PROJECT_DIR:-.}`
+ * form assumed project-local — so any global-install user hit
+ * `MODULE_NOT_FOUND` on every Bash/Edit/Session hook (#1943).
  *
- * #bug8 — under a global install (`targetDir === ~/.claude`), Claude Code
- * sets `CLAUDE_PROJECT_DIR=~/.claude`, so the historical
- * `${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/...` path doubles the `.claude`
- * segment and produces `~/.claude/.claude/helpers/...` (MODULE_NOT_FOUND).
- * When `globalInstall=true` we emit `$HOME/.claude/helpers/...` (POSIX) or
- * `%USERPROFILE%\\.claude\\helpers\\...` (Windows) directly, dropping the
- * env-var indirection. The caller passes `script` as `.claude/helpers/<basename>`
- * for compatibility — we strip the leading `.claude/` segment for the global
- * branch since the install root *is* `.claude`.
+ * The fix is a tiny POSIX `sh` probe: try `$CLAUDE_PROJECT_DIR/.claude/...`
+ * first, fall back to `$HOME/.claude/...` if it's missing. Both modes work,
+ * the global install never crashes, and project-local overrides still take
+ * precedence when present. On Windows, the same probe via `cmd /c` (the %~%
+ * fallback uses `IF EXIST`).
  */
-function hookCmd(
-  script: string,
-  subcommand: string,
-  opts: { globalInstall?: boolean } = {},
-): string {
-  const globalInstall = opts.globalInstall === true;
-
-  // Strip leading ".claude/" when going to global install — install root is
-  // already ~/.claude, so the helpers path under it is simply `helpers/...`.
-  const stripLeadingClaude = (s: string): string =>
-    s.startsWith('.claude/') ? s.slice('.claude/'.length) : s;
-
+function hookCmd(script: string, subcommand: string): string {
   if (IS_WINDOWS) {
-    if (globalInstall) {
-      const tail = stripLeadingClaude(script).replace(/\//g, '\\');
-      return `cmd /c node %USERPROFILE%\\.claude\\${tail} ${subcommand}`.trim();
-    }
-    return `cmd /c node %CLAUDE_PROJECT_DIR%/${script} ${subcommand}`.trim();
+    // cmd.exe equivalent of the sh probe below. `IF EXIST` checks the
+    // project-local path; falls back to %USERPROFILE% if missing.
+    return `cmd /c "IF EXIST \"%CLAUDE_PROJECT_DIR%\\${script.replace(/\//g, '\\')}\" (node \"%CLAUDE_PROJECT_DIR%\\${script.replace(/\//g, '\\')}\" ${subcommand}) ELSE (node \"%USERPROFILE%\\${script.replace(/\//g, '\\')}\" ${subcommand})"`;
   }
-
-  if (globalInstall) {
-    const tail = stripLeadingClaude(script);
-    // $HOME is universally exported on POSIX; no env-var indirection issue.
-    return `sh -c 'exec node "$HOME/.claude/${tail}" ${subcommand}'`;
-  }
-
-  // Per-project install (current behavior). Use sh -c to ensure
-  // $CLAUDE_PROJECT_DIR is expanded by a real shell, even if Claude Code
-  // doesn't invoke hooks through a shell on macOS.
+  // POSIX sh: prefer project-local helpers, fall back to $HOME/.claude/.
+  // The fallback handles `ruflo init`'s global-install path where helpers
+  // live at `$HOME/.claude/helpers/` but Claude Code still sets
+  // `CLAUDE_PROJECT_DIR` to the *project* root (which has no helpers).
   // eslint-disable-next-line no-template-curly-in-string
-  const dir = '${CLAUDE_PROJECT_DIR:-.}';
-  return `sh -c 'exec node "${dir}/${script}" ${subcommand}'`;
+  const projVar = '${CLAUDE_PROJECT_DIR:-.}';
+  // eslint-disable-next-line no-template-curly-in-string
+  const homeVar = '${HOME}';
+  return `sh -c 'D="${projVar}"; [ -f "$D/${script}" ] || D="${homeVar}"; exec node "$D/${script}" ${subcommand}'`;
 }
 
 /** Shorthand for CJS hook-handler commands */
-function hookHandlerCmd(subcommand: string, opts: { globalInstall?: boolean } = {}): string {
-  return hookCmd('.claude/helpers/hook-handler.cjs', subcommand, opts);
+function hookHandlerCmd(subcommand: string): string {
+  return hookCmd('.claude/helpers/hook-handler.cjs', subcommand);
 }
 
 /** Shorthand for ESM auto-memory-hook commands */
-function autoMemoryCmd(subcommand: string, opts: { globalInstall?: boolean } = {}): string {
-  return hookCmd('.claude/helpers/auto-memory-hook.mjs', subcommand, opts);
+function autoMemoryCmd(subcommand: string): string {
+  return hookCmd('.claude/helpers/auto-memory-hook.mjs', subcommand);
 }
 
 /**
  * Generate statusLine configuration for Claude Code
  * Uses local helper script for cross-platform compatibility (no npx cold-start)
- *
- * #bug8 — same global-install path-doubling fix as `hookCmd`. When
- * `globalInstall=true`, emit `$HOME/.claude/helpers/statusline.cjs`
- * directly to bypass the `${CLAUDE_PROJECT_DIR}/.claude` doubling.
  */
-function generateStatusLineConfig(
-  _options: InitOptions,
-  opts: { globalInstall?: boolean } = {},
-): object {
+function generateStatusLineConfig(_options: InitOptions): object {
   // Claude Code pipes JSON session data to the script via stdin.
   // Valid fields: type, command, padding (optional).
   // The script runs after each assistant message (debounced 300ms).
-  // NOTE: statusline must NOT use `cmd /c` — Claude Code manages its stdin
-  // directly for statusline commands, and `cmd /c` blocks stdin forwarding.
-  if (opts.globalInstall === true) {
+  //
+  // ruflo#1948 + #1973: the previous `sh -c 'D="${CLAUDE_PROJECT_DIR:-.}"; …'`
+  // form requires a POSIX shell on PATH. On native Windows (no
+  // Git-Bash / WSL), `sh` either isn't found or its quoting gets
+  // mangled, producing weird artifacts like files named `0)` or
+  // `toastr.error('ESD...` from misparsed tokens leaking back into
+  // the file system. NEVER use `cmd /c` for statusline — Claude Code
+  // manages stdin directly for statusline commands and `cmd /c`
+  // blocks the stdin forwarding.
+  //
+  // Solution: emit a platform-appropriate command at init time.
+  //   POSIX:   `sh -c 'D="…"; … exec node "$D/<script>"'` (existing)
+  //   Windows: a Node.js one-liner that resolves the path internally
+  //            using `process.env.CLAUDE_PROJECT_DIR` with a HOME
+  //            fallback — no shell-quoting hazards because the
+  //            resolution happens inside node, not in the shell.
+  const script = '.claude/helpers/statusline.cjs';
+
+  if (process.platform === 'win32') {
+    // The Node CLI's `-e` flag avoids all shell-quoting pitfalls.
+    // We write the path resolution in JS:
+    //   const fs = require('fs'); const p = require('path');
+    //   const d = process.env.CLAUDE_PROJECT_DIR || '.';
+    //   const f = p.join(d, '.claude/helpers/statusline.cjs');
+    //   const home = process.env.USERPROFILE || process.env.HOME || '.';
+    //   const h = p.join(home, '.claude/helpers/statusline.cjs');
+    //   require(fs.existsSync(f) ? f : h);
+    // …compressed onto one line. Double-quotes around the -e arg are
+    // safe on cmd.exe; the inner JS uses single-quotes for strings.
+    const js =
+      "const fs=require('fs'),p=require('path');" +
+      `const d=process.env.CLAUDE_PROJECT_DIR||'.';` +
+      `const f=p.join(d,'${script}');` +
+      `const h=p.join(process.env.USERPROFILE||process.env.HOME||'.', '${script}');` +
+      'require(fs.existsSync(f)?f:h);';
     return {
       type: 'command',
-      command: `sh -c 'exec node "$HOME/.claude/helpers/statusline.cjs"'`,
+      command: `node -e "${js}"`,
     };
   }
+
+  // Same project-local / $HOME fallback as `hookCmd()` (see #1943).
   // eslint-disable-next-line no-template-curly-in-string
-  const dir = '${CLAUDE_PROJECT_DIR:-.}';
+  const projVar = '${CLAUDE_PROJECT_DIR:-.}';
+  // eslint-disable-next-line no-template-curly-in-string
+  const homeVar = '${HOME}';
   return {
     type: 'command',
-    command: `sh -c 'exec node "${dir}/.claude/helpers/statusline.cjs"'`,
+    command: `sh -c 'D="${projVar}"; [ -f "$D/${script}" ] || D="${homeVar}"; exec node "$D/${script}"'`,
   };
 }
 
@@ -351,18 +274,9 @@ function generateStatusLineConfig(
  * Uses local hook-handler.cjs for cross-platform compatibility.
  * All hooks invoke scripts directly via `node <script> <subcommand>`,
  * working identically on Windows, macOS, and Linux.
- *
- * `opts.globalInstall` switches all emitted commands to absolute
- * `$HOME/.claude/helpers/...` paths to fix the global-install path-doubling
- * regression (#bug8).
  */
-function generateHooksConfig(
-  config: HooksConfig,
-  opts: { globalInstall?: boolean } = {},
-): object {
+function generateHooksConfig(config: HooksConfig): object {
   const hooks: Record<string, unknown[]> = {};
-  const hh = (sub: string): string => hookHandlerCmd(sub, opts);
-  const am = (sub: string): string => autoMemoryCmd(sub, opts);
 
   // Node.js scripts handle errors internally via try/catch.
   // No shell-level error suppression needed (2>/dev/null || true breaks Windows).
@@ -375,7 +289,7 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('pre-bash'),
+            command: hookHandlerCmd('pre-bash'),
             timeout: config.timeout,
           },
         ],
@@ -385,22 +299,8 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('pre-edit'),
+            command: hookHandlerCmd('pre-edit'),
             timeout: config.timeout,
-          },
-        ],
-      },
-      // #bug33 — scan content fetched from the web for prompt injection or
-      // PII before the model sees it. WebFetch is the highest-risk surface
-      // for indirect prompt injection (a poisoned URL can carry hidden
-      // instructions back into context).
-      {
-        matcher: 'WebFetch',
-        hooks: [
-          {
-            type: 'command',
-            command: hh('aidefence-scan'),
-            timeout: 5000,
           },
         ],
       },
@@ -415,7 +315,7 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('post-edit'),
+            command: hookHandlerCmd('post-edit'),
             timeout: 10000,
           },
         ],
@@ -425,7 +325,7 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('post-bash'),
+            command: hookHandlerCmd('post-bash'),
             timeout: config.timeout,
           },
         ],
@@ -433,21 +333,14 @@ function generateHooksConfig(
     ];
   }
 
-  // UserPromptSubmit — intelligent task routing + AIDefence pre-scan (#bug33)
+  // UserPromptSubmit — intelligent task routing
   if (config.userPromptSubmit) {
     hooks.UserPromptSubmit = [
       {
         hooks: [
-          // #bug33 — runs FIRST so a flagged prompt blocks before routing
-          // wastes tokens on an injection attempt. Exits non-zero on threat.
           {
             type: 'command',
-            command: hh('aidefence-scan'),
-            timeout: 5000,
-          },
-          {
-            type: 'command',
-            command: hh('route'),
+            command: hookHandlerCmd('route'),
             timeout: 10000,
           },
         ],
@@ -462,12 +355,12 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('session-restore'),
+            command: hookHandlerCmd('session-restore'),
             timeout: 15000,
           },
           {
             type: 'command',
-            command: am('import'),
+            command: autoMemoryCmd('import'),
             timeout: 8000,
           },
         ],
@@ -482,7 +375,7 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('session-end'),
+            command: hookHandlerCmd('session-end'),
             timeout: 10000,
           },
         ],
@@ -497,7 +390,7 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: am('sync'),
+            command: autoMemoryCmd('sync'),
             timeout: 10000,
           },
         ],
@@ -513,11 +406,11 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('compact-manual'),
+            command: hookHandlerCmd('compact-manual'),
           },
           {
             type: 'command',
-            command: hh('session-end'),
+            command: hookHandlerCmd('session-end'),
             timeout: 5000,
           },
         ],
@@ -527,11 +420,11 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('compact-auto'),
+            command: hookHandlerCmd('compact-auto'),
           },
           {
             type: 'command',
-            command: hh('session-end'),
+            command: hookHandlerCmd('session-end'),
             timeout: 6000,
           },
         ],
@@ -545,7 +438,7 @@ function generateHooksConfig(
       hooks: [
         {
           type: 'command',
-          command: hh('status'),
+          command: hookHandlerCmd('status'),
           timeout: 3000,
         },
       ],
@@ -559,7 +452,7 @@ function generateHooksConfig(
       hooks: [
         {
           type: 'command',
-          command: hh('post-task'),
+          command: hookHandlerCmd('post-task'),
           timeout: 5000,
         },
       ],
@@ -573,7 +466,7 @@ function generateHooksConfig(
         hooks: [
           {
             type: 'command',
-            command: hh('notify'),
+            command: hookHandlerCmd('notify'),
             timeout: 3000,
           },
         ],

@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-knowledge-graph plugin contract — pinning, namespace coordination, embeddings_generate fix, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, knowledge-graph, entities, relations, pathfinder, namespace, smoke-test]
@@ -64,9 +70,15 @@ bash plugins/ruflo-knowledge-graph/scripts/smoke.sh
 - `plugins/ruflo-cost-tracker/docs/adrs/0001-cost-tracker-contract.md` — sibling pattern of fixing real MCP-tool drift in skills
 - `v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts:260` — `embeddings_generate` (the real tool name)
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-knowledge-graph/`. Contract elements implemented: `embeddings_embed` → `embeddings_generate` tool-name drift fixed in both skill and agent files; namespace `knowledge-graph` claimed; pathfinder graph traversal via `agentdb_semantic-route` + `agentdb_causal-edge` documented; smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

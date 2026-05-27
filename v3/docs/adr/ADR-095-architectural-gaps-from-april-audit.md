@@ -143,3 +143,98 @@ This ADR closes when each row above has either landed in its own ADR (proposed/a
 
 - ADR-093 was never the right place to address these. It was a punch list of *honesty patches* — making the contract match the implementation. ADR-095 explicitly tracks gaps where the implementation needs to expand to match what the contract should be.
 - @roman-rr's audit was rigorous; the gaps named here are real. This ADR exists so future maintainers don't re-discover them every audit cycle.
+
+---
+
+## Status update — 2026-05-11 (post v3.7.0-alpha.21)
+
+Independent re-audit by AlphaSignal AI (May 7, targeting v3.6.30) re-surfaced these gaps publicly. Verification pass on current main + the work in v3.7.0-alpha series shows the following status changes:
+
+### G1 — agent_spawn → REMEDIATED via `agent_execute` wire
+
+The execution wire shipped as a sibling MCP tool, not by modifying `agent_spawn` (which intentionally remains a registry-only write for cost attribution + swarm coordination). File: `v3/@claude-flow/cli/src/mcp-tools/agent-execute-core.ts:117` — `fetch('https://api.anthropic.com/v1/messages', ...)`. Workflow steps go through this wire (see G3).
+
+### G3 — workflow_execute → REMEDIATED with real step executor
+
+`v3/@claude-flow/cli/src/mcp-tools/workflow-tools.ts:308+` contains the step-walking executor with variable interpolation, step-output binding, pause/cancel, and persistence-after-each-step. The `'Workflow not found'` error only fires when `store.workflows[workflowId]` is undefined (correct missing-ID handling, not a stub).
+
+### G4 — WASM agent prompt → REMEDIATED with echo-stub detection + Anthropic fallback
+
+`v3/@claude-flow/cli/src/ruvector/agent-wasm.ts:154` (`promptWasmAgent`) detects the bundled WASM agent's `echo: <input>` stub and routes through `callAnthropicMessages` when `ANTHROPIC_API_KEY` is set. When unset, surfaces the stub honestly with a `[NOTE: …set ANTHROPIC_API_KEY to enable real responses]` hint.
+
+### G6 — Auto-memory bloat → REFUTED on current main
+
+The 5,706-entries-per-message claim does not match current behavior:
+1. Global `~/.claude/settings.json` UserPromptSubmit hook is `[ -n "$PROMPT" ] && npx @claude-flow/cli@latest hooks route --task "$PROMPT" || true` — single routing call, no bulk injection.
+2. `plugins/ruflo-core/hooks/hooks.json` defines only `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop` — no UserPromptSubmit / SessionStart context injection.
+3. No `trigram` / `jaccard` symbols in plugin/helper hooks (only one reference in `plugins/ruflo-rag-memory/README.md` documenting MMR diversity reranking — different code path).
+4. Live measurement: session-start reminder showed `[AutoMemory] ✓ Imported 0 entries (0 skipped) Backend entries: 8`.
+
+The 100 MB `graph-state.json` artifact may still exist on machines with long-lived `~/.claude/projects/` histories, but the runtime injection path no longer reads it. Recommend a separate one-shot cleanup script for users with bloated state files from earlier versions.
+
+### Benchmark integrity — REMEDIATED (simulate_benchmarks.py removed)
+
+- `find . -name 'simulate_benchmarks*'` returns zero results in current main.
+- `git grep "84.8.*SWE"` in tracked `.md` files returns zero hits.
+
+Both specific artifacts called out in the AlphaSignal article have been cleaned up. Downstream marketing materials (gists, social posts) are outside this ADR's scope.
+
+### G2 — in progress (consensus transport abstraction)
+
+The first piece landed: `v3/@claude-flow/swarm/src/consensus/transport.ts` introduces a `ConsensusTransport` interface that separates the **inter-node-message** dimension from the **observability-event** dimension. The consensus protocols (raft/byzantine/gossip) historically used a local `EventEmitter` for both — the inter-node side never crossed a process boundary (a node "sent" a message by `emit`ting it locally and synthesizing the peer's reply inline).
+
+**Landed (PR #1905, branch `feat/adr-095-g2-hive-mind-ws-transport`):**
+- `ConsensusTransport` interface — `send` (request-response), `broadcast`, `onMessage`, `peers`, `close`. Separates inter-node messaging from observability events.
+- `LocalTransport` — in-process registry; the default, matches current single-process behavior. Optional Ed25519 signing + per-sender monotonic-`seq` replay defense.
+- Real Ed25519 message signing via Node's built-in `crypto` (no new deps): `generateNodeKeyPair`, `signMessage`, `verifyMessage`, `canonicalizeForSigning` (deep-sorted-key JSON for cross-host determinism), `messageDigest`.
+- `FederationTransport` — `ConsensusTransport` over the federation plugin's ADR-104 WS wire (`agentic-flow/transport/loader`). Structural dep (swarm stays zero-dep — the wiring layer supplies the transport instance). Request-response layered on fire-and-forget WS via correlation ids; ADR-104 stream-mux; Ed25519 + replay defense; fail-closed.
+- **All three protocols wired** to accept an injected `transport`: `RaftConsensus` (real RequestVote/AppendEntries RPCs with proper receiver rules — term comparison, vote-once-per-term, log-up-to-date check, commitIndex advance), `ByzantineConsensus` (PBFT messages over the transport, sha256 digests replacing the 32-bit toy hash, inbound routing), `GossipConsensus` (gossip messages to neighbors over the transport, inbound merge with dedup-by-id). Legacy no-transport path preserved in all three.
+- **BFT fault-tolerance correctness**: `f` now derived from the actual cluster size (`floor((n-1)/3)`, clamped to ≥1) rather than hardcoded to 1; `config.maxFaultyNodes` (when set) acts as an upper cap. Quorum `2f+1` checks now use the cluster-derived `f`.
+- CI guard: `plugins/ruflo-core/scripts/test-consensus-transport.mjs` (in the `mcp-roundtrip-smoke` job) — asserts exports present (incl. `FederationTransport`), `LocalTransport` round-trips, Ed25519 verify is real (no `return true` stub regression).
+- Tests: 210/210 swarm suite (+28 new across transport/byzantine/raft/federation/gossip).
+
+Remaining for G2:
+- Failure-injection tests (f<n/3 for BFT, f<n/2 for Raft) — drive a multi-node `LocalTransport` cluster with simulated faulty/silent nodes; assert correct commits below threshold, no incorrect commits above.
+- Cross-host validation (mac ↔ ruvultra over tailscale, root) once `FederationTransport` is wired into a real hive-mind + federation setup.
+- Build + publish; merge PR #1905.
+
+Tracked in [#1872](https://github.com/ruvnet/ruflo/issues/1872) and PR #1905.
+
+### G2.2 — done (hive-mind MCP layer routes through the real ConsensusEngine)
+
+After the G2 transport abstraction landed, the `hive-mind_*` MCP tools were still a JSON-file state machine — they never instantiated `ConsensusEngine`, never touched `LocalTransport` / `FederationTransport`, and the hand-rolled raft/byzantine/quorum voting in `hive-mind_consensus` ran on top of `state.consensus.pending/history` instead of the real protocols. So the cross-host machinery from G2 was unreachable from the surface the LLM agents actually call.
+
+**Landed (PR #1872 follow-up, `@claude-flow/swarm@3.0.0-alpha.8` + `@claude-flow/cli@3.7.0-alpha.45`):**
+- `v3/@claude-flow/cli/src/mcp-tools/hive-consensus-runtime.ts` — process-level singleton that owns a real `ConsensusEngine` + `ConsensusTransport`. Lifecycle: `init` → `propose` / `vote` / `awaitConsensus` / `broadcast` → `status` → `shutdown`.
+- Transport selection logic:
+  - `transport: 'local'`        → `LocalTransport` (in-process registry). Legacy single-process behavior, but with the real engine.
+  - `transport: 'federation'`   → `FederationTransport` over `agentic-flow/transport/loader`. Cross-host wire. If the loader isn't installed, falls back to local with `degraded: true` + machine-parseable `fallbackReason`.
+  - `transport: 'auto'` (default) → silent fallback to local when federation isn't reachable; no noise unless the operator explicitly asked for federation.
+- `ConsensusConfig.transport` field added (typed `unknown` to keep `types.ts` free of cross-module imports; engine narrows via a structural check). `ConsensusEngine.initialize()` forwards it to Raft / Byzantine / Gossip — closes the gap where the inner protocols accepted a transport but the engine wrapper never passed one through.
+- `hive-mind_init` accepts `transport`, `algorithm`, `peers`; instantiates the runtime; returns `runtime: { engine, transport, algorithm, degraded, fallbackReason, peerCount }` so callers see which wire is actually live.
+- `hive-mind_consensus` adds two engine-routed paths:
+  - `action: 'propose'` with `useEngine: true` → real `engine.propose(value, proposerId)`.
+  - `action: 'vote'` with `useEngine: true` → real `engine.vote(proposalId, vote)`.
+  - New `action: 'engine-stats'` returns the live runtime status (initialized? algorithm? transport? peers? engine.getStats()?).
+  - Legacy JSON-state-machine voting preserved as default; `useEngine: false` (or unset) keeps backward compat.
+- `hive-mind_broadcast` proxies through `transport.broadcast` when the runtime is initialized; in-process peers get a real handler invocation, cross-host peers get the WS frame. Falls back to the file-state record when offline.
+- `hive-mind_shutdown` tears down the runtime alongside the file-state (returns `runtimeShutdown: true`).
+- Swarm-side ESM hygiene: `coordination/agent-registry.ts`, `task-orchestrator.ts`, `swarm-hub.ts` were missing `.js` extensions on their relative imports, which silently broke any non-vitest ESM consumer. Fixed alongside G2.2 — the test suite was hiding the issue because vitest's transform tolerated bare specifiers.
+- Tests: **10/10 new** in `v3/@claude-flow/cli/__tests__/hive-consensus-runtime.test.ts` covering transport selection (local/federation/auto), federation-loader-missing degradation, propose-vote round-trip via real engine, shutdown idempotency, re-init teardown, 3-node `LocalTransport` registry membership.
+- CI guard: `scripts/smoke-hive-consensus-engine.mjs` drives the real MCP handlers end-to-end and asserts `runtime.engine === 'enabled'`, `transport === 'local'`, `propose.engine === 'enabled'`, `shutdown.runtimeShutdown === true`. Wired as `hive-mind-consensus-engine-wire-up-smoke` in `v3-ci.yml`.
+
+Remaining for G3 (G2.3):
+- DiscoveryService integration: the runtime today takes an explicit peer list at init; the canonical peer source is the federation plugin's `DiscoveryService`. Wiring it in is the next step, with operator-consent gating.
+- Live mac ↔ ruvultra round (real `FederationTransport` over tailscale, not the in-process LocalTransport).
+
+### Still open
+
+- **G5** — superseded by ADR-094; deps migration status tracked there.
+- **G7** — controller activation ADRs still per-controller work; 2 of 8 controllers active.
+- **#1748** — RESOLVED in alpha.22 (ADR-112): 0/285 tools lack "Use when" guidance; CI guard active.
+
+### Tracking
+
+- [#1896](https://github.com/ruvnet/ruflo/issues/1896) — external audit response with the per-gap measurement evidence above.
+
+This update does NOT supersede the original ADR-095 problem statement; it records that 4 of the 7 originally-named gaps have been quietly fixed by the v3.7.0-alpha work that landed without ceremony.

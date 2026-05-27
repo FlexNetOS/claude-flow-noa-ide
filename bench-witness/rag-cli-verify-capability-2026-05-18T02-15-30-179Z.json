@@ -1,0 +1,84 @@
+{
+  "summary": {
+    "ledgerPath": "/Users/cohen/Projects/ruflo/bench-witness/ledger.json",
+    "sampleWitnessPath": "/Users/cohen/Projects/ruflo/bench-witness/rag-real-text-2026-05-18T00-27-56-447Z.json",
+    "ledgerEntryCount": 11,
+    "results": {
+      "ledgerVerifyDefault": {
+        "passed": true,
+        "exitCode": 0
+      },
+      "ledgerVerifyThreshold1": {
+        "passed": true,
+        "exitCode": 0
+      },
+      "ledgerVerifyThreshold2Expected": {
+        "failedAsExpected": true,
+        "exitCode": 1
+      },
+      "singleWitnessVerify": {
+        "passed": true,
+        "exitCode": 0
+      },
+      "missingPathRejected": {
+        "rejected": true,
+        "exitCode": 1
+      },
+      "badThresholdRejected": {
+        "rejected": true,
+        "exitCode": 1
+      }
+    },
+    "allPassed": true
+  },
+  "witness": {
+    "benchmark": "rag-cli-verify-capability",
+    "timestamp": "2026-05-18T02:15:30.179Z",
+    "commit": "6d0a2f38a275d044e2d92cdf3998fb82970dc24c",
+    "model": "cli-verify-driver",
+    "corpus": {
+      "id": "882479069b70b4f23c4abb1c645360c8219fd3b5bf60382e35c16ad5a0703b6f",
+      "size": 2
+    },
+    "queries": {
+      "id": "11ba7a6785c9f0e5568347da96293980123ddcc75286f76f756a7b75a37f51d0",
+      "count": 6
+    },
+    "results": {
+      "ledgerPath": "/Users/cohen/Projects/ruflo/bench-witness/ledger.json",
+      "sampleWitnessPath": "/Users/cohen/Projects/ruflo/bench-witness/rag-real-text-2026-05-18T00-27-56-447Z.json",
+      "ledgerEntryCount": 11,
+      "results": {
+        "ledgerVerifyDefault": {
+          "passed": true,
+          "exitCode": 0
+        },
+        "ledgerVerifyThreshold1": {
+          "passed": true,
+          "exitCode": 0
+        },
+        "ledgerVerifyThreshold2Expected": {
+          "failedAsExpected": true,
+          "exitCode": 1
+        },
+        "singleWitnessVerify": {
+          "passed": true,
+          "exitCode": 0
+        },
+        "missingPathRejected": {
+          "rejected": true,
+          "exitCode": 1
+        },
+        "badThresholdRejected": {
+          "rejected": true,
+          "exitCode": 1
+        }
+      },
+      "allPassed": true
+    },
+    "contentHash": "0094b9bbed17fc94c9af52c1fb51e1b21566ad1f0cf3596eab641a48af53fe29",
+    "signature": "c794380c68e603e5b791a5fd3c28fe2bdc2865db0dad3d945da2908d410e3d74176373bad82d5ea4f4491919b2d8a1134a30784f6eb7b8ef16d4238444e99b01",
+    "publicKey": "302a300506032b6570032100e42583017b67f220749751a4e975269c0756b40d8a696f68eb4615a8bc516eed",
+    "signatureAlgorithm": "ed25519"
+  }
+}

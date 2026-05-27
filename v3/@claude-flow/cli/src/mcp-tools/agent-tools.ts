@@ -10,15 +10,16 @@ import { join } from 'node:path';
 import { type MCPTool, getProjectCwd } from './types.js';
 import { validateIdentifier, validateText, validateAgentSpawn } from './validate-input.js';
 import { executeAgentTask } from './agent-execute-core.js';
-<<<<<<< HEAD
-import { scanClaudeCodeRegistry } from '../registry/claude-code-registry.js';
-=======
->>>>>>> pr-1936-head
 
 // Storage paths
 const STORAGE_DIR = '.claude-flow';
 const AGENT_DIR = 'agents';
 const AGENT_FILE = 'store.json';
+// #1916: hive-mind_spawn writes its workers to `.claude-flow/agents.json`
+// (a *different* file from the canonical `.claude-flow/agents/store.json`
+// used here). agent_status / agent_list / agent_logs merge that store so a
+// hive-spawned worker is resolvable instead of returning `not_found`.
+const HIVE_AGENT_FILE = 'agents.json';
 
 // Model types matching Claude Agent SDK
 type ClaudeModel = 'haiku' | 'sonnet' | 'opus' | 'inherit';
@@ -73,6 +74,35 @@ function loadAgentStore(): AgentStore {
 function saveAgentStore(store: AgentStore): void {
   ensureAgentDir();
   writeFileSync(getAgentPath(), JSON.stringify(store, null, 2), 'utf-8');
+}
+
+// #1916: read hive-mind-spawned workers from `.claude-flow/agents.json`.
+function getHiveAgentPath(): string {
+  return join(getProjectCwd(), STORAGE_DIR, HIVE_AGENT_FILE);
+}
+
+function loadHiveAgents(): Record<string, AgentRecord> {
+  try {
+    const path = getHiveAgentPath();
+    if (existsSync(path)) {
+      const data = JSON.parse(readFileSync(path, 'utf-8'));
+      if (data && typeof data.agents === 'object' && data.agents) {
+        return data.agents as Record<string, AgentRecord>;
+      }
+    }
+  } catch {
+    // Ignore — hive store is optional/best-effort.
+  }
+  return {};
+}
+
+/**
+ * #1916: merged view of every tracked agent — the canonical agent store
+ * plus hive-mind-spawned workers. On an id collision the canonical record
+ * wins (it carries model-routing + lastResult that the hive store omits).
+ */
+function loadAllAgents(): Record<string, AgentRecord> {
+  return { ...loadHiveAgents(), ...loadAgentStore().agents };
 }
 
 // Default model mappings for agent types (can be overridden)
@@ -261,11 +291,7 @@ export const agentTools: MCPTool[] = [
         status: 'registered',
         createdAt: agent.createdAt,
         note: 'Agent registered for coordination. Three execution paths: ' +
-<<<<<<< HEAD
-          '(1) call agent_execute(agentId, prompt) — direct LLM call via Anthropic Messages API (auto-uses Claude Code OAuth token if available, otherwise ANTHROPIC_API_KEY); ' +
-=======
           '(1) call agent_execute(agentId, prompt) — direct LLM call via Anthropic Messages API (requires ANTHROPIC_API_KEY); ' +
->>>>>>> pr-1936-head
           '(2) Claude Code Task tool — spawns a real subagent; ' +
           '(3) claude -p — headless background instance.',
       };
@@ -293,11 +319,7 @@ export const agentTools: MCPTool[] = [
     // updating the agent record with lastResult / taskCount / status.
     // No mock — actual HTTP request to api.anthropic.com.
     name: 'agent_execute',
-<<<<<<< HEAD
-    description: 'Execute a task on a spawned agent — calls the Anthropic Messages API with the agent\'s configured model. Auto-uses Claude Code OAuth token (env CLAUDE_CODE_OAUTH_TOKEN, macOS Keychain, or ~/.claude/.credentials.json) when available; falls back to ANTHROPIC_API_KEY.',
-=======
-    description: 'Execute a task on a spawned agent — calls the Anthropic Messages API with the agent\'s configured model. Requires ANTHROPIC_API_KEY in env.',
->>>>>>> pr-1936-head
+    description: 'Run a task on a previously-spawned agent_spawn record via the Anthropic Messages API with that agent\'s configured model. Use when native Task tool is wrong because (a) you need the spawned agent\'s persistent config (model, instructions, cost-tracking attribution) to apply to this turn, (b) the result needs to feed back into the agent\'s lifecycle (taskCount, lastResult, swarm-coordinated state), or (c) you want explicit model routing via the spawn record\'s `model` field instead of inheriting. For one-shot Claude prompts without a tracked agent, native Task is fine. Requires ANTHROPIC_API_KEY in env.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -329,7 +351,7 @@ export const agentTools: MCPTool[] = [
   },
   {
     name: 'agent_terminate',
-    description: 'Terminate an agent',
+    description: 'Remove a Ruflo-tracked agent from the registry and free its swarm slot. Use when you need to (a) clean up a spawned agent so its cost-tracking row finalizes, (b) reclaim a swarm-topology slot for another agent, or (c) end a stuck agent without restarting the whole swarm. For one-shot Task tool invocations that already self-terminate, this tool is not needed. Pair with agent_list first to confirm the agentId.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -366,7 +388,7 @@ export const agentTools: MCPTool[] = [
   },
   {
     name: 'agent_status',
-    description: 'Get agent status',
+    description: 'Read the lifecycle state of a single tracked agent: idle/running/stopped, current taskCount, lastResult, model, health score. Use when native Task tool is wrong because you need agent-level state (status across turns, accumulated taskCount, last error, swarm coordination) rather than a one-shot response. For inspecting a Task you just ran, native Task output is fine. Pair with agent_list to find the agentId first.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -379,9 +401,8 @@ export const agentTools: MCPTool[] = [
       const v = validateIdentifier(input.agentId, 'agentId');
       if (!v.valid) return { agentId: input.agentId, status: 'not_found', error: `Input validation failed: ${v.error}` };
 
-      const store = loadAgentStore();
       const agentId = input.agentId as string;
-      const agent = store.agents[agentId];
+      const agent = loadAllAgents()[agentId]; // #1916: includes hive-mind-spawned workers
 
       if (agent) {
         return {
@@ -405,7 +426,7 @@ export const agentTools: MCPTool[] = [
   },
   {
     name: 'agent_list',
-    description: 'List all agents — both Ruflo-spawned (in-flight, from .claude-flow/agents/store.json) and user-installed templates discovered on disk under ~/.claude/agents/. Each entry has a `source` field: "built-in" (running), "user" (installed agent template).',
+    description: 'List every Ruflo-tracked agent in the registry with its type, model, status, and taskCount. Use when native Task tool is wrong because you need to see the swarm-wide agent inventory across turns (which agents exist, their roles, their cost-tracking handles) rather than spawn a new one-shot Task. Filter by status/domain/agentType if needed. For starting a fresh single-shot subagent, native Task is fine.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -413,10 +434,6 @@ export const agentTools: MCPTool[] = [
         status: { type: 'string', description: 'Filter by status' },
         domain: { type: 'string', description: 'Filter by domain' },
         includeTerminated: { type: 'boolean', description: 'Include terminated agents' },
-        includeUserInstalled: {
-          type: 'boolean',
-          description: 'Include user-installed agent templates from ~/.claude/agents/ (default: true). Pass false to restrict to running agents.',
-        },
       },
     },
     handler: async (input) => {
@@ -429,8 +446,7 @@ export const agentTools: MCPTool[] = [
         if (!v.valid) return { agents: [], total: 0, error: `Input validation failed: ${v.error}` };
       }
 
-      const store = loadAgentStore();
-      let agents = Object.values(store.agents);
+      let agents = Object.values(loadAllAgents()); // #1916: includes hive-mind-spawned workers
 
       // Filter by status
       if (input.status) {
@@ -444,67 +460,28 @@ export const agentTools: MCPTool[] = [
         agents = agents.filter(a => a.domain === input.domain);
       }
 
-      // #bug22.2 — merge user-installed agents discovered under ~/.claude/agents/.
-      // These are TEMPLATES (i.e. things the user can spawn), not running
-      // agents — they have no status/health/taskCount. We tag every entry with
-      // a `source` field so consumers can tell them apart.
-      const includeUserInstalled = input.includeUserInstalled !== false;
-      const userAgents: Array<Record<string, unknown>> = [];
-      let userAgentTotal = 0;
-      if (includeUserInstalled) {
-        try {
-          const registry = await scanClaudeCodeRegistry();
-          // Apply the same domain filter to user agents (using their `category`
-          // as the equivalent of `domain`).
-          let filtered = registry.agents;
-          if (input.domain) {
-            filtered = filtered.filter(a => a.category === input.domain);
-          }
-          userAgentTotal = filtered.length;
-          for (const ua of filtered) {
-            userAgents.push({
-              agentId: `user:${ua.name}`,
-              agentType: ua.name,
-              status: 'available',
-              source: 'user',
-              category: ua.category,
-              description: ua.description,
-              path: ua.path,
-            });
-          }
-        } catch {
-          // Registry scan failed — degrade gracefully, keep built-in list.
-        }
-      }
-
-      const builtInAgents = agents.map(a => ({
-        agentId: a.agentId,
-        agentType: a.agentType,
-        status: a.status,
-        health: a.health,
-        taskCount: a.taskCount,
-        createdAt: a.createdAt,
-        domain: a.domain,
-        source: 'built-in' as const,
-      }));
-
       return {
-        agents: [...builtInAgents, ...userAgents],
-        total: builtInAgents.length + userAgents.length,
-        builtInTotal: builtInAgents.length,
-        userInstalledTotal: userAgentTotal,
+        agents: agents.map(a => ({
+          agentId: a.agentId,
+          agentType: a.agentType,
+          status: a.status,
+          health: a.health,
+          taskCount: a.taskCount,
+          createdAt: a.createdAt,
+          domain: a.domain,
+        })),
+        total: agents.length,
         filters: {
           status: input.status,
           domain: input.domain,
           includeTerminated: input.includeTerminated,
-          includeUserInstalled,
         },
       };
     },
   },
   {
     name: 'agent_pool',
-    description: 'Manage agent pool',
+    description: 'Manage a fixed-size warm pool of pre-spawned agents to skip cold-start cost on bursty workloads. Use when native Task is wrong because (a) you have a queue of similar tasks and want to amortize spawn latency, (b) cost-tracking wants stable agentIds across requests, or (c) swarm topology requires a known agent count at all times. For one-shot work, just call agent_spawn or native Task. Pool sizes and warm/idle thresholds are set per-pool.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -626,7 +603,7 @@ export const agentTools: MCPTool[] = [
   },
   {
     name: 'agent_health',
-    description: 'Check agent health',
+    description: 'Compute an agent\'s rolling health score (0-1) from recent task success ratio + response-latency p50/p95 + error rate. Use when native Task tool is wrong because you\'re running a long-lived agent (autonomous loop / hive-mind worker / federation peer) and need to detect degradation before the breaker trips it. For one-shot Task invocations there is no history to score. Pair with hooks_post-task so the scores stay current.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -704,7 +681,7 @@ export const agentTools: MCPTool[] = [
   },
   {
     name: 'agent_update',
-    description: 'Update agent status or config',
+    description: 'Mutate a tracked agent\'s config (model, instructions, status, health) without re-spawning. Use when native Task tool is wrong because the agent already has accumulated state (taskCount, swarm membership, cost-tracking attribution) and you only need to tweak one field — for example, promoting an idle agent to running on a new task, or rotating its model from haiku to sonnet mid-loop. For a brand-new subagent, agent_spawn (or native Task) is the right call.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -755,6 +732,55 @@ export const agentTools: MCPTool[] = [
         success: false,
         agentId,
         error: 'Agent not found',
+      };
+    },
+  },
+  {
+    // #1916 — the `ruflo agent logs <id>` CLI subcommand and the guidance
+    // surface both reference an `agent_logs` MCP tool that was never
+    // registered, so it errored with `MCP tool not found: agent_logs`.
+    // This is the registered handler. Note: agents don't yet keep a
+    // structured per-agent activity log (that lands with hive worker
+    // execution wiring — see #1916), so for now we surface the agent's
+    // last task result as a single synthetic entry, or an explicit empty
+    // response. The shape matches what the CLI `logs` subcommand expects:
+    // `{ agentId, entries: [{timestamp,level,message,context?}], total }`.
+    name: 'agent_logs',
+    description: 'Return recorded activity-log entries for a tracked agent (idle/running history, last task result). Use when native Task tool is wrong because you need the agent\'s log across turns (what it did, last error/result, swarm context) rather than a one-shot Task transcript. For a Task you just ran, native Task output is fine. Pair with agent_list to find the agentId. (Hive-mind-spawned workers are resolved here too.) Today this returns the last task result as a synthetic entry — full per-agent activity logs land with hive worker execution wiring (ruvnet/ruflo#1916).',
+    category: 'agent',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'ID of agent' },
+        tail: { type: 'number', description: 'Max recent entries to return (default 50)' },
+        level: { type: 'string', enum: ['debug', 'info', 'warn', 'error'], description: 'Minimum log level (currently advisory — entries are synthetic)' },
+        since: { type: 'string', description: 'Show logs since, e.g. "1h" / "30m" (currently advisory)' },
+      },
+      required: ['agentId'],
+    },
+    handler: async (input) => {
+      const v = validateIdentifier(input.agentId, 'agentId');
+      if (!v.valid) return { agentId: input.agentId, entries: [], total: 0, error: `Input validation failed: ${v.error}` };
+
+      const agentId = input.agentId as string;
+      const agent = loadAllAgents()[agentId]; // #1916: includes hive-mind-spawned workers
+      if (!agent) {
+        return { agentId, entries: [], total: 0, error: 'Agent not found' };
+      }
+
+      const entries: Array<{ timestamp: string; level: 'debug' | 'info' | 'warn' | 'error'; message: string; context?: Record<string, unknown> }> = [];
+      entries.push({ timestamp: agent.createdAt, level: 'info', message: `agent created (type=${agent.agentType}, status=${agent.status})` });
+      if (agent.lastResult) {
+        entries.push({ timestamp: agent.createdAt, level: 'info', message: 'last task result', context: agent.lastResult });
+      }
+
+      const tail = typeof input.tail === 'number' && input.tail > 0 ? Math.floor(input.tail) : 50;
+      const sliced = entries.slice(-tail);
+      return {
+        agentId: agent.agentId,
+        entries: sliced,
+        total: entries.length,
+        note: 'per-agent activity logging is not yet wired; entries are synthetic (ruvnet/ruflo#1916)',
       };
     },
   },

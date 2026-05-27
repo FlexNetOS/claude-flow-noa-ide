@@ -1,0 +1,70 @@
+{
+  "summary": {
+    "ledgerPath": "/Users/cohen/Projects/ruflo/bench-witness/ledger.json",
+    "results": {
+      "singleEntryCosign": {
+        "success": true,
+        "contentHashUnchanged": true,
+        "cosignatureAppended": true,
+        "labelPreserved": true
+      },
+      "allCosignAtThreshold2": {
+        "cosignAllSucceeded": true,
+        "everyEntryHasCosig": true,
+        "verifyAtThreshold2": true
+      },
+      "keyPersistence": {
+        "keyFileExists": true,
+        "samePublicKeyAcrossRuns": true
+      },
+      "badInputRejection": {
+        "missingPathRejected": true,
+        "badEntryRejected": true
+      }
+    },
+    "allPassed": true
+  },
+  "witness": {
+    "benchmark": "rag-cli-cosign-capability",
+    "timestamp": "2026-05-18T02:27:48.529Z",
+    "commit": "41d15dfeeeb86ce26afb4647616a9c2576812ef0",
+    "model": "cli-cosign-driver",
+    "corpus": {
+      "id": "a38a297dba5daca65f1856c58a2b49b3bca737b16e164f79773110fab14fdb2f",
+      "size": 1
+    },
+    "queries": {
+      "id": "b45259b4f1e64dcbc16b38587a6e2a4ee6063fef794fc527319e105fc6036b17",
+      "count": 4
+    },
+    "results": {
+      "ledgerPath": "/Users/cohen/Projects/ruflo/bench-witness/ledger.json",
+      "results": {
+        "singleEntryCosign": {
+          "success": true,
+          "contentHashUnchanged": true,
+          "cosignatureAppended": true,
+          "labelPreserved": true
+        },
+        "allCosignAtThreshold2": {
+          "cosignAllSucceeded": true,
+          "everyEntryHasCosig": true,
+          "verifyAtThreshold2": true
+        },
+        "keyPersistence": {
+          "keyFileExists": true,
+          "samePublicKeyAcrossRuns": true
+        },
+        "badInputRejection": {
+          "missingPathRejected": true,
+          "badEntryRejected": true
+        }
+      },
+      "allPassed": true
+    },
+    "contentHash": "e1e843d8da8deb5889008eacaccb342f6aef19f6b3bcbad28e2f26b0f7d29769",
+    "signature": "28ea0f79a0d7a4016fa786c5ae07f99eed601a2ae5bd98a9c1565b6e49168087c64c0660593f0164bfaeca80321d99ae67ea8ecc7130a6937a23f9d55b7e2604",
+    "publicKey": "302a300506032b65700321000972dfc0f43e5c5cf3b6799193c7cdf6a48cbcab6cde2ab4919ccce1e6e32c00",
+    "signatureAlgorithm": "ed25519"
+  }
+}

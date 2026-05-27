@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-ddd plugin contract — pinning, namespace coordination, ADR cross-link, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, ddd, bounded-context, aggregate, namespace, smoke-test]
@@ -53,9 +59,15 @@ bash plugins/ruflo-ddd/scripts/smoke.sh
 - `plugins/ruflo-adr/docs/adrs/0001-adr-plugin-pattern.md` — REFERENCE.md token-diet precedent
 - `plugins/ruflo-ruvector/docs/adrs/0001-pin-ruvector-0.2.25.md`
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-ddd/`. Contract elements implemented: 3 skills (`ddd-context`, `ddd-aggregate`, `ddd-validate`) with AgentDB hierarchical storage for domain graph; namespace `ddd-contexts` claimed; SPARC Architecture-phase alignment cross-linked; smoke-as-contract gate defined in `scripts/smoke.sh`.
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

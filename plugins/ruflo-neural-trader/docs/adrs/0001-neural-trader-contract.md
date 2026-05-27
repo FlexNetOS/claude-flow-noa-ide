@@ -2,6 +2,7 @@
 id: ADR-0001
 title: ruflo-neural-trader plugin contract — pinning, namespace coordination (already-compliant), 4-namespace claim, smoke as contract
 <<<<<<< HEAD
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
 =======
@@ -9,6 +10,11 @@ status: Accepted
 date: 2026-05-04
 updated: 2026-05-09
 >>>>>>> pr-1936-head
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-2031-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, neural-trader, trading, backtesting, risk, namespace, smoke-test]
@@ -63,9 +69,15 @@ bash plugins/ruflo-neural-trader/scripts/smoke.sh
 - `plugins/ruflo-market-data/docs/adrs/0001-market-data-contract.md` — feeds OHLCV data into trader
 - `plugins/ruflo-cost-tracker/docs/adrs/0001-cost-tracker-contract.md` — PnL + cost attribution downstream
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> pr-2031-head
 
 ## Implementation status
 
 Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-neural-trader/`. Contract elements implemented: all 4 namespaces (`trading-backtests`, `trading-risk`, `trading-signals`, `trading-models`) already compliant with kebab-case `<plugin-stem>-<intent>` convention; 4 agents + 6 skills shipped; smoke-as-contract gate defined in `scripts/smoke.sh` (11 checks).
+<<<<<<< HEAD
 >>>>>>> pr-1936-head
+=======
+>>>>>>> pr-2031-head

@@ -1,0 +1,951 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "benchmark": "rag-real-text",
+      "timestamp": "2026-05-18T00:27:56.447Z",
+      "commit": "91c8b62b5ebd50208f338542a2b4335491617ebc",
+      "model": "Xenova/all-MiniLM-L6-v2",
+      "corpus": {
+        "id": "f58c57185f8051db859fb9edd6b82b5c94cdc7337c6eef4a2cb9aa79244c605e",
+        "size": 30
+      },
+      "queries": {
+        "id": "657259ac830bf5b3c51b86fe7da350fd6ad95e219a25df3ae40a26c760d8c148",
+        "count": 6
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": null,
+          "sequence": 1
+        },
+        "originalContentHash": "1568d5fea102b51ff1a51c04b46f4f3f59725198989199ee2a41faaab004e1ec",
+        "originalSignature": "49700a203633e8f250663f3767c0df61ea42e7de1184a6d745503aec227307c42784c7edf302de206f2b3477d9822802978f3070a67ce7bf3125af87b5a47400",
+        "originalPublicKey": "302a300506032b65700321004a3998317807bf2c1c4740533127651ccc0cb3c67ad2f85c45188c76a956c1cd",
+        "results": {
+          "plain": {
+            "recallAt5": 0.8999999999999999,
+            "mrr": 1,
+            "ndcgAt5": 0.9255244116680239,
+            "meanLatencyMs": 1.1547083333333334
+          },
+          "mmr": {
+            "recallAt5": 0.3666666666666667,
+            "mrr": 1,
+            "ndcgAt5": 0.4849645485171013,
+            "meanLatencyMs": 1.4214516666666668
+          },
+          "rrf": {
+            "recallAt5": 0.9333333333333332,
+            "mrr": 1,
+            "ndcgAt5": 0.9562649741625527,
+            "meanLatencyMs": 2.8675763333333335
+          },
+          "hyde": {
+            "recallAt5": 0.9666666666666667,
+            "mrr": 1,
+            "ndcgAt5": 0.9781324870812763,
+            "meanLatencyMs": 4.961305333333333
+          },
+          "compound": {
+            "recallAt5": 0.9666666666666667,
+            "mrr": 1,
+            "ndcgAt5": 0.9781324870812763,
+            "meanLatencyMs": 7.618409833333332
+          }
+        }
+      },
+      "contentHash": "8958ef94a2a84be6202f808915a1a00bbd8ec245fc49010909df6f67fe41733a",
+      "signature": "8d9e2a2fc25927a649379ff930382f52b528c8543bbe2bf33c6e493c8d95930acaa89e34e10d3f1c01edd87cbd7d94156bf315dd62f319406771bd1fab08eb07",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": null,
+      "sequence": 1
+    },
+    {
+      "benchmark": "rag-adaptive-router",
+      "timestamp": "2026-05-18T00:36:12.259Z",
+      "commit": "9567c475698e134fc5c478d5847f215b91800126",
+      "model": "algorithmic-test-fixtures-dim16",
+      "corpus": {
+        "id": "d7010b8a927430668fc45dd30807e907f7e61ab97b968db82bab94e736f96906",
+        "size": 5
+      },
+      "queries": {
+        "id": "1b762a5ad33b631f1de4943b5130e92ae0e73279a3f51719ffc8c3413cd616a3",
+        "count": 5
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "8958ef94a2a84be6202f808915a1a00bbd8ec245fc49010909df6f67fe41733a",
+          "sequence": 2
+        },
+        "originalContentHash": "ddc6d0a4c03de22c6cc508eaa565c955398f967cc2d2b3ecc060dd105801b5dd",
+        "originalSignature": "914252456594e3b8d430635c7d7f66cead1223e394bd59c9beb60c57b6b1dbf1cfe471c613bcdad69a5f3f52cabf5a3ca20345e1ff8c88f4a31e6df2f25e0008",
+        "originalPublicKey": "302a300506032b657003210000eee835bda3ae93df6e7b6ed0ad91e1f26077ff81295fee07bffcf24973f7f1",
+        "results": {
+          "totalTopologies": 5,
+          "correctPredictions": 5,
+          "accuracy": 1,
+          "perTopology": [
+            {
+              "topology": "easy",
+              "expected": "plain",
+              "actual": "plain",
+              "match": true,
+              "features": {
+                "duplicateDensity": 0,
+                "queryIntentCohesion": 0.9988,
+                "qaSpaceGap": 0.0009
+              }
+            },
+            {
+              "topology": "duplicate-heavy",
+              "expected": "mmr",
+              "actual": "mmr",
+              "match": true,
+              "features": {
+                "duplicateDensity": 0.9996,
+                "queryIntentCohesion": 0.9995,
+                "qaSpaceGap": 0.0014
+              }
+            },
+            {
+              "topology": "multi-intent",
+              "expected": "rrf",
+              "actual": "rrf",
+              "match": true,
+              "features": {
+                "duplicateDensity": 0.4377,
+                "queryIntentCohesion": 0,
+                "qaSpaceGap": 0
+              }
+            },
+            {
+              "topology": "q-a-gap",
+              "expected": "hyde",
+              "actual": "hyde",
+              "match": true,
+              "features": {
+                "duplicateDensity": 0,
+                "queryIntentCohesion": 0.9995,
+                "qaSpaceGap": 1
+              }
+            },
+            {
+              "topology": "compound-trigger",
+              "expected": "compound",
+              "actual": "compound",
+              "match": true,
+              "features": {
+                "duplicateDensity": 0.9999,
+                "queryIntentCohesion": 0,
+                "qaSpaceGap": 1
+              }
+            }
+          ]
+        }
+      },
+      "contentHash": "b87db0cd2cbf469265542ca659c48621cb2d81bb63a3c070029a8134cfc016a5",
+      "signature": "a50a71b0e8547ab4a634fb078f7f4ac3d706b2df06e27bb125f0ca1c01d5df729257edcfcc33507a6188b537e58a7158ad592d71b8f6b9b5810881f19cde3006",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "8958ef94a2a84be6202f808915a1a00bbd8ec245fc49010909df6f67fe41733a",
+      "sequence": 2
+    },
+    {
+      "benchmark": "rag-hybrid-sparse-dense",
+      "timestamp": "2026-05-18T00:51:54.255Z",
+      "commit": "cd57e650a4c504dcfd78c3f496056c84b39da1c0",
+      "model": "Xenova/all-MiniLM-L6-v2",
+      "corpus": {
+        "id": "df6593050ffa5da161c66752b77d481c55fc845d60324de3c7d85ba5721dbf6b",
+        "size": 24
+      },
+      "queries": {
+        "id": "058225dd5e546a33b39c06c5d8a3f0e8cf83743e1995288acdce0dadfcb91563",
+        "count": 8
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "b87db0cd2cbf469265542ca659c48621cb2d81bb63a3c070029a8134cfc016a5",
+          "sequence": 3
+        },
+        "originalContentHash": "a932accff225f10d02d148ed83674e24c46c9e21f2b1b318d83aff98bfedb9b4",
+        "originalSignature": "a5e5a78da13b1e41d1ac4a59792e7a7b677d4c4cbb992d0a1198663f5ae48fa12892085921bbeafd26b1aadf98045525919687c791caa92ed98424dd9e928607",
+        "originalPublicKey": "302a300506032b6570032100c0636ade067c6ff8af344cf19427a791ace1a847592d6567c86497e396e39a6e",
+        "results": {
+          "dense": {
+            "overall": {
+              "recallAt5": 0.9375,
+              "mrr": 0.9166666666666667,
+              "ndcgAt5": 0.9265707789549604,
+              "meanLatencyMs": 1.47970325
+            },
+            "generic": {
+              "recallAt5": 0.875,
+              "ndcgAt5": 0.8531415579099209
+            },
+            "rare": {
+              "recallAt5": 1,
+              "ndcgAt5": 1
+            }
+          },
+          "sparse": {
+            "overall": {
+              "recallAt5": 0.6458333333333333,
+              "mrr": 0.8125,
+              "ndcgAt5": 0.6881846701525612,
+              "meanLatencyMs": 0.04804150000000001
+            },
+            "generic": {
+              "recallAt5": 0.29166666666666663,
+              "ndcgAt5": 0.3763693403051225
+            },
+            "rare": {
+              "recallAt5": 1,
+              "ndcgAt5": 1
+            }
+          },
+          "hybrid": {
+            "overall": {
+              "recallAt5": 0.8333333333333334,
+              "mrr": 0.9375,
+              "ndcgAt5": 0.8674999096553356,
+              "meanLatencyMs": 1.403036625
+            },
+            "generic": {
+              "recallAt5": 0.6666666666666667,
+              "ndcgAt5": 0.7349998193106713
+            },
+            "rare": {
+              "recallAt5": 1,
+              "ndcgAt5": 1
+            }
+          }
+        }
+      },
+      "contentHash": "3e2009dbff5f0a5bd8d0e3139f6cd92f612ec4f23b201572d39ad51704822bde",
+      "signature": "4afd063443a47376b2eede3601eb38b6de82865d415b7df174ee6a12d71f1cd05593da30e11d2ba2113e3d0b3d4fb0014d817776f924c975e6739d95095ee90a",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "b87db0cd2cbf469265542ca659c48621cb2d81bb63a3c070029a8134cfc016a5",
+      "sequence": 3
+    },
+    {
+      "benchmark": "rag-router-ablation",
+      "timestamp": "2026-05-18T01:11:02.014Z",
+      "commit": "33c3f740ce1284571bd63b55d165d8e1040d6ac3",
+      "model": "Xenova/all-MiniLM-L6-v2",
+      "corpus": {
+        "id": "2ee25f582b30323502b9270ed47e81ce9bb037f16d2e824083366249f888b81e",
+        "size": 24
+      },
+      "queries": {
+        "id": "62d0ff164eaaacb81d2bc8e7ae54b02c81d7ffa534f76c1235858c1edbe2088a",
+        "count": 7
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "3e2009dbff5f0a5bd8d0e3139f6cd92f612ec4f23b201572d39ad51704822bde",
+          "sequence": 4
+        },
+        "originalContentHash": "f3abe567e8f14889db9aa4984cf1528f26955cfa9c81209d1e05315144279a83",
+        "originalSignature": "63d7505d8d49ac222e4fa76f100f7bc450e0003a48efc45efff40bc227c2f4db3259d022ed865757c174ec755f073c1228650e1cb536da0f1e5c7aef1ba6f20a",
+        "originalPublicKey": "302a300506032b6570032100421e927ffd08e184fe5516eee4f97b1ff4760f5dd0514d093485bce3a7bdc7c2",
+        "results": {
+          "plain": {
+            "meanRecallAt5": 0.7166666666666667,
+            "meanNdcgAt5": 0.7577999193649239,
+            "mrr": 0.8571428571428571,
+            "meanLatencyMs": 1.1908094285714286,
+            "totalEmbeds": 7
+          },
+          "mmr": {
+            "meanRecallAt5": 0.5142857142857143,
+            "meanNdcgAt5": 0.5689461947557175,
+            "mrr": 0.8571428571428571,
+            "meanLatencyMs": 1.5057678571428572,
+            "totalEmbeds": 7
+          },
+          "rrf": {
+            "meanRecallAt5": 0.7047619047619048,
+            "meanNdcgAt5": 0.7504451530516424,
+            "mrr": 0.8571428571428571,
+            "meanLatencyMs": 1.9116130000000002,
+            "totalEmbeds": 15
+          },
+          "hyde": {
+            "meanRecallAt5": 0.8071428571428572,
+            "meanNdcgAt5": 0.8786256529608067,
+            "mrr": 1,
+            "meanLatencyMs": 3.1125475714285713,
+            "totalEmbeds": 15
+          },
+          "compound": {
+            "meanRecallAt5": 0.8833333333333334,
+            "meanNdcgAt5": 0.924579086354446,
+            "mrr": 1,
+            "meanLatencyMs": 5.183006,
+            "totalEmbeds": 30
+          },
+          "adaptive": {
+            "meanRecallAt5": 0.8833333333333334,
+            "meanNdcgAt5": 0.9267024109730695,
+            "mrr": 1,
+            "meanLatencyMs": 5.771839285714286,
+            "totalEmbeds": 37
+          }
+        }
+      },
+      "contentHash": "e96537707e609ca410c2c3d71543633edbcf8d90d782e34c81f007cbd1013873",
+      "signature": "469ee83c28611f572019504b0b90ea399464a3ceb058f84b44f72fdc5e83f1f2e0b79ed19342c85a31066fac0740a08a44a3f0c3fb297be3ec5218bf29cd620f",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "3e2009dbff5f0a5bd8d0e3139f6cd92f612ec4f23b201572d39ad51704822bde",
+      "sequence": 4
+    },
+    {
+      "benchmark": "rag-lazy-router",
+      "timestamp": "2026-05-18T01:21:38.605Z",
+      "commit": "08a6ee2218a4b9638e448af7bd92fbc6b487ad4e",
+      "model": "Xenova/all-MiniLM-L6-v2",
+      "corpus": {
+        "id": "2ee25f582b30323502b9270ed47e81ce9bb037f16d2e824083366249f888b81e",
+        "size": 24
+      },
+      "queries": {
+        "id": "8d5d8b66b576f72f3e1f46dd6689309a438c3d50c18923f5ce738de5f6c23963",
+        "count": 7
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "e96537707e609ca410c2c3d71543633edbcf8d90d782e34c81f007cbd1013873",
+          "sequence": 5
+        },
+        "originalContentHash": "b820cc1fa21834ba5fbe505988a1123a8adabd203fbfd18f656a25cc38cea4b9",
+        "originalSignature": "21bb92c452bd211ea03846c47f603acec3a1a114cb7db5f060592579d96753dcf445ea3d4d8fd15db28ff7db7193330ec5c9aea9677a485f835920a427e98b0e",
+        "originalPublicKey": "302a300506032b6570032100e0275819830d8ac914f26d53c7c350fa46a530d074542efa56e1543b9a2fe7da",
+        "results": {
+          "queryCount": 7,
+          "decisionMatches": 4,
+          "decisionEquivalence": false,
+          "eagerTotalEmbeds": 37,
+          "lazyTotalEmbeds": 28,
+          "embedsSaved": 9,
+          "embedsSavedPercent": 24.324324324324326,
+          "eagerMeanLatencyMs": 6.424762,
+          "lazyMeanLatencyMs": 4.098018000000001
+        }
+      },
+      "contentHash": "9c9bb28beee9847df12c93646bdadb8a99906dbabc8c325aa9b79c4ccf5bb075",
+      "signature": "37ea7f7f1ca9da98270ecaa048060339f936fce7dc02217df92b4f8d3a3f0e4004b6dc3a0d22e487a9092f84b70981bf266445f8d558b7fef8d19af5f2b84205",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "e96537707e609ca410c2c3d71543633edbcf8d90d782e34c81f007cbd1013873",
+      "sequence": 5
+    },
+    {
+      "benchmark": "rag-cached-router",
+      "timestamp": "2026-05-18T01:28:51.966Z",
+      "commit": "3e59410aea3e3e7b95101696a4dcb7a15a9adc04",
+      "model": "Xenova/all-MiniLM-L6-v2",
+      "corpus": {
+        "id": "60542c0e864278b3888db8d13bb41fc139a25d9e035b811c96d3cdb234924db7",
+        "size": 12
+      },
+      "queries": {
+        "id": "f1824811b2448a5c9a8230b4b65da4b9ee643ebbbf99ea7eb24196f2d841c235",
+        "count": 9
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "9c9bb28beee9847df12c93646bdadb8a99906dbabc8c325aa9b79c4ccf5bb075",
+          "sequence": 6
+        },
+        "originalContentHash": "07e4811a0308c203596dcf3f1d8190276a61c7f039a528e96be5df46b8df129d",
+        "originalSignature": "73f52777c93d9e4c18e1c4e7f963b533fb9561721b0d79f94a86819752c39f3873ed5c5337fbeb77e6e25d5b93e3e8216f312e7b36bd57d531c985dab377980e",
+        "originalPublicKey": "302a300506032b657003210022de069285fea219cfd1d04719bc12a846aee335112a7be8bf04342229a17159",
+        "results": {
+          "workloadSize": 9,
+          "uniqueQueries": 3,
+          "repeatRate": 0.6666666666666666,
+          "decisionMatches": 9,
+          "decisionEquivalence": true,
+          "coldEmbeds": 27,
+          "warmEmbeds": 7,
+          "embedsSaved": 20,
+          "embedsSavedPercent": 74.07407407407408,
+          "coldTotalMs": 44.185625,
+          "warmTotalMs": 10.809208,
+          "speedupRatio": 4.087776366224056,
+          "cacheStats": {
+            "entries": 7,
+            "hits": 20,
+            "misses": 7,
+            "hitRate": 0.7407407407407407,
+            "approxByteSize": 10752
+          }
+        }
+      },
+      "contentHash": "c1699495a56655bd01175137c5ef65af576085ecad8da4b63e1f32e42d2a0088",
+      "signature": "457825672b971183c508f22e3a4d2b0d7cd1eebb01bb4488d112084b793521df32003e003e7bacec7c169bce57ec845b5fee8204218e22ac571e7d24f1319e04",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "9c9bb28beee9847df12c93646bdadb8a99906dbabc8c325aa9b79c4ccf5bb075",
+      "sequence": 6
+    },
+    {
+      "benchmark": "rag-regression-check",
+      "timestamp": "2026-05-18T01:45:00.958Z",
+      "commit": "ac9754780c92cbaa1aa50cab970fa31770a8e900",
+      "model": "ledger-derived",
+      "corpus": {
+        "id": "dfca312d4df45c44389e031b3c75d84dc0c3fc1a096559bf4ed79fad194f3479",
+        "size": 9
+      },
+      "queries": {
+        "id": "b0c6ccfcc0efbb7c8bc74886519a791bc564049597b29a2cd1c6f5f2b640868b",
+        "count": 6
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "c1699495a56655bd01175137c5ef65af576085ecad8da4b63e1f32e42d2a0088",
+          "sequence": 7
+        },
+        "originalContentHash": "a5cac03ed3a509949a846c413dce04229825006cd266629bff4c77313a8f67e6",
+        "originalSignature": "7060a86f138904293c81057fc7044e7b14fd551b66f06cba57bbf4bb742ec667ff13f1ed53059eee70180fc81b068098b7a59c130ca3cfbba8f2c17f6421e603",
+        "originalPublicKey": "302a300506032b65700321004134343ea920100c71983788372f1d2a683c4c6a01976ccfab1c678ba30ea904",
+        "results": {
+          "trackedCount": 9,
+          "checkedCount": 0,
+          "skippedCount": 9,
+          "passedCount": 0,
+          "failedCount": 0,
+          "allPassed": true,
+          "checks": [],
+          "skipped": [
+            {
+              "benchmark": "rag-real-text",
+              "metricPath": "results.adaptive.recallAt5",
+              "reason": "metric path returned undefined"
+            },
+            {
+              "benchmark": "rag-real-text",
+              "metricPath": "results.compound.recallAt5",
+              "reason": "metric path returned undefined"
+            },
+            {
+              "benchmark": "rag-real-text",
+              "metricPath": "results.hyde.recallAt5",
+              "reason": "metric path returned undefined"
+            },
+            {
+              "benchmark": "rag-adaptive-router",
+              "metricPath": "results.accuracy",
+              "reason": "metric path returned undefined"
+            },
+            {
+              "benchmark": "rag-router-ablation",
+              "metricPath": "results.adaptive.meanRecallAt5",
+              "reason": "metric path returned undefined"
+            },
+            {
+              "benchmark": "rag-lazy-router",
+              "metricPath": "results.embedsSaved",
+              "reason": "metric path returned undefined"
+            },
+            {
+              "benchmark": "rag-lazy-router",
+              "metricPath": "results.embedsSavedPercent",
+              "reason": "metric path returned undefined"
+            },
+            {
+              "benchmark": "rag-cached-router",
+              "metricPath": "results.cacheStats.hitRate",
+              "reason": "metric path returned undefined"
+            },
+            {
+              "benchmark": "rag-cached-router",
+              "metricPath": "results.embedsSavedPercent",
+              "reason": "metric path returned undefined"
+            }
+          ],
+          "ledgerHead": {
+            "sequence": 6,
+            "contentHash": "c1699495a56655bd01175137c5ef65af576085ecad8da4b63e1f32e42d2a0088",
+            "benchmark": "rag-cached-router"
+          }
+        }
+      },
+      "contentHash": "9ae4548b749147abce9839b22d0ea8bfb99c01aa3b32d0d563046d975c9a707a",
+      "signature": "3b5ab777a006ba8cae8d11701fb374259d66023786806909f7318c847d9be5df31e3e076c354e89032a51c57b6c58ef269f220b1dd5746eba8ecfffbfdf29c09",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "c1699495a56655bd01175137c5ef65af576085ecad8da4b63e1f32e42d2a0088",
+      "sequence": 7
+    },
+    {
+      "benchmark": "rag-cached-router",
+      "timestamp": "2026-05-18T01:46:02.728Z",
+      "commit": "ac9754780c92cbaa1aa50cab970fa31770a8e900",
+      "model": "Xenova/all-MiniLM-L6-v2",
+      "corpus": {
+        "id": "60542c0e864278b3888db8d13bb41fc139a25d9e035b811c96d3cdb234924db7",
+        "size": 12
+      },
+      "queries": {
+        "id": "f1824811b2448a5c9a8230b4b65da4b9ee643ebbbf99ea7eb24196f2d841c235",
+        "count": 9
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "9ae4548b749147abce9839b22d0ea8bfb99c01aa3b32d0d563046d975c9a707a",
+          "sequence": 8
+        },
+        "originalContentHash": "7583ef51125fff2740d758adebbc38091c5e31853b461426d037067deb4504b8",
+        "originalSignature": "2914b0363c40cc197939518ff8d26fd4d71897eaefd7a4f0b2663a0c681cbd8a06ad4331fc132bca8c82d318cc1f4380646182207a42293fa6e3c94b3cc2ae0b",
+        "originalPublicKey": "302a300506032b6570032100c3c0897ad311eabc959de8b5ec7509159a2deedb1876a83142aa4f23a19bd478",
+        "results": {
+          "workloadSize": 9,
+          "uniqueQueries": 3,
+          "repeatRate": 0.6666666666666666,
+          "decisionMatches": 9,
+          "decisionEquivalence": true,
+          "coldEmbeds": 27,
+          "warmEmbeds": 7,
+          "embedsSaved": 20,
+          "embedsSavedPercent": 74.07407407407408,
+          "coldTotalMs": 29.687291,
+          "warmTotalMs": 7.38575,
+          "speedupRatio": 4.019536404562841,
+          "cacheStats": {
+            "entries": 7,
+            "hits": 20,
+            "misses": 7,
+            "hitRate": 0.7407407407407407,
+            "approxByteSize": 10752
+          }
+        }
+      },
+      "contentHash": "c750eb49e9cef227d6a996a9c9aeee9ac3028e7b85b9a6d75b0c6faeab2c978d",
+      "signature": "e2759ad35c386aa746891483e688b2b99a9ef66611e2a50a1634e879090dc0b4506975512cd363963daa62fd990375e95aaeafbf27d6dd9502b1581b770afa0e",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "9ae4548b749147abce9839b22d0ea8bfb99c01aa3b32d0d563046d975c9a707a",
+      "sequence": 8
+    },
+    {
+      "benchmark": "rag-regression-check",
+      "timestamp": "2026-05-18T01:46:23.404Z",
+      "commit": "ac9754780c92cbaa1aa50cab970fa31770a8e900",
+      "model": "ledger-derived",
+      "corpus": {
+        "id": "473383a017657b31fbd3b3cfc47837c6f101d5883b13760e4db46c4ccb6f45ea",
+        "size": 8
+      },
+      "queries": {
+        "id": "5b2b51977092f1f047b18ef1129e7708ab578a125184f5fca0e734de9b82312f",
+        "count": 8
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "c750eb49e9cef227d6a996a9c9aeee9ac3028e7b85b9a6d75b0c6faeab2c978d",
+          "sequence": 9
+        },
+        "originalContentHash": "05bf2279ac87b624ed510ccd211d71fb215143c3d657c6c901db58f5c6e9fab6",
+        "originalSignature": "68f85639372ed211c84f5aac265324c5ae0adf44a2253261fecac148e64a2b8649cd7c294ed6eb11df7063a7e068b1068eadca30aaa2b589203931c566cfb904",
+        "originalPublicKey": "302a300506032b6570032100a85a26962458fdff276ee14a2e32ccb6cafc73aeca3740e1566a78d4e96b5f04",
+        "results": {
+          "trackedCount": 8,
+          "checkedCount": 2,
+          "skippedCount": 6,
+          "passedCount": 2,
+          "failedCount": 0,
+          "allPassed": true,
+          "checks": [
+            {
+              "benchmark": "rag-cached-router",
+              "metricPath": "results.results.cacheStats.hitRate",
+              "currentValue": 0.7407407407407407,
+              "baselineValue": 0.7407407407407407,
+              "baselineFrom": {
+                "sequence": 6,
+                "timestamp": "2026-05-18T01:28:51.966Z"
+              },
+              "percentChange": 0,
+              "passed": true
+            },
+            {
+              "benchmark": "rag-cached-router",
+              "metricPath": "results.results.embedsSavedPercent",
+              "currentValue": 74.07407407407408,
+              "baselineValue": 74.07407407407408,
+              "baselineFrom": {
+                "sequence": 6,
+                "timestamp": "2026-05-18T01:28:51.966Z"
+              },
+              "percentChange": 0,
+              "passed": true
+            }
+          ],
+          "skipped": [
+            {
+              "benchmark": "rag-real-text",
+              "metricPath": "results.results.compound.recallAt5",
+              "reason": "only one historical entry; nothing to regress against"
+            },
+            {
+              "benchmark": "rag-real-text",
+              "metricPath": "results.results.hyde.recallAt5",
+              "reason": "only one historical entry; nothing to regress against"
+            },
+            {
+              "benchmark": "rag-adaptive-router",
+              "metricPath": "results.results.accuracy",
+              "reason": "only one historical entry; nothing to regress against"
+            },
+            {
+              "benchmark": "rag-router-ablation",
+              "metricPath": "results.results.adaptive.meanRecallAt5",
+              "reason": "only one historical entry; nothing to regress against"
+            },
+            {
+              "benchmark": "rag-lazy-router",
+              "metricPath": "results.results.embedsSaved",
+              "reason": "only one historical entry; nothing to regress against"
+            },
+            {
+              "benchmark": "rag-lazy-router",
+              "metricPath": "results.results.embedsSavedPercent",
+              "reason": "only one historical entry; nothing to regress against"
+            }
+          ],
+          "ledgerHead": {
+            "sequence": 8,
+            "contentHash": "c750eb49e9cef227d6a996a9c9aeee9ac3028e7b85b9a6d75b0c6faeab2c978d",
+            "benchmark": "rag-cached-router"
+          }
+        }
+      },
+      "contentHash": "574a9d6796c35aed142dafa9994ad74c4f3c3e87407b3ccab6a874537a512d2b",
+      "signature": "37b6dea84544ac7e173d2deb31cbecfade2ebbac3c2eec6f2a74ff779015e11e35dd0df52ca4309c4a6829cfa7b3f75971535fc1c040365f4eff253d7cd31604",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "c750eb49e9cef227d6a996a9c9aeee9ac3028e7b85b9a6d75b0c6faeab2c978d",
+      "sequence": 9
+    },
+    {
+      "benchmark": "rag-trend-visualization",
+      "timestamp": "2026-05-18T01:54:42.735Z",
+      "commit": "3fe81e47d40eb135deaea5e2f96058544cbf7ffe",
+      "model": "ledger-derived",
+      "corpus": {
+        "id": "435eb5e466c61076586e3fd316676f7abb3efc5de1b43b6ff57b9ce985d373ba",
+        "size": 7
+      },
+      "queries": {
+        "id": "7cc10dbe481dbad00756bea27a4cdad4a195024176a689fc5cdba814fd44b0d5",
+        "count": 9
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "574a9d6796c35aed142dafa9994ad74c4f3c3e87407b3ccab6a874537a512d2b",
+          "sequence": 10
+        },
+        "originalContentHash": "141ded929d85859ea8aec144fd54fa337dbfdfd82bc4fb80bc3364ae5f58525a",
+        "originalSignature": "34a162e1d29bd8205cc71a6a103a4e53b5b1acd1871464af8820aa8636ba6f7a913155ebd988f3d368cfc184545ed7c35b8f8e89a73f8cd2be1d0fb43e512909",
+        "originalPublicKey": "302a300506032b6570032100792919585e27493aba5d008a05aeb60588e31ce759d33b579c2d50618dad07f2",
+        "results": {
+          "trackedCount": 7,
+          "withDataCount": 0,
+          "skippedCount": 7,
+          "driftFailures": 0,
+          "allPassed": true,
+          "trends": [
+            {
+              "benchmark": "rag-real-text",
+              "metricPath": "results.results.compound.recallAt5",
+              "direction": "higher",
+              "sparkline": "▄",
+              "sampleCount": 1,
+              "latestValue": 0.9666666666666667,
+              "drift": {
+                "earlyMean": 0,
+                "lateMean": 0,
+                "drift": 0,
+                "passed": true,
+                "skipped": true
+              }
+            },
+            {
+              "benchmark": "rag-real-text",
+              "metricPath": "results.results.hyde.recallAt5",
+              "direction": "higher",
+              "sparkline": "▄",
+              "sampleCount": 1,
+              "latestValue": 0.9666666666666667,
+              "drift": {
+                "earlyMean": 0,
+                "lateMean": 0,
+                "drift": 0,
+                "passed": true,
+                "skipped": true
+              }
+            },
+            {
+              "benchmark": "rag-adaptive-router",
+              "metricPath": "results.results.accuracy",
+              "direction": "higher",
+              "sparkline": "▄",
+              "sampleCount": 1,
+              "latestValue": 1,
+              "drift": {
+                "earlyMean": 0,
+                "lateMean": 0,
+                "drift": 0,
+                "passed": true,
+                "skipped": true
+              }
+            },
+            {
+              "benchmark": "rag-router-ablation",
+              "metricPath": "results.results.adaptive.meanRecallAt5",
+              "direction": "higher",
+              "sparkline": "▄",
+              "sampleCount": 1,
+              "latestValue": 0.8833333333333334,
+              "drift": {
+                "earlyMean": 0,
+                "lateMean": 0,
+                "drift": 0,
+                "passed": true,
+                "skipped": true
+              }
+            },
+            {
+              "benchmark": "rag-lazy-router",
+              "metricPath": "results.results.embedsSavedPercent",
+              "direction": "higher",
+              "sparkline": "▄",
+              "sampleCount": 1,
+              "latestValue": 24.324324324324326,
+              "drift": {
+                "earlyMean": 0,
+                "lateMean": 0,
+                "drift": 0,
+                "passed": true,
+                "skipped": true
+              }
+            },
+            {
+              "benchmark": "rag-cached-router",
+              "metricPath": "results.results.cacheStats.hitRate",
+              "direction": "higher",
+              "sparkline": "▄▄",
+              "sampleCount": 2,
+              "latestValue": 0.7407407407407407,
+              "drift": {
+                "earlyMean": 0,
+                "lateMean": 0,
+                "drift": 0,
+                "passed": true,
+                "skipped": true
+              }
+            },
+            {
+              "benchmark": "rag-cached-router",
+              "metricPath": "results.results.embedsSavedPercent",
+              "direction": "higher",
+              "sparkline": "▄▄",
+              "sampleCount": 2,
+              "latestValue": 74.07407407407408,
+              "drift": {
+                "earlyMean": 0,
+                "lateMean": 0,
+                "drift": 0,
+                "passed": true,
+                "skipped": true
+              }
+            }
+          ]
+        }
+      },
+      "contentHash": "7b4ed25b40887294cca7850018af581f87f73ee27cc452ae698aab0d90fcda3d",
+      "signature": "88b79a844b7647532c3e605bcebdb3d20c44e15a8e05cebcadfbd76b4c0dbdc329ec588581848754c0d8026e0eb11f5d9d58ce9d8c99b3acc3910716940bcb0d",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "574a9d6796c35aed142dafa9994ad74c4f3c3e87407b3ccab6a874537a512d2b",
+      "sequence": 10
+    },
+    {
+      "benchmark": "rag-multisig-attestation",
+      "timestamp": "2026-05-18T02:05:28.744Z",
+      "commit": "3e70bd282f9d3737089fb7ee25b8abbbab7ce95a",
+      "model": "attestation-pattern",
+      "corpus": {
+        "id": "f385f7749e6bab7ecc79f3192169910a6711486a1df9ab62f12327a96a50ad62",
+        "size": 1
+      },
+      "queries": {
+        "id": "f385f7749e6bab7ecc79f3192169910a6711486a1df9ab62f12327a96a50ad62",
+        "count": 1
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "7b4ed25b40887294cca7850018af581f87f73ee27cc452ae698aab0d90fcda3d",
+          "sequence": 11
+        },
+        "originalContentHash": "421b5a6bf6f8fc42a393a30693d296cff8f47c9d67e3004d57459f8b79c99ae3",
+        "originalSignature": "cfad91dcbd828584aa0f14d3fcab339bde263b9ef73b8ee578ddf2e03e7c15c1a7289a1728665a37c92e5c40649f6241936f1fd9c2458c262bab608caa96b403",
+        "originalPublicKey": "302a300506032b6570032100f345a70bdbfb47fb4308d5134b120335d7e6bc430fca1dcadf259df7b6e008f9",
+        "results": {
+          "primarySignerLabel": "benchmark-runner",
+          "cosignerCount": 2,
+          "totalSigners": 3,
+          "thresholdResults": {
+            "1-of-3 (default backward-compat)": true,
+            "2-of-3": true,
+            "3-of-3 (full M-of-N)": true,
+            "4-of-3 (impossible — should fail)": false
+          },
+          "perCosignature": [
+            {
+              "label": "third-party-verifier",
+              "publicKey": "302a300506032b6570032100...",
+              "verifies": true
+            },
+            {
+              "label": "release-auditor",
+              "publicKey": "302a300506032b6570032100...",
+              "verifies": true
+            }
+          ],
+          "contentHashUnchanged": true,
+          "primarySignatureUnchanged": true
+        }
+      },
+      "contentHash": "879105f9769367465e2d4b241aaad38f7462a3a264db43cfaf1d49651de727af",
+      "signature": "0a1ba2b2bcf212e2e9ae0d26d4c950c996c95091e90a8517aebd1aaed8b99e11493074314b50a5e4c91a36d1a05b066cf94d8a91b03e09c1392140b4c1ff2809",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "7b4ed25b40887294cca7850018af581f87f73ee27cc452ae698aab0d90fcda3d",
+      "sequence": 11
+    },
+    {
+      "benchmark": "rag-cli-verify-capability",
+      "timestamp": "2026-05-18T02:15:30.179Z",
+      "commit": "6d0a2f38a275d044e2d92cdf3998fb82970dc24c",
+      "model": "cli-verify-driver",
+      "corpus": {
+        "id": "882479069b70b4f23c4abb1c645360c8219fd3b5bf60382e35c16ad5a0703b6f",
+        "size": 2
+      },
+      "queries": {
+        "id": "11ba7a6785c9f0e5568347da96293980123ddcc75286f76f756a7b75a37f51d0",
+        "count": 6
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "879105f9769367465e2d4b241aaad38f7462a3a264db43cfaf1d49651de727af",
+          "sequence": 12
+        },
+        "originalContentHash": "0094b9bbed17fc94c9af52c1fb51e1b21566ad1f0cf3596eab641a48af53fe29",
+        "originalSignature": "c794380c68e603e5b791a5fd3c28fe2bdc2865db0dad3d945da2908d410e3d74176373bad82d5ea4f4491919b2d8a1134a30784f6eb7b8ef16d4238444e99b01",
+        "originalPublicKey": "302a300506032b6570032100e42583017b67f220749751a4e975269c0756b40d8a696f68eb4615a8bc516eed",
+        "results": {
+          "ledgerPath": "/Users/cohen/Projects/ruflo/bench-witness/ledger.json",
+          "sampleWitnessPath": "/Users/cohen/Projects/ruflo/bench-witness/rag-real-text-2026-05-18T00-27-56-447Z.json",
+          "ledgerEntryCount": 11,
+          "results": {
+            "ledgerVerifyDefault": {
+              "passed": true,
+              "exitCode": 0
+            },
+            "ledgerVerifyThreshold1": {
+              "passed": true,
+              "exitCode": 0
+            },
+            "ledgerVerifyThreshold2Expected": {
+              "failedAsExpected": true,
+              "exitCode": 1
+            },
+            "singleWitnessVerify": {
+              "passed": true,
+              "exitCode": 0
+            },
+            "missingPathRejected": {
+              "rejected": true,
+              "exitCode": 1
+            },
+            "badThresholdRejected": {
+              "rejected": true,
+              "exitCode": 1
+            }
+          },
+          "allPassed": true
+        }
+      },
+      "contentHash": "f9ddf08a1960647565a65f92a0fd7a9cb6b164746982699b859bc5065b36c963",
+      "signature": "0bf8fe23a82ab1696471b5d11748b71997c384ea6a35abe5190fa2c9351178ece35d6af1da9507afb89a05d4b2bfd857a9024d890387b10a4f13cca45b9c800b",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "879105f9769367465e2d4b241aaad38f7462a3a264db43cfaf1d49651de727af",
+      "sequence": 12
+    },
+    {
+      "benchmark": "rag-cli-cosign-capability",
+      "timestamp": "2026-05-18T02:27:48.529Z",
+      "commit": "41d15dfeeeb86ce26afb4647616a9c2576812ef0",
+      "model": "cli-cosign-driver",
+      "corpus": {
+        "id": "a38a297dba5daca65f1856c58a2b49b3bca737b16e164f79773110fab14fdb2f",
+        "size": 1
+      },
+      "queries": {
+        "id": "b45259b4f1e64dcbc16b38587a6e2a4ee6063fef794fc527319e105fc6036b17",
+        "count": 4
+      },
+      "results": {
+        "__chain": {
+          "prevContentHash": "f9ddf08a1960647565a65f92a0fd7a9cb6b164746982699b859bc5065b36c963",
+          "sequence": 13
+        },
+        "originalContentHash": "e1e843d8da8deb5889008eacaccb342f6aef19f6b3bcbad28e2f26b0f7d29769",
+        "originalSignature": "28ea0f79a0d7a4016fa786c5ae07f99eed601a2ae5bd98a9c1565b6e49168087c64c0660593f0164bfaeca80321d99ae67ea8ecc7130a6937a23f9d55b7e2604",
+        "originalPublicKey": "302a300506032b65700321000972dfc0f43e5c5cf3b6799193c7cdf6a48cbcab6cde2ab4919ccce1e6e32c00",
+        "results": {
+          "ledgerPath": "/Users/cohen/Projects/ruflo/bench-witness/ledger.json",
+          "results": {
+            "singleEntryCosign": {
+              "success": true,
+              "contentHashUnchanged": true,
+              "cosignatureAppended": true,
+              "labelPreserved": true
+            },
+            "allCosignAtThreshold2": {
+              "cosignAllSucceeded": true,
+              "everyEntryHasCosig": true,
+              "verifyAtThreshold2": true
+            },
+            "keyPersistence": {
+              "keyFileExists": true,
+              "samePublicKeyAcrossRuns": true
+            },
+            "badInputRejection": {
+              "missingPathRejected": true,
+              "badEntryRejected": true
+            }
+          },
+          "allPassed": true
+        }
+      },
+      "contentHash": "f3e3d9fd52c14c8688e63ed959a9384822a2936a484aaaa975f18db97a5cfc6a",
+      "signature": "4cfe92aa2301a7336743707f09bf5fb4bb3efdfbf4618162d1338317c669183c247f0bfdd90cf3654510a129c90422ff4c4fdee8a1d62038724b44b616217f0f",
+      "publicKey": "302a300506032b6570032100e27326b899b5e206ef4cc042a3cefdee3609c830c28a10feda32b2b839656426",
+      "signatureAlgorithm": "ed25519",
+      "prevContentHash": "f9ddf08a1960647565a65f92a0fd7a9cb6b164746982699b859bc5065b36c963",
+      "sequence": 13
+    }
+  ]
+}

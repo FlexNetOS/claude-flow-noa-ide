@@ -1,14 +1,8 @@
 # ADR-098: Plugin Capability Sync + Token / Performance / Intelligence / Self-Optimization Pass
 
-<<<<<<< HEAD
-**Status**: Proposed
-**Date**: 2026-05-04
-**Version**: target v3.6.x (multi-iteration, no single-version pin)
-=======
 **Status**: Accepted — Partially Implemented (Parts 1–4 landed; Part 5 deferred)
 **Date**: 2026-05-04 · **Updated**: 2026-05-09
 **Version**: Parts 1–4 shipped across v3.6.25–v3.6.26 plugin releases
->>>>>>> pr-1936-head
 **Supersedes**: nothing
 **Related**: ADR-094 (transformers loader), ADR-095 (architectural gaps), ADR-096 (encryption-at-rest), ADR-097 (federation budget circuit breaker), `plugins/ruflo-*` directory
 
@@ -150,17 +144,6 @@ Lower priority than Parts 1-4 because workers run async and benefit from stable 
 - No new ADR cycle unless a part surfaces a runtime gap (e.g. Part 5 might need a new MCP tool for worker telemetry; if so, separate ADR).
 - Per-plugin version bumps follow semver: capability sync = minor (0.1.0 → 0.2.0); token diet alone = patch (0.1.0 → 0.1.1).
 
-<<<<<<< HEAD
-## Implementation status
-
-| Part | Scope | Status |
-|---|---|---|
-| 1 | Capability sync (6 plugins) | pending |
-| 2 | Token diet (4 plugins) | pending |
-| 3 | Model tier rightsizing (1 agent) | pending |
-| 4 | Neural training hook (7 agents) | pending |
-| 5 | Worker dispatch (variable) | pending — lands after Part 4 |
-=======
 ## Implementation status (2026-05-09)
 
 Parts 1–4 are fully landed on `main`. Part 5 (worker dispatch) remains deferred — it was explicitly ordered to land after Part 4 per the ADR.
@@ -176,7 +159,6 @@ Parts 1–4 are fully landed on `main`. Part 5 (worker dispatch) remains deferre
 ### Deferred
 
 - **Part 5** — Worker-dispatch lines (`hooks worker dispatch --trigger <worker>`) in work-producing agent prompts. Explicitly ordered post-Part 4 in the ADR; no follow-up commit has landed.
->>>>>>> pr-1936-head
 
 ## Acceptance criteria
 

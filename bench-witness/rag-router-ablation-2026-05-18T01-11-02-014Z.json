@@ -1,0 +1,808 @@
+{
+  "summary": {
+    "plain": {
+      "meanRecallAt5": 0.7166666666666667,
+      "meanNdcgAt5": 0.7577999193649239,
+      "mrr": 0.8571428571428571,
+      "meanLatencyMs": 1.1908094285714286,
+      "totalEmbeds": 7
+    },
+    "mmr": {
+      "meanRecallAt5": 0.5142857142857143,
+      "meanNdcgAt5": 0.5689461947557175,
+      "mrr": 0.8571428571428571,
+      "meanLatencyMs": 1.5057678571428572,
+      "totalEmbeds": 7
+    },
+    "rrf": {
+      "meanRecallAt5": 0.7047619047619048,
+      "meanNdcgAt5": 0.7504451530516424,
+      "mrr": 0.8571428571428571,
+      "meanLatencyMs": 1.9116130000000002,
+      "totalEmbeds": 15
+    },
+    "hyde": {
+      "meanRecallAt5": 0.8071428571428572,
+      "meanNdcgAt5": 0.8786256529608067,
+      "mrr": 1,
+      "meanLatencyMs": 3.1125475714285713,
+      "totalEmbeds": 15
+    },
+    "compound": {
+      "meanRecallAt5": 0.8833333333333334,
+      "meanNdcgAt5": 0.924579086354446,
+      "mrr": 1,
+      "meanLatencyMs": 5.183006,
+      "totalEmbeds": 30
+    },
+    "adaptive": {
+      "meanRecallAt5": 0.8833333333333334,
+      "meanNdcgAt5": 0.9267024109730695,
+      "mrr": 1,
+      "meanLatencyMs": 5.771839285714286,
+      "totalEmbeds": 37
+    }
+  },
+  "perQuery": {
+    "plain": [
+      {
+        "query": "auth (plain-favoring)",
+        "kind": "plain",
+        "hits": [
+          "auth-1",
+          "auth-3",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.711,
+        "embeds": 1
+      },
+      {
+        "query": "cache info (mmr-favoring)",
+        "kind": "mmr",
+        "hits": [
+          "dup-extra-2",
+          "dup-extra-1",
+          "dup-4",
+          "dup-0",
+          "dup-2"
+        ],
+        "recall": 0.6,
+        "ndcg": 0.6992148198508501,
+        "rr": 1,
+        "ms": 1.211125,
+        "embeds": 1
+      },
+      {
+        "query": "deploy and monitor (rrf-favoring)",
+        "kind": "rrf",
+        "hits": [
+          "mi-deploy-2",
+          "mi-monitor-0",
+          "mi-deploy-1",
+          "mi-deploy-0",
+          "dup-extra-3"
+        ],
+        "recall": 0.6666666666666666,
+        "ndcg": 0.8687949224876582,
+        "rr": 1,
+        "ms": 1.280125,
+        "embeds": 1
+      },
+      {
+        "query": "vector indexing (hyde-favoring)",
+        "kind": "hyde",
+        "hits": [
+          "qa-1",
+          "dup-extra-2",
+          "qa-0",
+          "mi-monitor-2",
+          "qa-2"
+        ],
+        "recall": 0.75,
+        "ndcg": 0.7365896932159578,
+        "rr": 1,
+        "ms": 0.985166,
+        "embeds": 1
+      },
+      {
+        "query": "unified (compound-favoring)",
+        "kind": "compound",
+        "hits": [
+          "mi-monitor-0",
+          "mi-monitor-2",
+          "qa-1",
+          "mi-monitor-1",
+          "dup-extra-2"
+        ],
+        "recall": 0,
+        "ndcg": 0,
+        "rr": 0,
+        "ms": 0.905542,
+        "embeds": 1
+      },
+      {
+        "query": "auth tokens (plain-favoring 2)",
+        "kind": "plain",
+        "hits": [
+          "auth-3",
+          "auth-1",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.180458,
+        "embeds": 1
+      },
+      {
+        "query": "cache TTL (plain-favoring 3)",
+        "kind": "plain",
+        "hits": [
+          "dup-3",
+          "dup-2",
+          "dup-4",
+          "dup-0",
+          "dup-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.06225,
+        "embeds": 1
+      }
+    ],
+    "mmr": [
+      {
+        "query": "auth (plain-favoring)",
+        "kind": "plain",
+        "hits": [
+          "auth-1",
+          "auth-2",
+          "auth-0",
+          "qa-0",
+          "auth-4"
+        ],
+        "recall": 0.8,
+        "ndcg": 0.8539316501572937,
+        "rr": 1,
+        "ms": 3.450584,
+        "embeds": 1
+      },
+      {
+        "query": "cache info (mmr-favoring)",
+        "kind": "mmr",
+        "hits": [
+          "dup-extra-2",
+          "auth-2",
+          "dup-extra-1",
+          "dup-4",
+          "dup-extra-3"
+        ],
+        "recall": 0.6,
+        "ndcg": 0.639945385422766,
+        "rr": 1,
+        "ms": 2.019125,
+        "embeds": 1
+      },
+      {
+        "query": "deploy and monitor (rrf-favoring)",
+        "kind": "rrf",
+        "hits": [
+          "mi-deploy-2",
+          "mi-monitor-0",
+          "mi-deploy-1",
+          "dup-extra-3",
+          "qa-2"
+        ],
+        "recall": 0.5,
+        "ndcg": 0.7227265726449519,
+        "rr": 1,
+        "ms": 1.271708,
+        "embeds": 1
+      },
+      {
+        "query": "vector indexing (hyde-favoring)",
+        "kind": "hyde",
+        "hits": [
+          "qa-1",
+          "dup-2",
+          "mi-monitor-2",
+          "mi-deploy-1",
+          "qa-2"
+        ],
+        "recall": 0.5,
+        "ndcg": 0.5413996682199069,
+        "rr": 1,
+        "ms": 0.939166,
+        "embeds": 1
+      },
+      {
+        "query": "unified (compound-favoring)",
+        "kind": "compound",
+        "hits": [
+          "mi-monitor-0",
+          "qa-0",
+          "qa-3",
+          "auth-4",
+          "dup-4"
+        ],
+        "recall": 0,
+        "ndcg": 0,
+        "rr": 0,
+        "ms": 0.831042,
+        "embeds": 1
+      },
+      {
+        "query": "auth tokens (plain-favoring 2)",
+        "kind": "plain",
+        "hits": [
+          "auth-3",
+          "mi-monitor-0",
+          "auth-1",
+          "dup-extra-0",
+          "auth-4"
+        ],
+        "recall": 1,
+        "ndcg": 0.8854598815714874,
+        "rr": 1,
+        "ms": 1.018875,
+        "embeds": 1
+      },
+      {
+        "query": "cache TTL (plain-favoring 3)",
+        "kind": "plain",
+        "hits": [
+          "dup-3",
+          "auth-2",
+          "dup-extra-0",
+          "qa-3",
+          "dup-extra-1"
+        ],
+        "recall": 0.2,
+        "ndcg": 0.3391602052736161,
+        "rr": 1,
+        "ms": 1.009875,
+        "embeds": 1
+      }
+    ],
+    "rrf": [
+      {
+        "query": "auth (plain-favoring)",
+        "kind": "plain",
+        "hits": [
+          "auth-1",
+          "auth-3",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.135167,
+        "embeds": 1
+      },
+      {
+        "query": "cache info (mmr-favoring)",
+        "kind": "mmr",
+        "hits": [
+          "dup-extra-2",
+          "dup-4",
+          "dup-2",
+          "dup-extra-1",
+          "dup-0"
+        ],
+        "recall": 0.6,
+        "ndcg": 0.6164336326286644,
+        "rr": 1,
+        "ms": 2.890583,
+        "embeds": 3
+      },
+      {
+        "query": "deploy and monitor (rrf-favoring)",
+        "kind": "rrf",
+        "hits": [
+          "mi-deploy-2",
+          "mi-deploy-0",
+          "mi-monitor-0",
+          "mi-deploy-1",
+          "mi-monitor-2"
+        ],
+        "recall": 0.8333333333333334,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 2.884667,
+        "embeds": 3
+      },
+      {
+        "query": "vector indexing (hyde-favoring)",
+        "kind": "hyde",
+        "hits": [
+          "qa-1",
+          "qa-0",
+          "dup-extra-2",
+          "dup-0",
+          "dup-2"
+        ],
+        "recall": 0.5,
+        "ndcg": 0.6366824387328317,
+        "rr": 1,
+        "ms": 2.251583,
+        "embeds": 3
+      },
+      {
+        "query": "unified (compound-favoring)",
+        "kind": "compound",
+        "hits": [
+          "auth-4",
+          "dup-extra-2",
+          "mi-deploy-2",
+          "auth-1",
+          "dup-extra-1"
+        ],
+        "recall": 0,
+        "ndcg": 0,
+        "rr": 0,
+        "ms": 2.263,
+        "embeds": 3
+      },
+      {
+        "query": "auth tokens (plain-favoring 2)",
+        "kind": "plain",
+        "hits": [
+          "auth-3",
+          "auth-1",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 0.987125,
+        "embeds": 1
+      },
+      {
+        "query": "cache TTL (plain-favoring 3)",
+        "kind": "plain",
+        "hits": [
+          "dup-3",
+          "dup-2",
+          "dup-4",
+          "dup-0",
+          "dup-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 0.969166,
+        "embeds": 1
+      }
+    ],
+    "hyde": [
+      {
+        "query": "auth (plain-favoring)",
+        "kind": "plain",
+        "hits": [
+          "auth-1",
+          "auth-3",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.2015,
+        "embeds": 1
+      },
+      {
+        "query": "cache info (mmr-favoring)",
+        "kind": "mmr",
+        "hits": [
+          "dup-extra-2",
+          "dup-0",
+          "dup-4",
+          "dup-2",
+          "dup-3"
+        ],
+        "recall": 0.4,
+        "ndcg": 0.5531464700081437,
+        "rr": 1,
+        "ms": 4.873625,
+        "embeds": 3
+      },
+      {
+        "query": "deploy and monitor (rrf-favoring)",
+        "kind": "rrf",
+        "hits": [
+          "mi-monitor-2",
+          "mi-monitor-0",
+          "mi-deploy-0",
+          "mi-deploy-1",
+          "mi-monitor-1"
+        ],
+        "recall": 0.8333333333333334,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 3.634833,
+        "embeds": 3
+      },
+      {
+        "query": "vector indexing (hyde-favoring)",
+        "kind": "hyde",
+        "hits": [
+          "qa-1",
+          "qa-2",
+          "qa-0",
+          "dup-extra-2",
+          "mi-monitor-2"
+        ],
+        "recall": 0.75,
+        "ndcg": 0.8318724637288826,
+        "rr": 1,
+        "ms": 5.917625,
+        "embeds": 3
+      },
+      {
+        "query": "unified (compound-favoring)",
+        "kind": "compound",
+        "hits": [
+          "mi-deploy-1",
+          "dup-0",
+          "dup-1",
+          "dup-3",
+          "dup-2"
+        ],
+        "recall": 0.6666666666666666,
+        "ndcg": 0.7653606369886217,
+        "rr": 1,
+        "ms": 4.208792,
+        "embeds": 3
+      },
+      {
+        "query": "auth tokens (plain-favoring 2)",
+        "kind": "plain",
+        "hits": [
+          "auth-3",
+          "auth-1",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 0.977,
+        "embeds": 1
+      },
+      {
+        "query": "cache TTL (plain-favoring 3)",
+        "kind": "plain",
+        "hits": [
+          "dup-3",
+          "dup-2",
+          "dup-4",
+          "dup-0",
+          "dup-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 0.974458,
+        "embeds": 1
+      }
+    ],
+    "compound": [
+      {
+        "query": "auth (plain-favoring)",
+        "kind": "plain",
+        "hits": [
+          "auth-1",
+          "auth-3",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 2.392333,
+        "embeds": 2
+      },
+      {
+        "query": "cache info (mmr-favoring)",
+        "kind": "mmr",
+        "hits": [
+          "dup-extra-2",
+          "dup-extra-3",
+          "dup-2",
+          "dup-4",
+          "dup-0"
+        ],
+        "recall": 0.6,
+        "ndcg": 0.6843515475204855,
+        "rr": 1,
+        "ms": 7.928791,
+        "embeds": 6
+      },
+      {
+        "query": "deploy and monitor (rrf-favoring)",
+        "kind": "rrf",
+        "hits": [
+          "mi-monitor-0",
+          "mi-deploy-0",
+          "mi-deploy-1",
+          "mi-monitor-2",
+          "mi-monitor-1"
+        ],
+        "recall": 0.8333333333333334,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 6.980667,
+        "embeds": 6
+      },
+      {
+        "query": "vector indexing (hyde-favoring)",
+        "kind": "hyde",
+        "hits": [
+          "qa-1",
+          "qa-0",
+          "dup-extra-2",
+          "mi-monitor-2",
+          "qa-2"
+        ],
+        "recall": 0.75,
+        "ndcg": 0.787702056960637,
+        "rr": 1,
+        "ms": 8.606333,
+        "embeds": 6
+      },
+      {
+        "query": "unified (compound-favoring)",
+        "kind": "compound",
+        "hits": [
+          "mi-deploy-1",
+          "dup-0",
+          "auth-0",
+          "dup-1",
+          "dup-3"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 6.388625,
+        "embeds": 6
+      },
+      {
+        "query": "auth tokens (plain-favoring 2)",
+        "kind": "plain",
+        "hits": [
+          "auth-3",
+          "auth-1",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.990084,
+        "embeds": 2
+      },
+      {
+        "query": "cache TTL (plain-favoring 3)",
+        "kind": "plain",
+        "hits": [
+          "dup-3",
+          "dup-2",
+          "dup-4",
+          "dup-0",
+          "dup-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 1.994209,
+        "embeds": 2
+      }
+    ],
+    "adaptive": [
+      {
+        "query": "auth (plain-favoring)",
+        "kind": "plain",
+        "hits": [
+          "auth-1",
+          "auth-3",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 4.632291,
+        "embeds": 3,
+        "routedTo": "plain",
+        "reason": "No signals fired (dup=0.242<=0.85, intentCohesion=0.000>=0.55, qaGap=0.000<=0.35); plain top-k is sufficient."
+      },
+      {
+        "query": "cache info (mmr-favoring)",
+        "kind": "mmr",
+        "hits": [
+          "dup-extra-2",
+          "dup-extra-1",
+          "dup-4",
+          "dup-0",
+          "dup-2"
+        ],
+        "recall": 0.6,
+        "ndcg": 0.6992148198508501,
+        "rr": 1,
+        "ms": 7.886917,
+        "embeds": 7,
+        "routedTo": "plain",
+        "reason": "No signals fired (dup=0.278<=0.85, intentCohesion=0.748>=0.55, qaGap=0.286<=0.35); plain top-k is sufficient."
+      },
+      {
+        "query": "deploy and monitor (rrf-favoring)",
+        "kind": "rrf",
+        "hits": [
+          "mi-monitor-0",
+          "mi-deploy-0",
+          "mi-deploy-1",
+          "mi-monitor-2",
+          "mi-monitor-1"
+        ],
+        "recall": 0.8333333333333334,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 7.35075,
+        "embeds": 7,
+        "routedTo": "compound",
+        "reason": "Multiple signals fired: RRF(intent=0.380<0.55), HyDE(qaGap=0.619>0.35); compound primitive composes them all."
+      },
+      {
+        "query": "vector indexing (hyde-favoring)",
+        "kind": "hyde",
+        "hits": [
+          "qa-1",
+          "qa-0",
+          "dup-extra-2",
+          "mi-monitor-2",
+          "qa-2"
+        ],
+        "recall": 0.75,
+        "ndcg": 0.787702056960637,
+        "rr": 1,
+        "ms": 8.597042,
+        "embeds": 7,
+        "routedTo": "compound",
+        "reason": "Multiple signals fired: RRF(intent=0.519<0.55), HyDE(qaGap=0.526>0.35); compound primitive composes them all."
+      },
+      {
+        "query": "unified (compound-favoring)",
+        "kind": "compound",
+        "hits": [
+          "mi-deploy-1",
+          "dup-0",
+          "auth-0",
+          "dup-1",
+          "dup-3"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 6.655042,
+        "embeds": 7,
+        "routedTo": "compound",
+        "reason": "Multiple signals fired: RRF(intent=0.059<0.55), HyDE(qaGap=0.968>0.35); compound primitive composes them all."
+      },
+      {
+        "query": "auth tokens (plain-favoring 2)",
+        "kind": "plain",
+        "hits": [
+          "auth-3",
+          "auth-1",
+          "auth-4",
+          "auth-0",
+          "auth-2"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 2.643833,
+        "embeds": 3,
+        "routedTo": "plain",
+        "reason": "No signals fired (dup=0.273<=0.85, intentCohesion=0.000>=0.55, qaGap=0.000<=0.35); plain top-k is sufficient."
+      },
+      {
+        "query": "cache TTL (plain-favoring 3)",
+        "kind": "plain",
+        "hits": [
+          "dup-3",
+          "dup-2",
+          "dup-4",
+          "dup-0",
+          "dup-1"
+        ],
+        "recall": 1,
+        "ndcg": 1,
+        "rr": 1,
+        "ms": 2.637,
+        "embeds": 3,
+        "routedTo": "plain",
+        "reason": "No signals fired (dup=0.282<=0.85, intentCohesion=0.000>=0.55, qaGap=0.000<=0.35); plain top-k is sufficient."
+      }
+    ]
+  },
+  "witness": {
+    "benchmark": "rag-router-ablation",
+    "timestamp": "2026-05-18T01:11:02.014Z",
+    "commit": "33c3f740ce1284571bd63b55d165d8e1040d6ac3",
+    "model": "Xenova/all-MiniLM-L6-v2",
+    "corpus": {
+      "id": "2ee25f582b30323502b9270ed47e81ce9bb037f16d2e824083366249f888b81e",
+      "size": 24
+    },
+    "queries": {
+      "id": "62d0ff164eaaacb81d2bc8e7ae54b02c81d7ffa534f76c1235858c1edbe2088a",
+      "count": 7
+    },
+    "results": {
+      "plain": {
+        "meanRecallAt5": 0.7166666666666667,
+        "meanNdcgAt5": 0.7577999193649239,
+        "mrr": 0.8571428571428571,
+        "meanLatencyMs": 1.1908094285714286,
+        "totalEmbeds": 7
+      },
+      "mmr": {
+        "meanRecallAt5": 0.5142857142857143,
+        "meanNdcgAt5": 0.5689461947557175,
+        "mrr": 0.8571428571428571,
+        "meanLatencyMs": 1.5057678571428572,
+        "totalEmbeds": 7
+      },
+      "rrf": {
+        "meanRecallAt5": 0.7047619047619048,
+        "meanNdcgAt5": 0.7504451530516424,
+        "mrr": 0.8571428571428571,
+        "meanLatencyMs": 1.9116130000000002,
+        "totalEmbeds": 15
+      },
+      "hyde": {
+        "meanRecallAt5": 0.8071428571428572,
+        "meanNdcgAt5": 0.8786256529608067,
+        "mrr": 1,
+        "meanLatencyMs": 3.1125475714285713,
+        "totalEmbeds": 15
+      },
+      "compound": {
+        "meanRecallAt5": 0.8833333333333334,
+        "meanNdcgAt5": 0.924579086354446,
+        "mrr": 1,
+        "meanLatencyMs": 5.183006,
+        "totalEmbeds": 30
+      },
+      "adaptive": {
+        "meanRecallAt5": 0.8833333333333334,
+        "meanNdcgAt5": 0.9267024109730695,
+        "mrr": 1,
+        "meanLatencyMs": 5.771839285714286,
+        "totalEmbeds": 37
+      }
+    },
+    "contentHash": "f3abe567e8f14889db9aa4984cf1528f26955cfa9c81209d1e05315144279a83",
+    "signature": "63d7505d8d49ac222e4fa76f100f7bc450e0003a48efc45efff40bc227c2f4db3259d022ed865757c174ec755f073c1228650e1cb536da0f1e5c7aef1ba6f20a",
+    "publicKey": "302a300506032b6570032100421e927ffd08e184fe5516eee4f97b1ff4760f5dd0514d093485bce3a7bdc7c2",
+    "signatureAlgorithm": "ed25519"
+  }
+}

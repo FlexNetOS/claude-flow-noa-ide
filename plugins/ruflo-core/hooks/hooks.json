@@ -1,4 +1,8 @@
 {
+<<<<<<< HEAD
+=======
+  "_note": "#1921 — hook commands invoke scripts/ruflo-hook.sh (resilient shim): prefers a locally-installed `ruflo`/`claude-flow` binary, falls back to `npx --prefer-offline`, and always exits 0 so a CLI/install failure (e.g. arborist `Invalid Version` on npm 10.8.x) never surfaces an error in Claude Code or blocks a turn. The trailing `|| true` guards the case where $CLAUDE_PLUGIN_ROOT is unset (older Claude Code) — the hook then no-ops silently. DO NOT revert to a bare `npx <pkg>@alpha hooks …` per fire.",
+>>>>>>> pr-2031-head
   "hooks": {
     "PreToolUse": [
       {
@@ -6,7 +10,11 @@
         "hooks": [
           {
             "type": "command",
+<<<<<<< HEAD
             "command": "cat | npx claude-flow@alpha hooks modify-bash"
+=======
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/ruflo-hook.sh\" modify-bash || true"
+>>>>>>> pr-2031-head
           }
         ]
       },
@@ -15,7 +23,11 @@
         "hooks": [
           {
             "type": "command",
+<<<<<<< HEAD
             "command": "cat | npx claude-flow@alpha hooks modify-file"
+=======
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/ruflo-hook.sh\" modify-file || true"
+>>>>>>> pr-2031-head
           }
         ]
       }
@@ -27,10 +39,14 @@
           {
             "type": "command",
 <<<<<<< HEAD
+<<<<<<< HEAD
             "command": "cat | jq -r '.tool_input.command // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks post-command --command '{}' --track-metrics true --store-results true"
 =======
             "command": "/bin/bash -c 'INPUT=$(cat); CMD=$(printf %s \"$INPUT\" | jq -r \".tool_input.command // empty\"); [ -z \"$CMD\" ] && exit 0; EXIT=$(printf %s \"$INPUT\" | jq -r \".tool_response.exit_code // 0\"); SUCCESS=$([ \"$EXIT\" = \"0\" ] && echo true || echo false); npx claude-flow@alpha hooks post-command -c \"$CMD\" -s \"$SUCCESS\" -e \"$EXIT\"'"
 >>>>>>> pr-1936-head
+=======
+            "command": "/bin/bash -c 'INPUT=$(cat); CMD=$(printf %s \"$INPUT\" | jq -r \".tool_input.command // empty\"); [ -z \"$CMD\" ] && exit 0; EXIT=$(printf %s \"$INPUT\" | jq -r \".tool_response.exit_code // 0\"); SUCCESS=$([ \"$EXIT\" = \"0\" ] && echo true || echo false); \"${CLAUDE_PLUGIN_ROOT}/scripts/ruflo-hook.sh\" post-command -c \"$CMD\" -s \"$SUCCESS\" -e \"$EXIT\" || true'"
+>>>>>>> pr-2031-head
           }
         ]
       },
@@ -40,10 +56,14 @@
           {
             "type": "command",
 <<<<<<< HEAD
+<<<<<<< HEAD
             "command": "cat | jq -r '.tool_input.file_path // .tool_input.path // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks post-edit --file '{}' --format true --update-memory true"
 =======
             "command": "/bin/bash -c 'INPUT=$(cat); FILE=$(printf %s \"$INPUT\" | jq -r \".tool_input.file_path // .tool_input.path // empty\"); [ -z \"$FILE\" ] && exit 0; npx claude-flow@alpha hooks post-edit -f \"$FILE\" -s true'"
 >>>>>>> pr-1936-head
+=======
+            "command": "/bin/bash -c 'INPUT=$(cat); FILE=$(printf %s \"$INPUT\" | jq -r \".tool_input.file_path // .tool_input.path // empty\"); [ -z \"$FILE\" ] && exit 0; \"${CLAUDE_PLUGIN_ROOT}/scripts/ruflo-hook.sh\" post-edit -f \"$FILE\" -s true || true'"
+>>>>>>> pr-2031-head
           }
         ]
       }
@@ -73,7 +93,11 @@
         "hooks": [
           {
             "type": "command",
+<<<<<<< HEAD
             "command": "npx claude-flow@alpha hooks session-end --generate-summary true --persist-state true --export-metrics true"
+=======
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/ruflo-hook.sh\" session-end --generate-summary true --persist-state true --export-metrics true || true"
+>>>>>>> pr-2031-head
           }
         ]
       }

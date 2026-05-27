@@ -58,7 +58,7 @@ async function getBridge() {
 
 export const agentdbHealth: MCPTool = {
   name: 'agentdb_health',
-  description: 'Get AgentDB v3 controller health status including cache stats and attestation count',
+  description: 'Get AgentDB v3 controller health status including cache stats and attestation count Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -68,26 +68,7 @@ export const agentdbHealth: MCPTool = {
       const bridge = await getBridge();
       const health = await bridge.bridgeHealthCheck();
       if (!health) return { available: false, error: 'AgentDB bridge not available' };
-
-      // #bug6 — Honesty fix: callers used to receive a controllers list
-      // where vectorBackend / mutationGuard / gnnService / semanticRouter /
-      // guardedVectorBackend / rvfOptimizer / graphAdapter / attestationLog
-      // were emitted with `enabled: false`. That made the response look
-      // like every controller was registered when in fact only a handful
-      // had backing implementations. Split the list: keep `controllers`
-      // for live ones, surface the rest under `_unavailable` so the call
-      // doesn't pretend optional dependencies exist.
-      const allControllers = Array.isArray(health.controllers) ? health.controllers : [];
-      const enabled = allControllers.filter((c: any) => c?.enabled === true);
-      const disabled = allControllers
-        .filter((c: any) => c?.enabled === false)
-        .map((c: any) => (typeof c?.name === 'string' ? c.name : 'unknown'));
-
-      return {
-        ...health,
-        controllers: enabled,
-        ...(disabled.length > 0 ? { _unavailable: disabled } : {}),
-      };
+      return health;
     } catch (error) {
       return { available: false, error: sanitizeError(error) };
     }
@@ -98,7 +79,7 @@ export const agentdbHealth: MCPTool = {
 
 export const agentdbControllers: MCPTool = {
   name: 'agentdb_controllers',
-  description: 'List all AgentDB v3 controllers and their initialization status',
+  description: 'List all AgentDB v3 controllers and their initialization status Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -124,7 +105,7 @@ export const agentdbControllers: MCPTool = {
 
 export const agentdbPatternStore: MCPTool = {
   name: 'agentdb_pattern-store',
-  description: 'Store a pattern directly via ReasoningBank controller',
+  description: 'Store a pattern directly via ReasoningBank controller Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -188,7 +169,7 @@ export const agentdbPatternStore: MCPTool = {
 
 export const agentdbPatternSearch: MCPTool = {
   name: 'agentdb_pattern-search',
-  description: 'Search patterns via ReasoningBank controller with BM25+semantic hybrid',
+  description: 'Search patterns via ReasoningBank controller with BM25+semantic hybrid Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -204,13 +185,88 @@ export const agentdbPatternSearch: MCPTool = {
       if (!vQuery.valid) return { results: [], error: vQuery.error };
       const query = validateString(params.query, 'query', 10_000);
       if (!query) return { results: [], error: 'query is required (non-empty string, max 10KB)' };
+      const topK = validatePositiveInt(params.topK, 5, MAX_TOP_K);
+      const minConfidence = validateScore(params.minConfidence, 0.3);
+
       const bridge = await getBridge();
-      const result = await bridge.bridgeSearchPatterns({
-        query,
-        topK: validatePositiveInt(params.topK, 5, MAX_TOP_K),
-        minConfidence: validateScore(params.minConfidence, 0.3),
-      });
-      return result ?? { results: [], controller: 'unavailable' };
+      const result = await bridge.bridgeSearchPatterns({ query, topK, minConfidence });
+      if (result && Array.isArray(result.results) && result.results.length > 0) {
+        return result;
+      }
+
+      // #1889 — symmetric fallback. pattern-store writes to the `pattern`
+      // namespace via memory_store when ReasoningBank is unavailable; the
+      // search path used to return an empty list with `controller: 'unavailable'`
+      // even though the user's pattern was sitting in that namespace. We now
+      // tier the fallback so freshly-written entries are findable before HNSW
+      // catches up:
+      //   1. Try semantic search via searchEntries (HNSW-backed)
+      //   2. If that returns 0, list the namespace and substring-match the query
+      //      against each entry's pattern text. Deterministic; survives
+      //      embedding-index latency and threshold tuning.
+      try {
+        const { searchEntries, listEntries } = await import('../memory/memory-initializer.js');
+
+        const parseEntry = (e: Record<string, unknown>): Record<string, unknown> | null => {
+          const raw = typeof e.content === 'string' ? e.content : (e as { value?: unknown }).value;
+          if (typeof raw !== 'string') return null;
+          try {
+            const parsed = JSON.parse(raw);
+            const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.8;
+            if (confidence < minConfidence) return null;
+            return {
+              patternId: e.key ?? e.id,
+              pattern: parsed.pattern,
+              type: parsed.type ?? 'general',
+              confidence,
+              score: typeof e.score === 'number' ? e.score : undefined,
+            };
+          } catch {
+            return null;
+          }
+        };
+
+        // Tier 1 — semantic
+        let results: Array<Record<string, unknown>> = [];
+        let tier: 'semantic' | 'substring' = 'semantic';
+        try {
+          const semantic = await searchEntries({ query, namespace: 'pattern', limit: topK });
+          results = (semantic?.results ?? [])
+            .map(parseEntry)
+            .filter((r): r is Record<string, unknown> => r !== null);
+        } catch { /* fall through to tier 2 */ }
+
+        // Tier 2 — substring scan (catches just-written entries before HNSW indexes them)
+        if (results.length === 0) {
+          tier = 'substring';
+          const all = await listEntries({ namespace: 'pattern', limit: 200 });
+          const qLower = query.toLowerCase();
+          const matched: Array<Record<string, unknown>> = [];
+          for (const e of (all?.entries ?? [])) {
+            const parsed = parseEntry(e as Record<string, unknown>);
+            if (!parsed) continue;
+            const text = typeof parsed.pattern === 'string' ? parsed.pattern.toLowerCase() : '';
+            if (text.includes(qLower)) matched.push(parsed);
+            if (matched.length >= topK) break;
+          }
+          results = matched;
+        }
+
+        // #1889 — controller label must match pattern-store's so the smoke
+        // round-trip sees both ends agree. The store reports
+        // `memory-store-fallback`; we use the same name + a `tier` field
+        // to expose which sub-strategy fired.
+        return {
+          results,
+          controller: 'memory-store-fallback',
+          tier,
+          note: result
+            ? `ReasoningBank returned 0 results; tier=${tier} from pattern namespace.`
+            : `ReasoningBank controller unavailable; tier=${tier} from pattern namespace.`,
+        };
+      } catch (fallbackErr) {
+        return { results: [], controller: 'unavailable', fallbackError: sanitizeError(fallbackErr) };
+      }
     } catch (error) {
       return { results: [], error: sanitizeError(error) };
     }
@@ -221,7 +277,7 @@ export const agentdbPatternSearch: MCPTool = {
 
 export const agentdbFeedback: MCPTool = {
   name: 'agentdb_feedback',
-  description: 'Record task feedback for learning via LearningSystem + ReasoningBank controllers',
+  description: 'Record task feedback for learning via LearningSystem + ReasoningBank controllers Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -257,7 +313,7 @@ export const agentdbFeedback: MCPTool = {
 
 export const agentdbCausalEdge: MCPTool = {
   name: 'agentdb_causal-edge',
-  description: 'Record a causal edge between two memory entries via CausalMemoryGraph',
+  description: 'Record a causal edge between two memory entries via CausalMemoryGraph Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -317,7 +373,7 @@ export const agentdbCausalEdge: MCPTool = {
 
 export const agentdbRoute: MCPTool = {
   name: 'agentdb_route',
-  description: 'Route a task via AgentDB SemanticRouter or LearningSystem recommendAlgorithm',
+  description: 'Route a task via AgentDB SemanticRouter or LearningSystem recommendAlgorithm Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -349,7 +405,7 @@ export const agentdbRoute: MCPTool = {
 
 export const agentdbSessionStart: MCPTool = {
   name: 'agentdb_session-start',
-  description: 'Start a session with ReflexionMemory episodic replay',
+  description: 'Start a session with ReflexionMemory episodic replay Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -381,7 +437,7 @@ export const agentdbSessionStart: MCPTool = {
 
 export const agentdbSessionEnd: MCPTool = {
   name: 'agentdb_session-end',
-  description: 'End session, persist to ReflexionMemory, trigger NightlyLearner consolidation',
+  description: 'End session, persist to ReflexionMemory, trigger NightlyLearner consolidation Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -415,7 +471,7 @@ export const agentdbSessionEnd: MCPTool = {
 
 export const agentdbHierarchicalStore: MCPTool = {
   name: 'agentdb_hierarchical-store',
-  description: 'Store to hierarchical memory with tier (working, episodic, semantic)',
+  description: 'Store to hierarchical memory with tier (working, episodic, semantic) Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -458,7 +514,7 @@ export const agentdbHierarchicalStore: MCPTool = {
 
 export const agentdbHierarchicalRecall: MCPTool = {
   name: 'agentdb_hierarchical-recall',
-  description: 'Recall from hierarchical memory with optional tier filter',
+  description: 'Recall from hierarchical memory with optional tier filter Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -496,7 +552,7 @@ export const agentdbHierarchicalRecall: MCPTool = {
 
 export const agentdbConsolidate: MCPTool = {
   name: 'agentdb_consolidate',
-  description: 'Run memory consolidation to promote entries across tiers and compress old data',
+  description: 'Run memory consolidation to promote entries across tiers and compress old data Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -522,7 +578,7 @@ export const agentdbConsolidate: MCPTool = {
 
 export const agentdbBatch: MCPTool = {
   name: 'agentdb_batch',
-  description: 'Batch operations on AgentDB episodes (insert, update, delete). Note: entries are stored in the AgentDB episodes table, not the memory_search namespace. Use memory_store for entries that should be searchable via memory_search.',
+  description: 'Batch operations on AgentDB episodes (insert, update, delete). Note: entries are stored in the AgentDB episodes table, not the memory_search namespace. Use memory_store for entries that should be searchable via memory_search. Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -589,7 +645,7 @@ export const agentdbBatch: MCPTool = {
 
 export const agentdbContextSynthesize: MCPTool = {
   name: 'agentdb_context-synthesize',
-  description: 'Synthesize context from stored memories for a given query',
+  description: 'Synthesize context from stored memories for a given query Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -620,7 +676,7 @@ export const agentdbContextSynthesize: MCPTool = {
 
 export const agentdbSemanticRoute: MCPTool = {
   name: 'agentdb_semantic-route',
-  description: 'Route an input via AgentDB SemanticRouter for intent classification',
+  description: 'Route an input via AgentDB SemanticRouter for intent classification Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -647,7 +703,7 @@ export const agentdbSemanticRoute: MCPTool = {
 
 export const agentdbHierarchicalDelete: MCPTool = {
   name: 'agentdb_hierarchical-delete',
-  description: 'Delete a hierarchical-memory entry by key. Returns controller="native-unsupported" when the entry is in a backend without a public delete API.',
+  description: 'Delete a hierarchical-memory entry by key. Returns controller="native-unsupported" when the entry is in a backend without a public delete API. Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -682,7 +738,7 @@ export const agentdbHierarchicalDelete: MCPTool = {
 
 export const agentdbCausalEdgeDelete: MCPTool = {
   name: 'agentdb_causal-edge-delete',
-  description: 'Delete a causal edge between two memory entries. Returns controller="native-unsupported" when the edge lives in graph-node native storage (no public delete API).',
+  description: 'Delete a causal edge between two memory entries. Returns controller="native-unsupported" when the edge lives in graph-node native storage (no public delete API). Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -714,7 +770,7 @@ export const agentdbCausalEdgeDelete: MCPTool = {
 
 export const agentdbCausalNodeDelete: MCPTool = {
   name: 'agentdb_causal-node-delete',
-  description: 'Cascade-delete a causal node and all its incident edges from the SQL fallback. Native graph-node entries are unaffected (no delete API in the binding).',
+  description: 'Cascade-delete a causal node and all its incident edges from the SQL fallback. Native graph-node entries are unaffected (no delete API in the binding). Use when generic memory_* tools are wrong because you need AgentDB-specific controllers (HNSW vector search, hierarchical tiers, causal-graph links, pattern store/recall, RaBitQ quantization). For simple key-value persistence, memory_store/memory_retrieve are simpler. For unrelated file work, native Read/Write are fine.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -87,7 +87,7 @@ function savePerfStore(store: PerfStore): void {
 export const performanceTools: MCPTool[] = [
   {
     name: 'performance_report',
-    description: 'Generate performance report',
+    description: 'Generate performance report Use when native shell timing (`time`, `hyperfine`) is wrong because you want Ruflo-aware benchmarks — HNSW search latency, breaker decisions/sec, MCP response p50/p95, embeddings throughput. For OS-level process profiling, native shell + perf are fine.',
     category: 'performance',
     inputSchema: {
       type: 'object',
@@ -214,7 +214,7 @@ export const performanceTools: MCPTool[] = [
   },
   {
     name: 'performance_bottleneck',
-    description: 'Detect performance bottlenecks',
+    description: 'Detect performance bottlenecks Use when native shell timing (`time`, `hyperfine`) is wrong because you want Ruflo-aware benchmarks — HNSW search latency, breaker decisions/sec, MCP response p50/p95, embeddings throughput. For OS-level process profiling, native shell + perf are fine.',
     category: 'performance',
     inputSchema: {
       type: 'object',
@@ -287,7 +287,7 @@ export const performanceTools: MCPTool[] = [
   },
   {
     name: 'performance_benchmark',
-    description: 'Run performance benchmarks',
+    description: 'Run performance benchmarks Use when native shell timing (`time`, `hyperfine`) is wrong because you want Ruflo-aware benchmarks — HNSW search latency, breaker decisions/sec, MCP response p50/p95, embeddings throughput. For OS-level process profiling, native shell + perf are fine.',
     category: 'performance',
     inputSchema: {
       type: 'object',
@@ -421,7 +421,7 @@ export const performanceTools: MCPTool[] = [
   },
   {
     name: 'performance_profile',
-    description: 'Profile specific component or operation',
+    description: 'Profile specific component or operation Use when native shell timing (`time`, `hyperfine`) is wrong because you want Ruflo-aware benchmarks — HNSW search latency, breaker decisions/sec, MCP response p50/p95, embeddings throughput. For OS-level process profiling, native shell + perf are fine.',
     category: 'performance',
     inputSchema: {
       type: 'object',
@@ -510,7 +510,7 @@ export const performanceTools: MCPTool[] = [
   },
   {
     name: 'performance_optimize',
-    description: 'Apply performance optimizations',
+    description: 'Apply performance optimizations Use when native shell timing (`time`, `hyperfine`) is wrong because you want Ruflo-aware benchmarks — HNSW search latency, breaker decisions/sec, MCP response p50/p95, embeddings throughput. For OS-level process profiling, native shell + perf are fine.',
     category: 'performance',
     inputSchema: {
       type: 'object',
@@ -610,7 +610,7 @@ export const performanceTools: MCPTool[] = [
   },
   {
     name: 'performance_metrics',
-    description: 'Get detailed performance metrics',
+    description: 'Get detailed performance metrics Use when native shell timing (`time`, `hyperfine`) is wrong because you want Ruflo-aware benchmarks — HNSW search latency, breaker decisions/sec, MCP response p50/p95, embeddings throughput. For OS-level process profiling, native shell + perf are fine.',
     category: 'performance',
     inputSchema: {
       type: 'object',
