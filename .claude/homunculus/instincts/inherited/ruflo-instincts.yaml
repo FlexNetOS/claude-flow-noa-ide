@@ -1,0 +1,847 @@
+# Instincts generated from https://github.com/drdave-flexnetos/ruflo
+# Generated: 2026-05-27T22:29:01.428Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: ruflo-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: feat, chore, fix, merge, docs
+
+## Evidence
+
+- 45 commits analyzed
+- Detected conventional commit pattern
+- Examples: fix(cli): load lazy commands before resolving subcommand short flags, merge: PR #1913 — docs(readme): add federation user-guide callout (swarm verdict: low-with-fix)
+
+---
+id: ruflo-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Commit Length
+
+## Action
+
+Write moderate-length commit messages (~83 characters)
+
+## Evidence
+
+- Average commit message length: 83 chars
+- Based on 45 commits
+
+---
+id: ruflo-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: ruflo-import-alias
+trigger: "when importing modules"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Import Alias
+
+## Action
+
+Use path aliases (@/, ~/) instead of relative imports
+
+## Evidence
+
+- Import analysis shows alias pattern
+- Example: import { x } from '@/lib/x'
+
+---
+id: ruflo-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: ruflo-arch-type-based
+trigger: "when adding new code"
+confidence: 0.8
+domain: architecture
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Arch Type Based
+
+## Action
+
+Place code in the appropriate type folder (components/, services/, utils/, etc.)
+
+## Evidence
+
+- Type-based module organization detected
+- Folders: 
+
+---
+id: ruflo-test-framework
+trigger: "when writing tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Test Framework
+
+## Action
+
+Use vitest as the test framework
+
+## Evidence
+
+- Test framework detected: vitest
+- File pattern: *.test.ts
+
+---
+id: ruflo-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: ruflo-test-mocking
+trigger: "when mocking dependencies in tests"
+confidence: 0.75
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Test Mocking
+
+## Action
+
+Use vi.mock for mocking
+
+## Evidence
+
+- Mocking pattern detected: vi.mock
+- Consistent across test files
+
+---
+id: ruflo-test-types
+trigger: "when planning tests for a feature"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Test Types
+
+## Action
+
+Write unit, integration tests to match project standards
+
+## Evidence
+
+- Test types detected: unit, integration
+- Coverage config: yes
+
+---
+id: ruflo-workflow-database-migration
+trigger: "when modifying the database schema or adding tables"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Database Migration
+
+## Action
+
+Follow the database-migration workflow:
+1. Create migration file
+2. Update schema definitions
+3. Generate/update types
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: migrations/*, **/types.ts, **/schema.*
+
+---
+id: ruflo-workflow-feature-development
+trigger: "when implementing a new feature"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Feature Development
+
+## Action
+
+Follow the feature-development workflow:
+1. Add feature implementation
+2. Add tests for feature
+3. Update documentation
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~19x per month
+- Files: v3/@claude-flow/cli/src/commands/*, v3/@claude-flow/cli/src/init/*, v3/@claude-flow/cli/src/mcp-tools/*
+
+---
+id: ruflo-workflow-add-domain-plugin-adapter
+trigger: "when doing add domain plugin adapter"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Add Domain Plugin Adapter
+
+## Action
+
+Follow the add-domain-plugin-adapter workflow:
+1. Create a thin ClaudeFlowPlugin wrapper in the domain's src/ directory (e.g., memory-plugin.ts, security-plugin.ts).
+2. Register the service in the service container with a unique key.
+3. Ensure all required exports are re-exported via index.ts (barrel file) if needed.
+4. Verify with TypeScript (tsc --noEmit --skipLibCheck) for zero errors.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~8x per month
+- Files: v3/@claude-flow/*/src/*-plugin.ts, v3/src/*/*-plugin.ts, plugins/ruflo-*/src/*-plugin.ts
+
+---
+id: ruflo-workflow-batch-integration-merge
+trigger: "when doing batch integration merge"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Batch Integration Merge
+
+## Action
+
+Follow the batch-integration-merge workflow:
+1. Collect a set of PRs/features for integration.
+2. Merge or cherry-pick changes, resolving conflicts as needed.
+3. Update CHANGELOG.md, README.md, and other documentation as appropriate.
+4. Commit with a summary of included PRs and conflict resolutions.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: README.md, CHANGELOG.md, CLAUDE.md
+
+---
+id: ruflo-workflow-add-or-update-skill-or-agent
+trigger: "when doing add or update skill or agent"
+confidence: 0.7
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Add Or Update Skill Or Agent
+
+## Action
+
+Follow the add-or-update-skill-or-agent workflow:
+1. Create or update SKILL.md or agent YAML/MD files in the appropriate skills/agents directory.
+2. Optionally update related plugin.json or hooks.json files.
+3. Update documentation or ADRs if the skill/agent is significant.
+4. Commit with a message referencing the new/updated skill/agent.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~4x per month
+- Files: .claude/skills/*/SKILL.md, .agents/skills/*/SKILL.md, .claude/agents/**/*.md
+
+---
+id: ruflo-workflow-add-or-update-plugin-metadata
+trigger: "when doing add or update plugin metadata"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Add Or Update Plugin Metadata
+
+## Action
+
+Follow the add-or-update-plugin-metadata workflow:
+1. Create or update plugin.json, hooks.json, or marketplace.json in the plugin directory.
+2. Optionally add a src/*-plugin.ts adapter for meta-plugins.
+3. Update README.md or ADRs for the plugin.
+4. Commit changes.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: plugins/ruflo-*/.claude-plugin/plugin.json, plugins/ruflo-*/hooks/hooks.json, plugins/ruflo-*/src/*-plugin.ts
+
+---
+id: ruflo-workflow-add-or-update-test-and-implementation
+trigger: "when doing add or update test and implementation"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Add Or Update Test And Implementation
+
+## Action
+
+Follow the add-or-update-test-and-implementation workflow:
+1. Modify or add implementation code in src/ directories.
+2. Add or update corresponding test files in __tests__/ or tests/ directories.
+3. Commit both implementation and test changes together.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: v3/@claude-flow/*/src/**/*.ts, v3/@claude-flow/*/__tests__/**/*.ts, v3/plugins/*/src/**/*.ts
+
+---
+id: ruflo-workflow-documentation-and-adr-update
+trigger: "when doing documentation and adr update"
+confidence: 0.75
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Documentation And Adr Update
+
+## Action
+
+Follow the documentation-and-adr-update workflow:
+1. Create or update .md files in docs/, v3/docs/, or plugins/*/docs/ directories.
+2. Update README.md, ADR-xxx-*.md, or roadmap files as appropriate.
+3. Commit documentation changes, often with references to related features or PRs.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~5x per month
+- Files: README.md, docs/**/*.md, v3/docs/**/*.md
+
+---
+id: ruflo-workflow-monorepo-package-version-bump
+trigger: "when doing monorepo package version bump"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/drdave-flexnetos/ruflo
+---
+
+# Ruflo Workflow Monorepo Package Version Bump
+
+## Action
+
+Follow the monorepo-package-version-bump workflow:
+1. Update version fields in package.json files across packages.
+2. Optionally update lockfiles (package-lock.json, pnpm-lock.yaml).
+3. Commit all package.json and lockfile changes together.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: package.json, package-lock.json, pnpm-lock.yaml
+
+---
+id: ruflo-instinct-file-naming
+trigger: "When creating a new file or renaming an existing file"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct File Naming
+
+## Action
+
+Use camelCase for file names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.files
+- Consistent naming in v3/@claude-flow/cli/src/commands/doctor.ts
+
+---
+id: ruflo-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Function Naming
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.functions
+- Observed in v3/@claude-flow/cli/src/commands/swarm.ts
+
+---
+id: ruflo-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Class Naming
+
+## Action
+
+Use PascalCase for class names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.classes
+- Seen in v3/@claude-flow/cli/src/init/mcp-generator.ts
+
+---
+id: ruflo-instinct-constant-naming
+trigger: "When declaring a constant"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.constants
+- Seen in v3/@claude-flow/cli/src/commands/doctor.ts
+
+---
+id: ruflo-instinct-import-alias
+trigger: "When importing modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Import Alias
+
+## Action
+
+Use alias-based imports instead of relative paths
+
+## Evidence
+
+- Pattern in codeStyle.importStyle
+- Observed in v3/@claude-flow/cli/src/commands/swarm.ts
+
+---
+id: ruflo-instinct-named-exports
+trigger: "When exporting functions, classes, or constants"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Named Exports
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in codeStyle.exportStyle
+- Seen in v3/@claude-flow/cli/src/commands/doctor.ts
+
+---
+id: ruflo-instinct-test-file-pattern
+trigger: "When adding a new test file"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Test File Pattern
+
+## Action
+
+Name the file with the pattern *.test.ts
+
+## Evidence
+
+- Pattern in testing.filePattern
+- Seen in v3/@claude-flow/cli/__tests__/doctor.test.ts
+
+---
+id: ruflo-instinct-test-framework
+trigger: "When writing tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Test Framework
+
+## Action
+
+Use the Vitest framework
+
+## Evidence
+
+- Pattern in testing.framework
+- Presence of vitest.config.ts in v3/@claude-flow/cli/
+
+---
+id: ruflo-instinct-test-types
+trigger: "When designing tests"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Test Types
+
+## Action
+
+Write both unit and integration tests as appropriate
+
+## Evidence
+
+- Pattern in testing.testTypes
+- Examples in v3/@claude-flow/cli/__tests__/
+
+---
+id: ruflo-instinct-mocking
+trigger: "When mocking dependencies in tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Mocking
+
+## Action
+
+Use vi.mock for mocking
+
+## Evidence
+
+- Pattern in testing.mockingStyle
+- Seen in v3/@claude-flow/cli/__tests__/doctor.test.ts
+
+---
+id: ruflo-instinct-test-coverage
+trigger: "When configuring tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Test Coverage
+
+## Action
+
+Enable and check coverage configuration
+
+## Evidence
+
+- Pattern in testing.coverageConfig
+- Presence of coverage config in vitest.config.ts
+
+---
+id: ruflo-instinct-commit-format
+trigger: "When writing a commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Commit Format
+
+## Action
+
+Use the Conventional Commits format: <type>(<scope>): <description>
+
+## Evidence
+
+- Pattern in commits.type and commits.prefixes
+- Examples: 'fix(cli): ...', 'feat(cli): ...'
+
+---
+id: ruflo-instinct-commit-length
+trigger: "When composing a commit message"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Commit Length
+
+## Action
+
+Keep the commit message concise, around 80-100 characters
+
+## Evidence
+
+- Pattern in commits.averageLength
+- Examples: 'fix(cli): load lazy commands before resolving subcommand short flags'
+
+---
+id: ruflo-instinct-commit-prefixes
+trigger: "When categorizing a commit"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Commit Prefixes
+
+## Action
+
+Use one of the prefixes: feat, chore, fix, merge, docs
+
+## Evidence
+
+- Pattern in commits.prefixes
+- Examples: 'feat(cli): ...', 'docs: ...', 'merge: ...'
+
+---
+id: ruflo-instinct-add-domain-plugin-adapter
+trigger: "When exposing a new domain/service as a plugin for kernel integration"
+confidence: 0.97
+domain: workflow
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Add Domain Plugin Adapter
+
+## Action
+
+Create a thin ClaudeFlowPlugin wrapper in the domain's src/ directory, register the service with a unique key, re-export via index.ts if needed, and verify with TypeScript for zero errors
+
+## Evidence
+
+- Workflow: add-domain-plugin-adapter
+- Files: v3/@claude-flow/*/src/*-plugin.ts
+
+---
+id: ruflo-instinct-batch-integration-merge
+trigger: "When performing a release or major integration sweep merging many PRs/features at once"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Batch Integration Merge
+
+## Action
+
+Collect PRs/features, merge or cherry-pick changes resolving conflicts, update documentation, and commit with a summary
+
+## Evidence
+
+- Workflow: batch-integration-merge
+- Files: README.md, CHANGELOG.md, v3/@claude-flow/cli/src/**/*.ts
+
+---
+id: ruflo-instinct-add-or-update-skill-or-agent
+trigger: "When introducing or updating an agent/skill definition"
+confidence: 0.92
+domain: workflow
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Add Or Update Skill Or Agent
+
+## Action
+
+Create or update SKILL.md or agent YAML/MD files in the appropriate directory, update related plugin/hook files if needed, update documentation/ADRs if significant, and commit referencing the new/updated skill/agent
+
+## Evidence
+
+- Workflow: add-or-update-skill-or-agent
+- Files: .claude/skills/*/SKILL.md, .agents/skills/*/SKILL.md
+
+---
+id: ruflo-instinct-add-or-update-plugin-metadata
+trigger: "When registering a new plugin or updating plugin metadata"
+confidence: 0.88
+domain: workflow
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Add Or Update Plugin Metadata
+
+## Action
+
+Create or update plugin.json, hooks.json, or marketplace.json in the plugin directory, optionally add src/*-plugin.ts, update README.md or ADRs, and commit changes
+
+## Evidence
+
+- Workflow: add-or-update-plugin-metadata
+- Files: plugins/ruflo-*/.claude-plugin/plugin.json
+
+---
+id: ruflo-instinct-add-or-update-test-and-implementation
+trigger: "When implementing a new feature or fixing a bug and ensuring test coverage"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Add Or Update Test And Implementation
+
+## Action
+
+Modify or add implementation code in src/ directories, add or update corresponding test files, and commit both together
+
+## Evidence
+
+- Workflow: add-or-update-test-and-implementation
+- Files: v3/@claude-flow/*/src/**/*.ts, v3/@claude-flow/*/__tests__/**/*.ts
+
+---
+id: ruflo-instinct-documentation-and-adr-update
+trigger: "When documenting new features, workflows, or architectural decisions"
+confidence: 0.93
+domain: workflow
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Documentation And Adr Update
+
+## Action
+
+Create or update .md files in docs/ or plugins/*/docs/, update README.md or ADR/roadmap files, and commit documentation changes
+
+## Evidence
+
+- Workflow: documentation-and-adr-update
+- Files: README.md, docs/**/*.md
+
+---
+id: ruflo-instinct-monorepo-package-version-bump
+trigger: "When aligning package versions after integration or before a release"
+confidence: 0.87
+domain: workflow
+source: repo-analysis
+source_repo: drdave-flexnetos/ruflo
+---
+
+# Ruflo Instinct Monorepo Package Version Bump
+
+## Action
+
+Update version fields in package.json files across packages, optionally update lockfiles, and commit all changes together
+
+## Evidence
+
+- Workflow: monorepo-package-version-bump
+- Files: package.json, v3/@claude-flow/*/package.json
+
