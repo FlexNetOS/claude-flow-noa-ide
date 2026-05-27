@@ -1,0 +1,6 @@
+interface:
+  display_name: "Ruflo"
+  short_description: "Repo-specific patterns and workflows for ruflo"
+  default_prompt: "Use the ruflo repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true
