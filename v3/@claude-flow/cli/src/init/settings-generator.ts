@@ -36,11 +36,23 @@ export function generateSettings(options: InitOptions): object {
     ],
   };
 
-  // Add RuFlo attribution for git commits and PRs
-  settings.attribution = {
-    commit: 'Co-Authored-By: RuFlo <ruv@ruv.net>',
-    pr: '🤖 Generated with [RuFlo](https://github.com/ruvnet/ruflo)',
-  };
+  // RuFlo attribution for git commits and PRs.
+  // Suppressed when --no-attribution / RUFLO_NO_ATTRIBUTION is set (#1670).
+  // The Claude Code settings schema treats empty strings as "hide
+  // attribution" for both fields, so writing "" is the documented
+  // off-switch. Companion to PR #1713 which addresses the hook-based
+  // commit-trailer path; this covers the settings-based path that
+  // Claude Code itself reads when building commit messages and PR bodies.
+  const suppressAttribution =
+    options.noAttribution === true ||
+    process.env.RUFLO_NO_ATTRIBUTION === '1' ||
+    process.env.RUFLO_NO_ATTRIBUTION === 'true';
+  settings.attribution = suppressAttribution
+    ? { commit: '', pr: '' }
+    : {
+        commit: 'Co-Authored-By: RuFlo <ruv@ruv.net>',
+        pr: '🤖 Generated with [RuFlo](https://github.com/ruvnet/ruflo)',
+      };
 
   // Note: Claude Code expects 'model' to be a string, not an object
   // Model preferences are stored in claudeFlow settings instead

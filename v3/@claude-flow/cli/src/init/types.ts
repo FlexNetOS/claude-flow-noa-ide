@@ -310,6 +310,22 @@ export interface InitOptions {
   runtime: RuntimeConfig;
   /** Embeddings configuration */
   embeddings: EmbeddingsConfig;
+  /**
+   * Skip the user-global ~/.claude/CLAUDE.md "Ruflo Integration" pointer block.
+   * Defaults to false (current behavior — block is appended once, idempotent).
+   * Set true via --no-global to keep the global Claude rules file pristine (#1744).
+   */
+  skipGlobalClaudeMd?: boolean;
+  /**
+   * Suppress the RuFlo `Co-Authored-By` commit trailer and `🤖 Generated
+   * with [RuFlo]` PR-body footer in the generated `.claude/settings.json`.
+   * When true, `attribution.commit` and `attribution.pr` are written as
+   * empty strings — the schema-documented way to disable both lines.
+   * Set via `--no-attribution` or env `RUFLO_NO_ATTRIBUTION=1`. Companion
+   * to PR #1713 which addressed the hook-based commit-trailer path; this
+   * covers the settings-based path (#1670).
+   */
+  noAttribution?: boolean;
 }
 
 /**
