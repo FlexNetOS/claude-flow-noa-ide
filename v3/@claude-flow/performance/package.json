@@ -16,8 +16,8 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@ruvector/attention": "latest",
-    "@ruvector/sona": "latest"
+    "@ruvector/attention": "workspace:*",
+    "@ruvector/sona": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.16"

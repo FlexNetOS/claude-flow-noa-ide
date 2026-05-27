@@ -1,0 +1,1 @@
+export default function init(): Promise<void>; export const WasmMicroLoRA: any; export const WasmScopedLoRA: any; export const WasmTrajectoryBuffer: any; export const initMicroHnsw: any; export const FlashAttention: any; export const initSync: any; export type WasmMicroLoRA = any; export type WasmScopedLoRA = any; export type WasmTrajectoryBuffer = any;

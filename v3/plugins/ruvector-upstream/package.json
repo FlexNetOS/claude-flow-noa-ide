@@ -80,14 +80,14 @@
     "vitest": "^4.0.16"
   },
   "peerDependencies": {
-    "@ruvector/micro-hnsw-wasm": ">=0.1.0",
-    "@ruvector/attention-wasm": ">=0.1.0",
-    "@ruvector/gnn-wasm": ">=0.1.0",
-    "@ruvector/hyperbolic-hnsw-wasm": ">=0.1.0",
-    "@ruvector/learning-wasm": ">=0.1.0",
-    "@ruvector/exotic-wasm": ">=0.1.0",
-    "@ruvector/cognitum-gate-kernel": ">=0.1.0",
-    "@ruvector/sona": ">=0.1.0"
+    "@ruvector/micro-hnsw-wasm": "workspace:*",
+    "@ruvector/attention-wasm": "workspace:*",
+    "@ruvector/gnn-wasm": "workspace:*",
+    "@ruvector/hyperbolic-hnsw-wasm": "workspace:*",
+    "@ruvector/learning-wasm": "workspace:*",
+    "@ruvector/exotic-wasm": "workspace:*",
+    "@ruvector/cognitum-gate-kernel": "workspace:*",
+    "@ruvector/sona": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@ruvector/micro-hnsw-wasm": { "optional": true },

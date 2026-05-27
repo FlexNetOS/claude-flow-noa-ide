@@ -56,12 +56,25 @@
     "semantic-release": "25.0.2"
   },
   "pnpm": {
+    "approvedBuilds": [
+      "@google/genai",
+      "agentdb",
+      "agentic-flow",
+      "argon2",
+      "better-sqlite3",
+      "esbuild",
+      "hnswlib-node",
+      "onnxruntime-node",
+      "protobufjs",
+      "sharp",
+      "tldjs"
+    ],
     "neverBuiltDependencies": [
       "sharp"
     ],
     "overrides": {
-      "@ruvector/gnn": "0.1.25",
-      "@ruvector/gnn-linux-x64-gnu": "0.1.25"
+      "@ruvector/gnn": "workspace:*",
+      "@ruvector/gnn-linux-x64-gnu": "workspace:*"
     }
   }
 }

@@ -1,0 +1,6 @@
+{
+  "_doc": "Bundle size baseline tracked by `scripts/check-bundle-size.mjs` (R-7.3 / ADR-100). Updated when intentional growth ships; CI compares each PR's built bundle vs these numbers and dispatches the @claude-flow/cli `optimize` worker when growth exceeds `thresholdPct`.",
+  "widget": 545100,
+  "main": 845565,
+  "thresholdPct": 5
+}

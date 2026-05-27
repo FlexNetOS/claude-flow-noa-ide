@@ -1,0 +1,1 @@
+export default function init(): Promise<void>; export class WasmNeuralBMSSP { constructor(...args: any[]); [key: string]: any; } export class WasmGraph { constructor(...args: any[]); [key: string]: any; }

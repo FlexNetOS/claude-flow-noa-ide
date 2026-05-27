@@ -26,7 +26,6 @@
 	import type { TreeNode, TreeId } from "$lib/utils/tree/tree";
 	import "katex/dist/katex.min.css";
 	import { updateDebouncer } from "$lib/utils/updates.js";
-	import SubscribeModal from "$lib/components/SubscribeModal.svelte";
 	import { loading } from "$lib/stores/loading.js";
 	import { requireAuthUser } from "$lib/utils/auth.js";
 	import { isConversationGenerationActive } from "$lib/utils/generationState";
@@ -36,7 +35,6 @@
 	let convId = $derived(page.params.id ?? "");
 	let pending = $state(false);
 	let initialRun = true;
-	let showSubscribeModal = $state(false);
 	let stopRequested = $state(false);
 
 	let files: File[] = $state([]);
@@ -375,9 +373,14 @@
 					update.type === MessageUpdateType.Status &&
 					update.status === MessageUpdateStatus.Error
 				) {
-					// Check if this is a 402 payment required error
+					// 402 surfaces from upstream provider when credits/quota
+					// are exhausted. Surface the actual provider message so the
+					// operator can act (e.g. top up OpenRouter credits) instead
+					// of the legacy HuggingChat upgrade modal.
 					if (update.statusCode === 402) {
-						showSubscribeModal = true;
+						$error =
+							update.message ??
+							"AI provider returned 402 — credits exhausted. Check provider billing.";
 					} else {
 						$error = update.message ?? "An error has occurred";
 					}
@@ -577,6 +580,3 @@
 	currentModel={findCurrentModel(data.models, data.oldModels, data.model)}
 />
 
-{#if showSubscribeModal}
-	<SubscribeModal close={() => (showSubscribeModal = false)} />
-{/if}

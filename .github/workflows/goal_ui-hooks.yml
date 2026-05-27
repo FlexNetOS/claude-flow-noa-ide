@@ -1,0 +1,67 @@
+# goal_ui-hooks.yml — Phase R-7.1 of the goal_ui RuFlo platform integration
+# (per ADR-100). Runs the @claude-flow/cli `audit` + `testgaps` background
+# workers on every PR that touches `v3/goal_ui/**`.
+#
+# Path-scoped so unrelated PRs don't pay the worker startup cost.
+# Workers themselves are non-blocking (continue-on-error: true) — they
+# emit annotations on the PR but don't fail the build. R-7's later steps
+# wire the bundle-size / nightly-doc workers as separate workflows.
+
+name: goal_ui — claude-flow hooks (audit + testgaps)
+
+on:
+  pull_request:
+    paths:
+      - 'v3/goal_ui/**'
+      - '.github/workflows/goal_ui-hooks.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'v3/goal_ui/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+defaults:
+  run:
+    working-directory: v3/goal_ui
+
+jobs:
+  audit:
+    name: hooks/audit (security analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: v3/goal_ui/package-lock.json
+      - name: Install goal_ui deps
+        run: npm ci --no-fund --no-audit
+      - name: Run @claude-flow/cli audit worker
+        # The worker dispatch is best-effort — it runs against the latest
+        # published claude-flow CLI and may surface findings as PR
+        # annotations. Failures here don't block merge; ADR-093's
+        # `npm run check:secrets` + `check:audit` gates remain the
+        # blocking security signals.
+        continue-on-error: true
+        run: npx @claude-flow/cli@latest hooks worker dispatch --trigger audit
+
+  testgaps:
+    name: hooks/testgaps (coverage analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: v3/goal_ui/package-lock.json
+      - name: Install goal_ui deps
+        run: npm ci --no-fund --no-audit
+      - name: Run @claude-flow/cli testgaps worker
+        continue-on-error: true
+        run: npx @claude-flow/cli@latest hooks worker dispatch --trigger testgaps

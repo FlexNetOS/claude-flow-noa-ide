@@ -340,7 +340,7 @@
 
 	let activeRouterExamplePrompt = $state<string | null>(null);
 	// Use MCP examples when all base servers are enabled, otherwise use router examples
-	let activeExamples = $derived<RouterExample[]>(
+	let activeExamples: RouterExample[] = $derived(
 		$allBaseServersEnabled ? mcpExamples : routerExamples
 	);
 
@@ -430,8 +430,10 @@
 		return out;
 	}
 
-	// Pull tool names from the latest assistant message.
-	let lastAssistantToolNames = $derived<string[]>(() => {
+	// Pull tool names from the latest assistant message. `$derived.by`
+	// is Svelte 5's function form (vs `$derived(expr)` for expressions);
+	// the previous `$derived<T>(() => {…}())` was a parser error.
+	let lastAssistantToolNames: string[] = $derived.by(() => {
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const msg = messages[i];
 			if (msg.from !== "assistant") continue;
@@ -445,13 +447,13 @@
 			return names;
 		}
 		return [];
-	}());
+	});
 
-	let dynamicFollowUps = $derived<RouterFollowUp[]>(
+	let dynamicFollowUps: RouterFollowUp[] = $derived(
 		dedupePrompts(lastAssistantToolNames.flatMap(followUpsForTool), 4)
 	);
 
-	let routerFollowUps = $derived<RouterFollowUp[]>(
+	let routerFollowUps: RouterFollowUp[] = $derived(
 		activeRouterExamplePrompt
 			? (activeExamples.find((ex) => ex.prompt === activeRouterExamplePrompt)?.followUps ?? [])
 			: []
@@ -459,7 +461,7 @@
 
 	// Combined: prefer static example follow-ups (curated by us); fall back to
 	// dynamic tool-derived follow-ups generated from the last assistant turn.
-	let effectiveFollowUps = $derived<RouterFollowUp[]>(
+	let effectiveFollowUps: RouterFollowUp[] = $derived(
 		routerFollowUps.length > 0 ? routerFollowUps : dynamicFollowUps
 	);
 

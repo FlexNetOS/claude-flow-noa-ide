@@ -48,8 +48,8 @@
   "peerDependencies": {
     "@claude-flow/hooks": "^3.0.0-alpha.2",
     "@claude-flow/memory": "^3.0.0-alpha.2",
-    "@ruvector/learning-wasm": "^0.1.0",
-    "@ruvector/wasm": "^0.1.0"
+    "@ruvector/learning-wasm": "workspace:*",
+    "@ruvector/wasm": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@claude-flow/hooks": {

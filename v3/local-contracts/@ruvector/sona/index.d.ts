@@ -1,0 +1,1 @@
+export default function init(): Promise<void>; export class SonaEngine { static withConfig(config: any): Promise<SonaEngine>; constructor(...args: any[]); [key: string]: any; } export type JsSonaConfig = any; export type JsLearnedPattern = any;

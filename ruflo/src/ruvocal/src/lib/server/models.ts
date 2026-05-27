@@ -378,7 +378,10 @@ const buildModels = async (): Promise<ProcessedModel[]> => {
 				}
 			}
 
-			// Filter to only configured models and apply overrides, preserving MODELS order
+			// Filter to only configured models and apply overrides, preserving MODELS order.
+			// Overrides that supply their own `endpoints` (e.g. Claude Haiku via Anthropic's
+			// OpenAI-compat endpoint while Gemini uses the global OPENAI_BASE_URL) are added
+			// as fully-defined custom models even when not present in the discovered set.
 			const filteredAndOrdered: ModelConfig[] = [];
 			for (const override of overrides) {
 				const matchKey = override.name?.trim() || override.id?.trim() || "";
@@ -390,6 +393,9 @@ const buildModels = async (): Promise<ProcessedModel[]> => {
 					void id;
 					void name;
 					filteredAndOrdered.push({ ...found, ...rest });
+				} else if (override.endpoints && override.endpoints.length > 0) {
+					// Custom model with its own provider — bypass discovery requirement.
+					filteredAndOrdered.push({ ...override });
 				}
 			}
 

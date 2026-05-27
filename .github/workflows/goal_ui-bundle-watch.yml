@@ -1,0 +1,67 @@
+# goal_ui-bundle-watch.yml — Phase R-7.3 of the goal_ui platform
+# integration (per ADR-100). Runs the @claude-flow/cli `optimize` worker
+# whenever a PR causes the goal_ui bundle to grow >5% over the
+# baseline tracked in `.bundle-size-baseline.json`.
+#
+# Path-scoped to v3/goal_ui/{src,public,vite.config.ts,package.json}
+# so unrelated changes don't pay the build cost.
+
+name: goal_ui — bundle-size watcher
+
+on:
+  pull_request:
+    paths:
+      - 'v3/goal_ui/src/**'
+      - 'v3/goal_ui/public/**'
+      - 'v3/goal_ui/vite.config.ts'
+      - 'v3/goal_ui/package.json'
+      - 'v3/goal_ui/.bundle-size-baseline.json'
+      - '.github/workflows/goal_ui-bundle-watch.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+defaults:
+  run:
+    working-directory: v3/goal_ui
+
+jobs:
+  bundle-watch:
+    name: build + size-delta vs baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: v3/goal_ui/package-lock.json
+      - name: Install
+        run: npm ci --no-fund --no-audit
+      - name: Build
+        run: npm run build
+      - name: Compare bundle sizes against baseline
+        id: bundle_check
+        # Exits 0 if within +5% threshold; exits 1 when any bundle
+        # exceeds. We capture both outcomes via `continue-on-error`
+        # so the subsequent step can branch on outcome.
+        continue-on-error: true
+        run: npm run check:bundle-size
+      - name: Dispatch @claude-flow/cli optimize worker (when over threshold)
+        if: steps.bundle_check.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          echo "::warning::goal_ui bundle exceeded +5% threshold — dispatching optimize worker"
+          npx @claude-flow/cli@latest hooks worker dispatch --trigger optimize
+      - name: Comment on PR (when over threshold)
+        if: steps.bundle_check.outcome == 'failure' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠ goal_ui bundle grew more than +5% from baseline. The @claude-flow/cli `optimize` worker has been dispatched to surface refactoring suggestions. Update `v3/goal_ui/.bundle-size-baseline.json` if the growth is intentional.'
+            });

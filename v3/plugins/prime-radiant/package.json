@@ -56,7 +56,7 @@
   "peerDependencies": {
     "@claude-flow/memory": ">=3.0.0-0",
     "@claude-flow/security": ">=3.0.0-0",
-    "@claude-flow/coordination": ">=3.0.0-0"
+    "@claude-flow/coordination": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@claude-flow/memory": {
@@ -78,6 +78,6 @@
     "vitest": "^4.1.4"
   },
   "optionalDependencies": {
-    "prime-radiant-advanced-wasm": "^0.1.3"
+    "prime-radiant-advanced-wasm": "workspace:*"
   }
 }

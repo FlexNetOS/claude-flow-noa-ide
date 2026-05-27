@@ -88,10 +88,10 @@
     "vitest": "^4.1.4"
   },
   "optionalDependencies": {
-    "micro-hnsw-wasm": "^0.2.0",
-    "ruvector-sparse-inference-wasm": "^0.1.0",
-    "ruvector-gnn-wasm": "^0.1.0",
-    "ruvector-economy-wasm": "^0.1.0",
-    "ruvector-learning-wasm": "^0.1.0"
+    "micro-hnsw-wasm": "workspace:*",
+    "ruvector-sparse-inference-wasm": "workspace:*",
+    "ruvector-gnn-wasm": "workspace:*",
+    "ruvector-economy-wasm": "workspace:*",
+    "ruvector-learning-wasm": "workspace:*"
   }
 }
