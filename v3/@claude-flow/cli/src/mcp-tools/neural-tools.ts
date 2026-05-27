@@ -66,24 +66,11 @@ try {
     }
   }
 
-  // Tier 4: mock fallback (last resort — embeddings are not semantic)
-  if (!realEmbeddings) {
-    const embeddingsModule = await import('@claude-flow/embeddings').catch(() => null);
-    if (embeddingsModule?.createEmbeddingService) {
-      try {
-        const service = embeddingsModule.createEmbeddingService({ provider: 'mock' });
-        realEmbeddings = {
-          embed: async (text: string) => {
-            const result = await service.embed(text);
-            return Array.from(result.embedding);
-          },
-        };
-        embeddingServiceName = 'mock-fallback';
-      } catch {
-        // No embedding service available at all
-      }
-    }
-  }
+  // No Tier 4 mock fallback. If Tier 1 (agentic-flow) and Tier 3 (onnx)
+  // both failed to import, leave realEmbeddings null and let downstream
+  // code use the explicit hash-fallback path with a clear _embeddingNote
+  // in stats. Silently substituting mock embeddings would hide a missing
+  // production dependency from callers.
 } catch {
   // No embedding provider available, will use fallback
 }
@@ -260,10 +247,34 @@ export const neuralTools: MCPTool[] = [
 
           const embedding = await generateEmbedding(text, 384);
           const patternId = `${modelId}-train-${i}`;
+          // ADR-093 F11: extract a meaningful label instead of dumping raw
+          // training JSON as the pattern name. Audit reported neural_predict
+          // returned `label: <raw training data JSON>` because the previous
+          // fallback was `text.slice(0, 100)` where text was `JSON.stringify(entry)`.
+          let label: string;
+          if (typeof entry === 'string') {
+            label = entry.slice(0, 80);
+          } else if (entry && typeof entry === 'object') {
+            const e = entry as Record<string, unknown>;
+            // Prefer common semantic fields over a JSON dump
+            const labelField = e.label ?? e.category ?? e.class ?? e.tag ?? e.intent ?? e.name ?? e.title;
+            if (typeof labelField === 'string' && labelField.length > 0) {
+              label = labelField.slice(0, 80);
+            } else {
+              const summaryField = e.text ?? e.input ?? e.task ?? e.description ?? e.content;
+              if (typeof summaryField === 'string' && summaryField.length > 0) {
+                label = `${summaryField.slice(0, 60)}${summaryField.length > 60 ? '…' : ''}`;
+              } else {
+                // Last resort: reduce to a stable short hash-like id
+                label = `${modelType}:entry-${i}`;
+              }
+            }
+          } else {
+            label = `${modelType}:entry-${i}`;
+          }
           store.patterns[patternId] = {
             id: patternId,
-            name: typeof entry === 'object' && entry !== null && 'label' in entry
-              ? String((entry as Record<string, unknown>).label) : text.slice(0, 100),
+            name: label,
             type: modelType,
             embedding,
             metadata: { modelId, epoch: epochs, index: i, raw: entry },
@@ -331,24 +342,48 @@ export const neuralTools: MCPTool[] = [
       const embedding = await generateEmbedding(inputText, 384);
       const latency = Math.round(performance.now() - startTime);
 
-      // Search stored patterns via real cosine similarity
+      // ADR-093 F11: real classifier head over stored patterns. Previously
+      // confidence was the raw cosine similarity (often clamped to 0 when
+      // stored embeddings were stale or zero-vectored). Now we run k-NN
+      // with cosine distance and apply a temperature-controlled softmax
+      // over the top-K so confidence is a proper distribution that sums
+      // to 1, and we surface enough metadata to trust the result.
       const storedPatterns = Object.values(store.patterns);
-      let predictions;
+      let predictions: Array<{ label: string; confidence: number; patternId: string; cosineSimilarity: number }>;
 
       if (storedPatterns.length > 0) {
-        // Real nearest-neighbor prediction using stored pattern embeddings
-        predictions = storedPatterns
-          .map(p => ({
-            label: p.name || p.type || p.id,
-            confidence: Math.max(0, cosineSimilarity(embedding, p.embedding)),
-            patternId: p.id,
-          }))
-          .sort((a, b) => b.confidence - a.confidence)
+        // Step 1: k-NN with cosine
+        const scored = storedPatterns
+          .map(p => {
+            const sim = cosineSimilarity(embedding, p.embedding);
+            return {
+              patternId: p.id,
+              label: p.name || p.type || p.id,
+              cosineSimilarity: sim,
+            };
+          })
+          .sort((a, b) => b.cosineSimilarity - a.cosineSimilarity)
           .slice(0, topK);
+
+        // Step 2: temperature-softmax over the top-K so confidence sums to 1.
+        // Temperature 0.1 sharpens differences between similar candidates.
+        const tau = 0.1;
+        const exps = scored.map(s => Math.exp(s.cosineSimilarity / tau));
+        const z = exps.reduce((a, b) => a + b, 0) || 1;
+        predictions = scored.map((s, i) => ({
+          label: s.label,
+          patternId: s.patternId,
+          cosineSimilarity: Number(s.cosineSimilarity.toFixed(4)),
+          confidence: Number((exps[i] / z).toFixed(4)),
+        }));
       } else {
-        // No patterns stored — no predictions possible
+        // No patterns stored — no predictions possible. Be honest about it
+        // instead of returning empty silently.
         predictions = [];
       }
+
+      const topConfidence = predictions[0]?.confidence ?? 0;
+      const topSimilarity = predictions[0]?.cosineSimilarity ?? 0;
 
       return {
         success: true,
@@ -356,12 +391,21 @@ export const neuralTools: MCPTool[] = [
         _embeddingSource: embeddingServiceName,
         embeddingProvider: embeddingServiceName,
         _hasStoredPatterns: storedPatterns.length > 0,
+        _classifierHead: storedPatterns.length > 0 ? 'knn-cosine+softmax(tau=0.1)' : 'none',
         modelId: model?.id || 'default',
         input: inputText,
         predictions,
+        // Surface cosineSimilarity separately so callers know whether the
+        // softmax confidence reflects true match strength.
+        topPrediction: predictions[0]?.label ?? null,
+        topConfidence,
+        topSimilarity,
         embedding: embedding.slice(0, 8), // Preview of embedding
         embeddingDims: embedding.length,
         latency,
+        ...(storedPatterns.length === 0 ? {
+          _note: 'No patterns stored. Train with neural_train(modelType, trainingData) before predicting.',
+        } : {}),
       };
     },
   },
@@ -394,7 +438,10 @@ export const neuralTools: MCPTool[] = [
         const typeFilter = input.type as string;
         const filtered = typeFilter ? patterns.filter(p => p.type === typeFilter) : patterns;
 
-        return {
+        // #bug21 — empty pattern list is ambiguous: store could have failed
+        // to load OR loaded fine and never been populated. Annotate the
+        // idle case (store loaded, zero patterns total) per Bug 11.3 pattern.
+        const result: Record<string, unknown> = {
           patterns: filtered.map(p => ({
             id: p.id,
             name: p.name,
@@ -404,6 +451,11 @@ export const neuralTools: MCPTool[] = [
           })),
           total: filtered.length,
         };
+        if (patterns.length === 0) {
+          result._status = 'idle';
+          result._note = 'Pattern store loaded; no patterns recorded yet. Use mcp__claude-flow__neural_patterns with action=store to add one.';
+        }
+        return result;
       }
 
       if (action === 'get') {
@@ -630,7 +682,16 @@ export const neuralTools: MCPTool[] = [
       const models = Object.values(store.models);
       const patterns = Object.values(store.patterns);
 
-      return {
+      // #bug21 — neural_status returned 0 models / 0 patterns alongside
+      // `_realEmbeddings: true`, which is ambiguous: the subsystem could
+      // have failed to initialize OR loaded fine and never been exercised.
+      // Mirrors the Bug 11.3 idle-since-load pattern from
+      // hooks_intelligence_stats. The store loaded successfully (we got
+      // here past loadNeuralStore()), so an empty store means "ready,
+      // awaiting first invocation".
+      const isIdle = models.length === 0 && patterns.length === 0;
+
+      const result: Record<string, unknown> = {
         _realEmbeddings: !!realEmbeddings,
         embeddingProvider: realEmbeddings ? `@claude-flow/embeddings (${embeddingServiceName})` : 'hash-based (deterministic)',
         models: {
@@ -652,10 +713,29 @@ export const neuralTools: MCPTool[] = [
         features: {
           hnsw: true,
           quantization: true,
-          flashAttention: false,
+          // #1770: probe the real loader instead of returning a literal false.
+          // Was hardcoded false, which contradicted hooks_intelligence_stats's
+          // simultaneous claim of `implementation: real-flash-attention`.
+          // The two surfaces now agree on a single source of truth.
+          flashAttention: await (async () => {
+            try {
+              // #1773 item 4 — flash-attention now lives in @claude-flow/neural
+              const { getFlashAttention } = await import('@claude-flow/neural');
+              return getFlashAttention() !== null;
+            } catch {
+              return false;
+            }
+          })(),
           reasoningBank: true,
         },
       };
+
+      if (isIdle) {
+        result._status = 'idle';
+        result._note = 'Neural store loaded; no models or patterns recorded yet. Use mcp__claude-flow__neural_train or mcp__claude-flow__neural_patterns (action=store) to populate.';
+      }
+
+      return result;
     },
   },
   {

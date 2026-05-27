@@ -9,6 +9,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type MCPTool, getProjectCwd } from './types.js';
 import { validateIdentifier, validateText, validateAgentSpawn } from './validate-input.js';
+import { executeAgentTask } from './agent-execute-core.js';
+import { scanClaudeCodeRegistry } from '../registry/claude-code-registry.js';
 
 // Storage paths
 const STORAGE_DIR = '.claude-flow';
@@ -179,7 +181,7 @@ async function determineAgentModel(
 export const agentTools: MCPTool[] = [
   {
     name: 'agent_spawn',
-    description: 'Spawn a new agent with intelligent model selection',
+    description: 'Spawn a Ruflo-tracked agent with cost attribution + memory persistence + swarm coordination. Use when native Task tool is wrong because you need (a) cost tracking per agent in the cost-tracking namespace, (b) cross-session learning via the patterns namespace, or (c) coordination with other agents in a swarm topology (hierarchical / mesh / consensus). For one-shot subtasks with no learning loop, native Task is fine. Pair with hooks_route to pick the right model first.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -255,7 +257,10 @@ export const agentTools: MCPTool[] = [
         modelRoutedBy: routingResult.routedBy,
         status: 'registered',
         createdAt: agent.createdAt,
-        note: 'Agent registered for coordination. Use Claude Code Task tool or claude -p to execute work.',
+        note: 'Agent registered for coordination. Three execution paths: ' +
+          '(1) call agent_execute(agentId, prompt) — direct LLM call via Anthropic Messages API (auto-uses Claude Code OAuth token if available, otherwise ANTHROPIC_API_KEY); ' +
+          '(2) Claude Code Task tool — spawns a real subagent; ' +
+          '(3) claude -p — headless background instance.',
       };
 
       // Add Agent Booster info if task can skip LLM
@@ -269,6 +274,46 @@ export const agentTools: MCPTool[] = [
       }
 
       return response;
+    },
+  },
+  {
+    // ADR-095 G1: real LLM execution via the agent registry. Previously
+    // agent_spawn registered metadata but nothing dispatched work to a
+    // provider — the wire between AnthropicProvider and the agent
+    // registry was missing, as the April audit (@roman-rr) called out.
+    // agent_execute closes that wire by reading the agent's configured
+    // model, calling the Anthropic Messages API directly via fetch, and
+    // updating the agent record with lastResult / taskCount / status.
+    // No mock — actual HTTP request to api.anthropic.com.
+    name: 'agent_execute',
+    description: 'Execute a task on a spawned agent — calls the Anthropic Messages API with the agent\'s configured model. Auto-uses Claude Code OAuth token (env CLAUDE_CODE_OAUTH_TOKEN, macOS Keychain, or ~/.claude/.credentials.json) when available; falls back to ANTHROPIC_API_KEY.',
+    category: 'agent',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'ID of the spawned agent' },
+        prompt: { type: 'string', description: 'Task / prompt for the agent to execute' },
+        systemPrompt: { type: 'string', description: 'Optional system prompt (overrides agent default)' },
+        maxTokens: { type: 'number', description: 'Max output tokens (default 1024)' },
+        temperature: { type: 'number', description: 'Sampling temperature 0..1 (default 0.7)' },
+      },
+      required: ['agentId', 'prompt'],
+    },
+    handler: async (input) => {
+      const vId = validateIdentifier(input.agentId, 'agentId');
+      if (!vId.valid) return { success: false, error: `Input validation failed: ${vId.error}` };
+      const vP = validateText(input.prompt as string, 'prompt');
+      if (!vP.valid) return { success: false, error: `Input validation failed: ${vP.error}` };
+
+      // Delegate to the shared core (also used by the workflow runtime).
+      return executeAgentTask({
+        agentId: input.agentId as string,
+        prompt: input.prompt as string,
+        systemPrompt: input.systemPrompt as string | undefined,
+        maxTokens: input.maxTokens as number | undefined,
+        temperature: input.temperature as number | undefined,
+        timeoutMs: input.timeoutMs as number | undefined,
+      });
     },
   },
   {
@@ -349,7 +394,7 @@ export const agentTools: MCPTool[] = [
   },
   {
     name: 'agent_list',
-    description: 'List all agents',
+    description: 'List all agents — both Ruflo-spawned (in-flight, from .claude-flow/agents/store.json) and user-installed templates discovered on disk under ~/.claude/agents/. Each entry has a `source` field: "built-in" (running), "user" (installed agent template).',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -357,6 +402,10 @@ export const agentTools: MCPTool[] = [
         status: { type: 'string', description: 'Filter by status' },
         domain: { type: 'string', description: 'Filter by domain' },
         includeTerminated: { type: 'boolean', description: 'Include terminated agents' },
+        includeUserInstalled: {
+          type: 'boolean',
+          description: 'Include user-installed agent templates from ~/.claude/agents/ (default: true). Pass false to restrict to running agents.',
+        },
       },
     },
     handler: async (input) => {
@@ -384,21 +433,60 @@ export const agentTools: MCPTool[] = [
         agents = agents.filter(a => a.domain === input.domain);
       }
 
+      // #bug22.2 — merge user-installed agents discovered under ~/.claude/agents/.
+      // These are TEMPLATES (i.e. things the user can spawn), not running
+      // agents — they have no status/health/taskCount. We tag every entry with
+      // a `source` field so consumers can tell them apart.
+      const includeUserInstalled = input.includeUserInstalled !== false;
+      const userAgents: Array<Record<string, unknown>> = [];
+      let userAgentTotal = 0;
+      if (includeUserInstalled) {
+        try {
+          const registry = await scanClaudeCodeRegistry();
+          // Apply the same domain filter to user agents (using their `category`
+          // as the equivalent of `domain`).
+          let filtered = registry.agents;
+          if (input.domain) {
+            filtered = filtered.filter(a => a.category === input.domain);
+          }
+          userAgentTotal = filtered.length;
+          for (const ua of filtered) {
+            userAgents.push({
+              agentId: `user:${ua.name}`,
+              agentType: ua.name,
+              status: 'available',
+              source: 'user',
+              category: ua.category,
+              description: ua.description,
+              path: ua.path,
+            });
+          }
+        } catch {
+          // Registry scan failed — degrade gracefully, keep built-in list.
+        }
+      }
+
+      const builtInAgents = agents.map(a => ({
+        agentId: a.agentId,
+        agentType: a.agentType,
+        status: a.status,
+        health: a.health,
+        taskCount: a.taskCount,
+        createdAt: a.createdAt,
+        domain: a.domain,
+        source: 'built-in' as const,
+      }));
+
       return {
-        agents: agents.map(a => ({
-          agentId: a.agentId,
-          agentType: a.agentType,
-          status: a.status,
-          health: a.health,
-          taskCount: a.taskCount,
-          createdAt: a.createdAt,
-          domain: a.domain,
-        })),
-        total: agents.length,
+        agents: [...builtInAgents, ...userAgents],
+        total: builtInAgents.length + userAgents.length,
+        builtInTotal: builtInAgents.length,
+        userInstalledTotal: userAgentTotal,
         filters: {
           status: input.status,
           domain: input.domain,
           includeTerminated: input.includeTerminated,
+          includeUserInstalled,
         },
       };
     },

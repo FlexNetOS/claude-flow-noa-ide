@@ -8,7 +8,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type MCPTool, getProjectCwd } from './types.js';
-import { validateIdentifier } from './validate-input.js';
+import { validateIdentifier, validateText } from './validate-input.js';
+import { scanClaudeCodeRegistry } from '../registry/claude-code-registry.js';
+import { matchUserSkillsForTask, type UserSkillMatch } from '../registry/skill-matcher.js';
 
 // Swarm state persistence
 const SWARM_DIR = '.claude-flow/swarm';
@@ -24,6 +26,16 @@ interface SwarmState {
   config: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  /**
+   * #1799 — process that initialized this swarm. Used by reconciliation
+   * on `loadSwarmStore()` to detect orphan entries whose host process has
+   * already exited (common on Windows where backgrounded daemons don't
+   * always survive shell exit). Optional for backward compat with
+   * pre-#1799 stores.
+   */
+  pid?: number;
+  /** Reason set when status was forced to 'terminated' by reconciliation. */
+  terminationReason?: string;
 }
 
 interface SwarmStore {
@@ -46,14 +58,77 @@ function ensureSwarmDir(): void {
   }
 }
 
+/**
+ * #1799 — return true when `pid` belongs to a live process. process.kill(pid, 0)
+ * with signal 0 is the documented liveness probe: ESRCH ⇒ dead, EPERM ⇒ alive
+ * but owned by another user (still alive — don't reap), success ⇒ alive.
+ */
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * #1799 — Walk swarms with status='running' and mark orphans as 'terminated':
+ *
+ *   - PID-based: if `pid` is set and the process is dead, the swarm is an
+ *     orphan (host crashed / shell exited / daemon backgrounded poorly).
+ *   - TTL fallback: pre-#1799 entries have no `pid`; reap them when their
+ *     `updatedAt` is older than 24h. This is conservative — long-idle but
+ *     legitimately running swarms can recover by writing a heartbeat.
+ *
+ * Mutates `store` in place; returns the count for the caller to decide
+ * whether to persist.
+ */
+const ORPHAN_TTL_MS = 24 * 60 * 60 * 1000;
+function reconcileOrphanSwarms(store: SwarmStore): number {
+  let reconciled = 0;
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+  for (const swarm of Object.values(store.swarms)) {
+    if (swarm.status !== 'running') continue;
+    let orphanReason: string | null = null;
+    if (typeof swarm.pid === 'number') {
+      if (!isPidAlive(swarm.pid)) {
+        orphanReason = `host process ${swarm.pid} exited`;
+      }
+    } else {
+      const ageMs = nowMs - new Date(swarm.updatedAt).getTime();
+      if (Number.isFinite(ageMs) && ageMs > ORPHAN_TTL_MS) {
+        orphanReason = `no pid recorded and heartbeat is ${Math.round(ageMs / 3600000)}h stale`;
+      }
+    }
+    if (orphanReason) {
+      swarm.status = 'terminated';
+      swarm.terminationReason = orphanReason;
+      swarm.updatedAt = nowIso;
+      reconciled++;
+    }
+  }
+  return reconciled;
+}
+
 function loadSwarmStore(): SwarmStore {
+  let store: SwarmStore = { swarms: {}, version: '3.0.0' };
   try {
     const path = getSwarmStatePath();
     if (existsSync(path)) {
-      return JSON.parse(readFileSync(path, 'utf-8'));
+      store = JSON.parse(readFileSync(path, 'utf-8'));
     }
-  } catch { /* return default */ }
-  return { swarms: {}, version: '3.0.0' };
+  } catch { /* fall through with default */ }
+
+  // #1799 — reconcile orphans on every load and persist if anything changed.
+  // Cheap (process.kill(pid, 0) is sub-millisecond) and means
+  // `swarm_status`/`swarm_health` never see ghost "running" entries.
+  const reconciled = reconcileOrphanSwarms(store);
+  if (reconciled > 0) {
+    try { saveSwarmStore(store); } catch { /* best-effort */ }
+  }
+  return store;
 }
 
 function saveSwarmStore(store: SwarmStore): void {
@@ -69,7 +144,7 @@ const VALID_TOPOLOGIES = new Set([
 export const swarmTools: MCPTool[] = [
   {
     name: 'swarm_init',
-    description: 'Initialize a swarm with persistent state tracking',
+    description: 'Initialize a swarm with persistent state tracking. When a `task` is provided AND `strategy` is "specialized" (or `autoPickAgents: true` is set explicitly), also consults the user-installed Claude Code registry (~/.claude/agents/, ~/.claude/skills/) and returns ranked `recommendedAgents` so the caller knows which user-installed content (e.g. polymarket-analyzer, kali-osint-username, ceo) is relevant before spawning. Backwards-compatible — existing callers that pass no task get the original behavior.',
     category: 'swarm',
     inputSchema: {
       type: 'object',
@@ -78,6 +153,8 @@ export const swarmTools: MCPTool[] = [
         maxAgents: { type: 'number', description: 'Maximum number of agents (1-50)' },
         strategy: { type: 'string', description: 'Agent strategy (specialized, balanced, adaptive)' },
         config: { type: 'object', description: 'Additional swarm configuration' },
+        task: { type: 'string', description: 'Optional task description. When provided with strategy="specialized" (or autoPickAgents=true), the swarm consults ~/.claude/ for matching user-installed agents/skills and returns them as recommendedAgents. (#bug23)' },
+        autoPickAgents: { type: 'boolean', description: 'Force registry-aware agent selection regardless of strategy. Defaults: true when task+strategy="specialized", false otherwise. Set false to opt out explicitly. (#bug23)' },
       },
     },
     handler: async (input) => {
@@ -90,17 +167,69 @@ export const swarmTools: MCPTool[] = [
         const v = validateIdentifier(input.strategy, 'strategy');
         if (!v.valid) return { success: false, error: v.error };
       }
+      if (input.task !== undefined && input.task !== null) {
+        const v = validateText(input.task, 'task');
+        if (!v.valid) return { success: false, error: v.error };
+      }
 
       const topology = (input.topology as string) || 'hierarchical-mesh';
       const maxAgents = Math.min(Math.max((input.maxAgents as number) || 15, 1), 50);
       const strategy = (input.strategy as string) || 'specialized';
       const config = (input.config || {}) as Record<string, unknown>;
+      const task = (input.task as string | undefined) ?? undefined;
 
       if (!VALID_TOPOLOGIES.has(topology)) {
         return {
           success: false,
           error: `Invalid topology: ${topology}. Valid: ${[...VALID_TOPOLOGIES].join(', ')}`,
         };
+      }
+
+      // #bug23 — Decide whether to consult the user's Claude Code
+      // registry. Default policy: only when a task is provided AND the
+      // strategy is "specialized" (so generic balanced/adaptive runs
+      // don't pay the scan cost). Caller can force on/off with
+      // `autoPickAgents`.
+      const autoPickExplicit = input.autoPickAgents as boolean | undefined;
+      const autoPickAgents = autoPickExplicit ?? (Boolean(task) && strategy === 'specialized');
+
+      let recommendedAgents: Array<{
+        name: string;
+        type: 'skill' | 'agent';
+        score: number;
+        source: 'user';
+        description?: string;
+        matchedKeywords: string[];
+      }> = [];
+      let registryConsulted = false;
+
+      if (autoPickAgents && task) {
+        try {
+          const registry = await scanClaudeCodeRegistry();
+          // Cap recommendations at maxAgents — we don't suggest more
+          // user content than the swarm can absorb.
+          const matches: UserSkillMatch[] = matchUserSkillsForTask(
+            task,
+            undefined,
+            registry.skills,
+            registry.agents,
+            maxAgents,
+          );
+          recommendedAgents = matches.map((m) => ({
+            name: m.name,
+            type: m.type,
+            score: m.score,
+            source: 'user' as const,
+            description: m.description,
+            matchedKeywords: m.matchedKeywords,
+          }));
+          registryConsulted = true;
+        } catch {
+          // Registry unavailable — swarm init must never fail because
+          // of a filesystem hiccup. Empty `recommendedAgents` signals
+          // "auto-pick attempted but found nothing".
+          registryConsulted = true;
+        }
       }
 
       const swarmId = `swarm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -120,9 +249,18 @@ export const swarmTools: MCPTool[] = [
           communicationProtocol: (config.communicationProtocol as string) || 'message-bus',
           autoScaling: (config.autoScaling as boolean) ?? true,
           consensusMechanism: (config.consensusMechanism as string) || 'majority',
+          // #bug23 — persist the auto-picked recommendations so
+          // subsequent swarm_status / swarm_health calls can show the
+          // caller what the swarm was bootstrapped with.
+          recommendedAgents,
+          autoPickAgents,
+          ...(task ? { task } : {}),
         },
         createdAt: now,
         updatedAt: now,
+        // #1799 — record host PID so subsequent loads can detect orphans
+        // when this process exits without a graceful swarm_shutdown.
+        pid: process.pid,
       };
 
       const store = loadSwarmStore();
@@ -138,6 +276,11 @@ export const swarmTools: MCPTool[] = [
         initializedAt: now,
         config: swarmState.config,
         persisted: true,
+        // #bug23 — surface the registry-aware selections at the top
+        // level so callers don't have to dig through `config`.
+        recommendedAgents,
+        registryConsulted,
+        autoPickAgents,
       };
     },
   },

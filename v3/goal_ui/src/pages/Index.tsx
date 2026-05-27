@@ -25,7 +25,6 @@ import {
   ExternalLink,
   Code,
   Play,
-  Radar,
 } from "lucide-react";
 import { AgentStep, StepStatus } from "@/components/AgentStep";
 import { Button } from "@/components/ui/button";
@@ -592,6 +591,8 @@ const Index = () => {
     setIsPlanning(false);
     setPlanGenerated(true);
     setVisibleSteps(1);
+    // Issue #1694: do NOT auto-execute. Wait for the user to click
+    // "Start Research" so the planning step is observable and reversible.
   };
 
   // Execute research plan
@@ -1143,7 +1144,20 @@ const Index = () => {
               <div className="text-xs sm:text-sm flex-1 min-w-0 text-center px-4" style={{ color: "#a3a3a3" }}>
                 <span className="font-medium" style={{ color: "#f5f5f5" }}>Objective:</span> <span className="break-words">{userGoal}</span>
               </div>
-              <div className="w-[120px]" />
+              {/* Issue #1694: explicit "Start Research" gate so the plan is reviewable before execution. */}
+              {!isRunning && visibleSteps <= 1 ? (
+                <Button
+                  onClick={() => executeResearch(steps, userGoal)}
+                  size="sm"
+                  className="gap-2"
+                  style={{ backgroundColor: widgetConfig.primaryColor, color: "#fff" }}
+                >
+                  <Play className="w-4 h-4" />
+                  Start Research
+                </Button>
+              ) : (
+                <div className="w-[120px]" />
+              )}
             </div>
 
               {/* Timeline */}

@@ -5,6 +5,14 @@
  * Created with ❤️ by ruv.io
  */
 
+// MUST be the first import — installs console filter for the cosmetic
+// "[AgentDB Patch] Controller index not found" warning before any
+// agentic-flow / agentdb code can load. ES module imports are evaluated
+// in source order, so this file runs its side effects before any other
+// import in this module's import graph (including transitive imports of
+// agentic-flow via commands/index.js).
+import './log-filters.js';
+
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -75,6 +83,22 @@ export class CLI {
    */
   async run(args: string[] = process.argv.slice(2)): Promise<void> {
     try {
+      // #1791.2 — If the user invoked a lazy command (e.g. `hive-mind task`),
+      // pre-load it BEFORE parsing so the parser can build scoped flag
+      // aliases for its subcommands. Without this, short flags defined on
+      // the lazy command's subcommand options (`-d` for description, etc.)
+      // never get into the alias map and silently fall through to global
+      // resolution — the user sees `[ERROR] Task description is required`
+      // even though they passed `-d "smoke"`.
+      for (const arg of args) {
+        if (arg.startsWith('-')) continue;
+        if (this.parser.isLazyOnly(arg)) {
+          const cmd = await getCommandAsync(arg);
+          if (cmd) this.parser.registerCommand(cmd);
+        }
+        break; // only the first non-flag positional is the command name
+      }
+
       // Parse arguments
       const parseResult = this.parser.parse(args);
       const { command: commandPath, flags, positional } = parseResult;
@@ -123,8 +147,10 @@ export class CLI {
       // No command - show help or suggest correction
       if (commandPath.length === 0 || flags.help || flags.h) {
         if (commandPath.length > 0) {
-          // Show command-specific help
-          await this.showCommandHelp(commandPath[0]);
+          // #1791.4 — pass the FULL command path so subcommands like
+          // `hive-mind spawn --help` render spawn's own options/examples
+          // instead of falling back to the parent's SUBCOMMANDS list.
+          await this.showCommandHelp(commandPath);
         } else if (positional.length > 0 && !positional[0].startsWith('-')) {
           // First positional looks like an attempted command - suggest correction
           const attemptedCommand = positional[0];
@@ -249,8 +275,8 @@ export class CLI {
           process.exit(result.exitCode || 1);
         }
       } else {
-        // No action - show command help
-        this.showCommandHelp(commandName);
+        // No action - show command help (full path so nested subcommands work)
+        await this.showCommandHelp(commandPath);
       }
     } catch (error) {
       // Don't re-handle if this is a process.exit error (from mocked tests)
@@ -363,22 +389,52 @@ export class CLI {
   }
 
   /**
-   * Show command-specific help
+   * Show command-specific help.
+   *
+   * #1791.4 — accepts a FULL command path (e.g. ['hive-mind', 'spawn']) and
+   * walks subcommands so nested invocations show the leaf's own options /
+   * examples instead of always rendering the parent's SUBCOMMANDS list.
    */
-  private async showCommandHelp(commandName: string): Promise<void> {
-    // Try sync first, then lazy load
-    let command = getCommand(commandName);
-    if (!command && hasCommand(commandName)) {
-      command = await getCommandAsync(commandName);
-    }
-
-    if (!command) {
-      this.output.printError(`Unknown command: ${commandName}`);
+  private async showCommandHelp(commandPathOrName: string | string[]): Promise<void> {
+    const commandPath = Array.isArray(commandPathOrName) ? commandPathOrName : [commandPathOrName];
+    if (commandPath.length === 0) {
+      await this.showHelp();
       return;
     }
 
+    const rootName = commandPath[0];
+    if (rootName === undefined) {
+      await this.showHelp();
+      return;
+    }
+
+    // Try sync first, then lazy load
+    let initial: Command | undefined = getCommand(rootName);
+    if (!initial && hasCommand(rootName)) {
+      initial = await getCommandAsync(rootName);
+    }
+
+    if (!initial) {
+      this.output.printError(`Unknown command: ${rootName}`);
+      return;
+    }
+
+    // Walk into subcommands following the path so `hive-mind spawn --help`
+    // renders spawn's help, not hive-mind's parent help.
+    // Use a non-undefined-typed variable so narrowing persists across loop reassignment.
+    let command: Command = initial;
+    const titleParts: string[] = [command.name];
+    for (let i = 1; i < commandPath.length; i++) {
+      const subName = commandPath[i];
+      if (subName === undefined) break;
+      const sub: Command | undefined = command.subcommands?.find(sc => sc.name === subName || sc.aliases?.includes(subName));
+      if (!sub) break; // unknown leaf — fall back to last known
+      command = sub;
+      titleParts.push(sub.name);
+    }
+
     this.output.writeln();
-    this.output.writeln(this.output.bold(`${this.name} ${command.name}`));
+    this.output.writeln(this.output.bold(`${this.name} ${titleParts.join(' ')}`));
     this.output.writeln(command.description);
     this.output.writeln();
 

@@ -11,69 +11,29 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { createRequire } from 'node:module';
 import { readFileMaybeEncrypted, writeFileRestricted } from '../fs-secure.js';
-
-/**
- * #1854: previously every site that needed the memory directory hardcoded
- * `getMemoryRoot()`, so the documented config entry
- * points (`memory.persistPath` config field, `memory configure --path`,
- * `CLAUDE_FLOW_MEMORY_PATH` env var) all silently no-op'd. This helper
- * is the single source of truth — every `.swarm/memory.db` resolution in
- * this file flows through it.
- *
- * Precedence (highest → lowest):
- *   1. CLAUDE_FLOW_MEMORY_PATH env var
- *   2. memory.persistPath / memory.path in claude-flow.config.json (cwd or
- *      the directory the CLI was invoked from)
- *   3. Default: cwd/.swarm
- *
- * Cached per-process so repeated lookups are cheap; reset only by spawning
- * a fresh process (which is how config changes already propagate).
- */
-let _memoryRootCache: string | undefined;
-export function getMemoryRoot(): string {
-  if (_memoryRootCache !== undefined) return _memoryRootCache;
-
-  // 1. Env var
-  const envPath = process.env.CLAUDE_FLOW_MEMORY_PATH;
-  if (envPath && envPath.trim().length > 0) {
-    _memoryRootCache = path.resolve(envPath);
-    return _memoryRootCache;
-  }
-
-  // 2. Config file (claude-flow.config.json)
-  const configCandidates = [
-    path.resolve(process.cwd(), 'claude-flow.config.json'),
-    path.resolve(process.cwd(), '.claude-flow', 'config.json'),
-  ];
-  for (const configPath of configCandidates) {
-    if (!fs.existsSync(configPath)) continue;
-    try {
-      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      const fromConfig: unknown = raw?.memory?.persistPath ?? raw?.memory?.path;
-      if (typeof fromConfig === 'string' && fromConfig.trim().length > 0) {
-        _memoryRootCache = path.resolve(fromConfig);
-        return _memoryRootCache;
-      }
-    } catch {
-      /* malformed config — fall through to default */
-    }
-  }
-
-  // 3. Default
-  _memoryRootCache = path.resolve(process.cwd(), '.swarm');
-  return _memoryRootCache;
-}
-
-/** For tests + the `memory configure` flow that mutates the config at runtime. */
-export function _resetMemoryRootCache(): void {
-  _memoryRootCache = undefined;
-}
+// #bug31: shared in-process DB pool — eliminates the per-call file
+// read + sql.js re-parse that dominated 440 ms baseline.
+import {
+  getPooledDB,
+  persistPooledDB,
+  isSchemaVerified,
+  markSchemaVerified,
+  invalidatePool,
+  type RouteSource,
+} from './db-pool.js';
 
 // ADR-053: Lazy import of AgentDB v3 bridge
 let _bridge: typeof import('./memory-bridge.js') | null | undefined;
 async function getBridge(): Promise<typeof import('./memory-bridge.js') | null> {
+  // #bug31: explicit escape hatch so benchmarks and tests (and any
+  // caller that wants to exercise the raw sql.js fallback path the
+  // in-process pool optimises) can short-circuit the bridge. Checked
+  // FIRST so the bridge is bypassed even after another caller in the
+  // same process has already cached it.
+  if (process.env.CLAUDE_FLOW_DISABLE_BRIDGE === '1') {
+    return null;
+  }
   if (_bridge === null) return null;
   if (_bridge) return _bridge;
   try {
@@ -82,161 +42,6 @@ async function getBridge(): Promise<typeof import('./memory-bridge.js') | null> 
   } catch {
     _bridge = null;
     return null;
-  }
-}
-
-async function rawMemoryEntryExists(options: {
-  key: string;
-  namespace?: string;
-  dbPath?: string;
-}): Promise<boolean> {
-  const { key, namespace = 'default', dbPath: customPath } = options;
-  const swarmDir = getMemoryRoot();
-  const dbPath = customPath ? path.resolve(customPath) : path.join(swarmDir, 'memory.db');
-
-  try {
-    if (!fs.existsSync(dbPath)) return false;
-
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
-    const db = new SQL.Database(fileBuffer);
-    const stmt = db.prepare(`
-      SELECT 1
-      FROM memory_entries
-      WHERE status = 'active'
-        AND key = ?
-        AND namespace = ?
-      LIMIT 1
-    `);
-    stmt.bind([key, namespace]);
-    const found = stmt.step();
-    stmt.free();
-    db.close();
-    return found;
-  } catch {
-    return false;
-  }
-}
-
-async function storeEntryWithBetterSqlite(options: {
-  key: string;
-  value: string;
-  namespace?: string;
-  generateEmbeddingFlag?: boolean;
-  tags?: string[];
-  ttl?: number;
-  dbPath?: string;
-  upsert?: boolean;
-}): Promise<{
-  success: boolean;
-  id: string;
-  embedding?: { dimensions: number; model: string };
-  error?: string;
-}> {
-  const {
-    key,
-    value,
-    namespace = 'default',
-    generateEmbeddingFlag = true,
-    tags = [],
-    ttl,
-    dbPath: customPath,
-    upsert = false
-  } = options;
-  const swarmDir = getMemoryRoot();
-  const dbPath = customPath ? path.resolve(customPath) : path.join(swarmDir, 'memory.db');
-
-  try {
-    if (!fs.existsSync(dbPath)) {
-      return { success: false, id: '', error: 'Database not initialized. Run: claude-flow memory init' };
-    }
-
-    await ensureSchemaColumns(dbPath);
-
-    const require = createRequire(import.meta.url);
-    const Database = require('better-sqlite3');
-    const db = new Database(dbPath);
-    const id = `entry_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    const now = Date.now();
-
-    let embeddingJson: string | null = null;
-    let embeddingDimensions: number | null = null;
-    let embeddingModel: string | null = null;
-
-    if (generateEmbeddingFlag && value.length > 0) {
-      const embResult = await generateEmbedding(value);
-      embeddingJson = JSON.stringify(embResult.embedding);
-      embeddingDimensions = embResult.dimensions;
-      embeddingModel = embResult.model;
-    }
-
-    const insertSql = upsert
-      ? `INSERT OR REPLACE INTO memory_entries (
-          id, key, namespace, content, type,
-          embedding, embedding_dimensions, embedding_model,
-          tags, metadata, created_at, updated_at, expires_at, status
-        ) VALUES (?, ?, ?, ?, 'semantic', ?, ?, ?, ?, ?, ?, ?, ?, 'active')`
-      : `INSERT INTO memory_entries (
-          id, key, namespace, content, type,
-          embedding, embedding_dimensions, embedding_model,
-          tags, metadata, created_at, updated_at, expires_at, status
-        ) VALUES (?, ?, ?, ?, 'semantic', ?, ?, ?, ?, ?, ?, ?, ?, 'active')`;
-
-    const write = db.transaction(() => {
-      try {
-        db.prepare(
-          `INSERT OR IGNORE INTO vector_indexes (id, name, dimensions) VALUES (?, ?, ?)`
-        ).run(namespace, namespace, embeddingDimensions ?? 384);
-      } catch {
-        /* vector_indexes may not exist on legacy DBs — fall through */
-      }
-
-      db.prepare(insertSql).run(
-        id,
-        key,
-        namespace,
-        value,
-        embeddingJson,
-        embeddingDimensions,
-        embeddingModel,
-        tags.length > 0 ? JSON.stringify(tags) : null,
-        '{}',
-        now,
-        now,
-        ttl ? now + (ttl * 1000) : null
-      );
-    });
-
-    write();
-    try {
-      db.pragma('wal_checkpoint(TRUNCATE)');
-    } catch {
-      /* checkpoint is best-effort */
-    }
-    db.close();
-
-    if (embeddingJson) {
-      const embResult = JSON.parse(embeddingJson) as number[];
-      await addToHNSWIndex(id, embResult, {
-        id,
-        key,
-        namespace,
-        content: value
-      });
-    }
-
-    return {
-      success: true,
-      id,
-      embedding: embeddingJson ? { dimensions: embeddingDimensions!, model: embeddingModel! } : undefined
-    };
-  } catch (error) {
-    return {
-      success: false,
-      id: '',
-      error: error instanceof Error ? error.message : String(error)
-    };
   }
 }
 
@@ -653,7 +458,7 @@ export async function getHNSWIndex(options?: {
       try {
         const initSqlJs = (await import('sql.js')).default;
         const SQL = await initSqlJs();
-        const fileBuffer = fs.readFileSync(dbPath);
+        const fileBuffer = readFileMaybeEncrypted(dbPath, null);
         const sqlDb = new SQL.Database(fileBuffer);
 
         // Load all entries with embeddings
@@ -820,12 +625,6 @@ export async function searchHNSWIndex(
 
 /**
  * Get HNSW index status
- *
- * #1987: `entryCount` here reflects ONLY the in-process `hnswIndex` singleton.
- * A fresh CLI invocation never hydrates that singleton (it loads lazily on
- * search), so this count is always 0 for `memory stats`. Callers that want
- * the durable count of embedded rows should use `countVectorEntries()` and
- * keep this function for the in-process index status alone.
  */
 export function getHNSWStatus(): {
   available: boolean;
@@ -853,36 +652,6 @@ export function getHNSWStatus(): {
 }
 
 /**
- * #1987: Count persisted `memory_entries` rows that have an embedding,
- * independent of the in-process HNSW singleton. Used by `memory stats` so a
- * fresh CLI process reports the durable count, not the empty in-process
- * cache. Returns 0 if the DB does not exist yet or the query fails — same
- * shape as a never-populated index, which is the correct fallback for stats.
- */
-export async function countVectorEntries(dbPath?: string): Promise<number> {
-  const path_ = dbPath || path.join(getMemoryRoot(), 'memory.db');
-  if (!fs.existsSync(path_)) return 0;
-
-  try {
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-    const fileBuffer = fs.readFileSync(path_);
-    const db = new SQL.Database(fileBuffer);
-    try {
-      const result = db.exec(
-        "SELECT COUNT(*) FROM memory_entries WHERE embedding IS NOT NULL AND embedding != ''"
-      );
-      const count = (result[0]?.values[0]?.[0] as number) ?? 0;
-      return typeof count === 'number' ? count : 0;
-    } finally {
-      db.close();
-    }
-  } catch {
-    return 0;
-  }
-}
-
-/**
  * Clear the HNSW index (for rebuilding)
  */
 export function clearHNSWIndex(): void {
@@ -899,17 +668,264 @@ export function rebuildSearchIndex(): void {
   hnswInitializing = false;
 }
 
-// Vector ops (quantization + flash-attention) moved to ./vector-ops.ts
-export {
-  quantizeInt8,
-  dequantizeInt8,
-  quantizedCosineSim,
-  getQuantizationStats,
-  batchCosineSim,
-  softmaxAttention,
-  topKIndices,
-  flashAttentionSearch,
-} from './vector-ops.js';
+// ============================================================================
+// INT8 VECTOR QUANTIZATION (4x memory reduction)
+// ============================================================================
+
+/**
+ * Quantize a Float32 embedding to Int8 (4x memory reduction)
+ * Uses symmetric quantization with scale factor stored per-vector
+ *
+ * @param embedding - Float32 embedding array
+ * @returns Quantized Int8 array with scale factor
+ */
+export function quantizeInt8(embedding: number[] | Float32Array): {
+  quantized: Int8Array;
+  scale: number;
+  zeroPoint: number;
+} {
+  const arr = embedding instanceof Float32Array ? embedding : new Float32Array(embedding);
+
+  // Find min/max for symmetric quantization
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i];
+    if (arr[i] > max) max = arr[i];
+  }
+
+  // Symmetric quantization: scale = max(|min|, |max|) / 127
+  const absMax = Math.max(Math.abs(min), Math.abs(max));
+  const scale = absMax / 127 || 1e-10; // Avoid division by zero
+  const zeroPoint = 0; // Symmetric quantization
+
+  // Quantize
+  const quantized = new Int8Array(arr.length);
+  for (let i = 0; i < arr.length; i++) {
+    // Clamp to [-127, 127] to leave room for potential rounding
+    const q = Math.round(arr[i] / scale);
+    quantized[i] = Math.max(-127, Math.min(127, q));
+  }
+
+  return { quantized, scale, zeroPoint };
+}
+
+/**
+ * Dequantize Int8 back to Float32
+ *
+ * @param quantized - Int8 quantized array
+ * @param scale - Scale factor from quantization
+ * @param zeroPoint - Zero point (usually 0 for symmetric)
+ * @returns Float32Array
+ */
+export function dequantizeInt8(
+  quantized: Int8Array,
+  scale: number,
+  zeroPoint: number = 0
+): Float32Array {
+  const result = new Float32Array(quantized.length);
+  for (let i = 0; i < quantized.length; i++) {
+    result[i] = (quantized[i] - zeroPoint) * scale;
+  }
+  return result;
+}
+
+/**
+ * Compute cosine similarity between quantized vectors
+ * Faster than dequantizing first
+ */
+export function quantizedCosineSim(
+  a: Int8Array, aScale: number,
+  b: Int8Array, bScale: number
+): number {
+  if (a.length !== b.length) return 0;
+
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+
+  // Scales cancel out in cosine similarity for normalized vectors
+  const mag = Math.sqrt(normA * normB);
+  return mag === 0 ? 0 : dot / mag;
+}
+
+/**
+ * Get quantization statistics for an embedding
+ */
+export function getQuantizationStats(embedding: number[] | Float32Array): {
+  originalBytes: number;
+  quantizedBytes: number;
+  compressionRatio: number;
+} {
+  const len = embedding.length;
+  const originalBytes = len * 4; // Float32 = 4 bytes
+  const quantizedBytes = len + 8; // Int8 = 1 byte + 8 bytes for scale/zeroPoint
+  const compressionRatio = originalBytes / quantizedBytes;
+
+  return { originalBytes, quantizedBytes, compressionRatio };
+}
+
+// ============================================================================
+// FLASH ATTENTION-STYLE BATCH OPERATIONS (V8-Optimized)
+// ============================================================================
+
+/**
+ * Batch cosine similarity - compute query against multiple vectors
+ * Optimized for V8 JIT with typed arrays
+ * ~50μs per 1000 vectors (384-dim)
+ */
+export function batchCosineSim(
+  query: Float32Array | number[],
+  vectors: (Float32Array | number[])[],
+): Float32Array {
+  const n = vectors.length;
+  const scores = new Float32Array(n);
+
+  if (n === 0 || query.length === 0) return scores;
+
+  // Pre-compute query norm
+  let queryNorm = 0;
+  for (let i = 0; i < query.length; i++) {
+    queryNorm += query[i] * query[i];
+  }
+  queryNorm = Math.sqrt(queryNorm);
+  if (queryNorm === 0) return scores;
+
+  // Compute similarities
+  for (let v = 0; v < n; v++) {
+    const vec = vectors[v];
+    const len = Math.min(query.length, vec.length);
+    let dot = 0, vecNorm = 0;
+
+    for (let i = 0; i < len; i++) {
+      dot += query[i] * vec[i];
+      vecNorm += vec[i] * vec[i];
+    }
+
+    vecNorm = Math.sqrt(vecNorm);
+    scores[v] = vecNorm === 0 ? 0 : dot / (queryNorm * vecNorm);
+  }
+
+  return scores;
+}
+
+/**
+ * Softmax normalization for attention scores
+ * Numerically stable implementation
+ */
+export function softmaxAttention(scores: Float32Array, temperature: number = 1.0): Float32Array {
+  const n = scores.length;
+  const result = new Float32Array(n);
+  if (n === 0) return result;
+
+  // Find max for numerical stability
+  let max = scores[0];
+  for (let i = 1; i < n; i++) {
+    if (scores[i] > max) max = scores[i];
+  }
+
+  // Compute exp and sum
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    result[i] = Math.exp((scores[i] - max) / temperature);
+    sum += result[i];
+  }
+
+  // Normalize
+  if (sum > 0) {
+    for (let i = 0; i < n; i++) {
+      result[i] /= sum;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Top-K selection with partial sort (O(n + k log k))
+ * More efficient than full sort for small k
+ */
+export function topKIndices(scores: Float32Array, k: number): number[] {
+  const n = scores.length;
+  if (k >= n) {
+    // Return all indices sorted by score
+    return Array.from({ length: n }, (_, i) => i)
+      .sort((a, b) => scores[b] - scores[a]);
+  }
+
+  // Build min-heap of size k
+  const heap: { idx: number; score: number }[] = [];
+
+  for (let i = 0; i < n; i++) {
+    if (heap.length < k) {
+      heap.push({ idx: i, score: scores[i] });
+      // Bubble up
+      let j = heap.length - 1;
+      while (j > 0) {
+        const parent = Math.floor((j - 1) / 2);
+        if (heap[j].score < heap[parent].score) {
+          [heap[j], heap[parent]] = [heap[parent], heap[j]];
+          j = parent;
+        } else break;
+      }
+    } else if (scores[i] > heap[0].score) {
+      // Replace min and heapify down
+      heap[0] = { idx: i, score: scores[i] };
+      let j = 0;
+      while (true) {
+        const left = 2 * j + 1, right = 2 * j + 2;
+        let smallest = j;
+        if (left < k && heap[left].score < heap[smallest].score) smallest = left;
+        if (right < k && heap[right].score < heap[smallest].score) smallest = right;
+        if (smallest === j) break;
+        [heap[j], heap[smallest]] = [heap[smallest], heap[j]];
+        j = smallest;
+      }
+    }
+  }
+
+  // Extract and sort descending
+  return heap.sort((a, b) => b.score - a.score).map(h => h.idx);
+}
+
+/**
+ * Flash Attention-style search
+ * Combines batch similarity, softmax, and top-k in one pass
+ * Returns indices and attention weights
+ */
+export function flashAttentionSearch(
+  query: Float32Array | number[],
+  vectors: (Float32Array | number[])[],
+  options: {
+    k?: number;
+    temperature?: number;
+    threshold?: number;
+  } = {}
+): { indices: number[]; scores: Float32Array; weights: Float32Array } {
+  const { k = 10, temperature = 1.0, threshold = 0 } = options;
+
+  // Compute batch similarity
+  const scores = batchCosineSim(query, vectors);
+
+  // Get top-k indices
+  const indices = topKIndices(scores, k);
+
+  // Filter by threshold
+  const filtered = indices.filter(i => scores[i] >= threshold);
+
+  // Extract scores for filtered results
+  const topScores = new Float32Array(filtered.length);
+  for (let i = 0; i < filtered.length; i++) {
+    topScores[i] = scores[filtered[i]];
+  }
+
+  // Compute attention weights (softmax over top-k)
+  const weights = softmaxAttention(topScores, temperature);
+
+  return { indices: filtered, scores: topScores, weights };
+}
 
 // ============================================================================
 // METADATA AND INITIALIZATION
@@ -942,6 +958,11 @@ INSERT OR IGNORE INTO vector_indexes (id, name, dimensions) VALUES
  */
 export interface MemoryInitResult {
   success: boolean;
+  /**
+   * #1791.6 — set when an existing database was found and `force` was not
+   * passed. The call is treated as a successful no-op rather than an error.
+   */
+  alreadyExists?: boolean;
   backend: string;
   dbPath: string;
   schemaVersion: string;
@@ -979,16 +1000,21 @@ export async function ensureSchemaColumns(dbPath: string): Promise<{
       return { success: true, columnsAdded: [] };
     }
 
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
+    // #bug31: once we've verified the schema for a given path in
+    // this process, never reopen the DB just to confirm. Hot-path
+    // memory_store / memory_search no longer pay this 80–150 ms tax.
+    if (isSchemaVerified(dbPath)) {
+      return { success: true, columnsAdded: [] };
+    }
 
-    const fileBuffer = fs.readFileSync(dbPath);
-    const db = new SQL.Database(fileBuffer);
+    // Use the pooled handle — first call cold-loads, subsequent
+    // calls (in this process) hit the in-memory cache.
+    const { db } = await getPooledDB(dbPath);
 
     // Get current columns in memory_entries
     const tableInfo = db.exec("PRAGMA table_info(memory_entries)");
     const existingColumns = new Set(
-      tableInfo[0]?.values?.map(row => row[1] as string) || []
+      tableInfo[0]?.values?.map((row: unknown[]) => row[1] as string) || []
     );
 
     // Required columns that may be missing in older schemas
@@ -1022,12 +1048,14 @@ export async function ensureSchemaColumns(dbPath: string): Promise<{
     }
 
     if (modified) {
-      // Save updated database
-      const data = db.export();
-      fs.writeFileSync(dbPath, Buffer.from(data));
+      // #bug31: persist via the pool so our cached mtime stays in
+      // sync with disk and we don't reload our own write.
+      persistPooledDB(dbPath);
     }
 
-    db.close();
+    // Mark verified — even if `modified` is false, we now know the
+    // columns are present and won't reprobe in this process.
+    markSchemaVerified(dbPath);
     return { success: true, columnsAdded };
   } catch (error) {
     return {
@@ -1188,9 +1216,16 @@ export async function initializeMemoryDatabase(options: {
     }
 
     // Check existing database
+    // #1791.6 — Idempotent re-init: if the database already exists and the
+    // caller did not pass --force, treat it as a successful no-op instead of
+    // an error. Callers (CLI, MCP tools, embeddings) can branch on
+    // `alreadyExists` if they want a different message; previous behavior
+    // surfaced an `[ERROR]` and a "Initialization failed" spinner even when
+    // the existing DB was perfectly healthy.
     if (fs.existsSync(dbPath) && !force) {
       return {
-        success: false,
+        success: true,
+        alreadyExists: true,
         backend,
         dbPath,
         schemaVersion: '3.0.0',
@@ -1202,8 +1237,7 @@ export async function initializeMemoryDatabase(options: {
           temporalDecay: false,
           hnswIndexing: false,
           migrationTracking: false
-        },
-        error: 'Database already exists. Use --force to reinitialize.'
+        }
       };
     }
 
@@ -1240,10 +1274,13 @@ export async function initializeMemoryDatabase(options: {
       // Save to file
       const data = db.export();
       const buffer = Buffer.from(data);
-      fs.writeFileSync(dbPath, buffer);
+      writeFileRestricted(dbPath, buffer, { encrypt: true });
 
       // Close database
       db.close();
+      // #bug31: drop any stale pooled handle for this path so the
+      // freshly-initialized DB is reloaded on next memory_* call.
+      invalidatePool(dbPath);
 
       // Also create schema file for reference
       const schemaPath = path.join(dbDir, 'schema.sql');
@@ -1311,7 +1348,7 @@ export async function initializeMemoryDatabase(options: {
       sqliteHeader[26] = 0x20; // min embedded payload
       sqliteHeader[27] = 0x20; // leaf payload
 
-      fs.writeFileSync(dbPath, sqliteHeader);
+      writeFileRestricted(dbPath, sqliteHeader, { encrypt: true });
 
       // ADR-053: Activate ControllerRegistry even on fallback path
       const controllerResult = await activateControllerRegistry(dbPath, verbose);
@@ -1467,6 +1504,9 @@ export async function applyTemporalDecay(dbPath?: string): Promise<{
     const data = db.export();
     fs.writeFileSync(path_, Buffer.from(data));
     db.close();
+    // #bug31: this code path writes outside the pool — invalidate so
+    // pool reloads with the decay updates on the next memory_* call.
+    invalidatePool(path_);
 
     return {
       success: true,
@@ -1490,93 +1530,9 @@ interface EmbeddingModel {
   model: unknown;
   tokenizer: unknown;
   dimensions: number;
-  modelName: string;
-  modelPath?: string;
 }
 
 let embeddingModelState: EmbeddingModel | null = null;
-
-interface EmbeddingRuntimeOptions {
-  modelName: string;
-  modelPath?: string;
-  dimensions: number;
-}
-
-function normalizeEmbeddingModelName(model?: string): string {
-  const value = model?.trim() || 'Xenova/all-MiniLM-L6-v2';
-  return value.includes('/') ? value : `Xenova/${value}`;
-}
-
-function inferEmbeddingDimensions(modelName: string, configured?: unknown): number {
-  if (typeof configured === 'number' && configured > 0) return configured;
-  return modelName.toLowerCase().includes('mpnet') ? 768 : 384;
-}
-
-/**
- * Load the embedding runtime configuration written by `embeddings init`.
- * MCP tools also write the same file, so all embedding entry points must
- * resolve model/cache options through this helper before touching ONNX.
- */
-export function resolveEmbeddingRuntimeOptions(options?: {
-  modelPath?: string;
-  modelName?: string;
-  dimensions?: number;
-}): EmbeddingRuntimeOptions {
-  let config: Record<string, unknown> = {};
-  const configPath = path.resolve(process.cwd(), '.claude-flow', 'embeddings.json');
-
-  if (fs.existsSync(configPath)) {
-    try {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
-    } catch {
-      config = {};
-    }
-  }
-
-  const rawModel = options?.modelName
-    ?? (typeof config.model === 'string' ? config.model : undefined)
-    ?? 'Xenova/all-MiniLM-L6-v2';
-  const modelName = normalizeEmbeddingModelName(rawModel);
-
-  const rawPath = options?.modelPath
-    ?? (typeof config.modelPath === 'string' ? config.modelPath : undefined)
-    ?? process.env.CLAUDE_FLOW_EMBEDDING_MODEL_PATH
-    ?? process.env.TRANSFORMERS_CACHE;
-  const modelPath = rawPath && rawPath.trim().length > 0 ? path.resolve(rawPath) : undefined;
-
-  return {
-    modelName,
-    modelPath,
-    dimensions: inferEmbeddingDimensions(modelName, options?.dimensions ?? config.dimension),
-  };
-}
-
-/** Reset the lazily loaded model after embedding configuration changes. */
-export function resetEmbeddingModelState(): void {
-  embeddingModelState = null;
-}
-
-export const _resetEmbeddingModelStateForTests = resetEmbeddingModelState;
-
-function configureTransformersEnv(mod: Record<string, unknown>, modelPath?: string): void {
-  if (!modelPath) return;
-
-  const env = mod.env as Record<string, unknown> | undefined;
-  if (!env || typeof env !== 'object') return;
-
-  env.cacheDir = modelPath;
-  env.localModelPath = modelPath;
-  env.allowLocalModels = true;
-}
-
-function getTransformersPipelineOptions(modelPath?: string): Record<string, unknown> | undefined {
-  if (!modelPath) return undefined;
-
-  return {
-    cache_dir: modelPath,
-    local_files_only: process.env.CLAUDE_FLOW_EMBEDDINGS_LOCAL_ONLY === '1',
-  };
-}
 
 /**
  * Lazy load ONNX embedding model
@@ -1584,8 +1540,6 @@ function getTransformersPipelineOptions(modelPath?: string): Record<string, unkn
  */
 export async function loadEmbeddingModel(options?: {
   modelPath?: string;
-  modelName?: string;
-  dimensions?: number;
   verbose?: boolean;
 }): Promise<{
   success: boolean;
@@ -1595,43 +1549,31 @@ export async function loadEmbeddingModel(options?: {
   error?: string;
 }> {
   const { verbose = false } = options || {};
-  const runtime = resolveEmbeddingRuntimeOptions(options);
   const startTime = Date.now();
 
   // Already loaded
-  if (
-    embeddingModelState?.loaded
-    && embeddingModelState.modelName === runtime.modelName
-    && embeddingModelState.modelPath === runtime.modelPath
-  ) {
+  if (embeddingModelState?.loaded) {
     return {
       success: true,
       dimensions: embeddingModelState.dimensions,
-      modelName: embeddingModelState.modelName,
+      modelName: 'cached',
       loadTime: 0
     };
   }
 
-  // ADR-053: Try AgentDB v3 bridge first only when the user has not
-  // initialized an explicit Transformers.js model cache. The bridge does not
-  // currently expose cache/modelPath wiring, so using it here can mask an
-  // AgentDB mock fallback as a successful real embedding provider.
-  if (!runtime.modelPath) {
-    const bridge = await getBridge();
-    if (bridge) {
-      const bridgeResult = await bridge.bridgeLoadEmbeddingModel();
-      if (bridgeResult && bridgeResult.success) {
-        // Mark local state as loaded too so subsequent calls use cache
-        embeddingModelState = {
-          loaded: true,
-          model: null, // Bridge handles embedding
-          tokenizer: null,
-          dimensions: bridgeResult.dimensions,
-          modelName: bridgeResult.modelName,
-          modelPath: runtime.modelPath,
-        };
-        return bridgeResult;
-      }
+  // ADR-053: Try AgentDB v3 bridge first
+  const bridge = await getBridge();
+  if (bridge) {
+    const bridgeResult = await bridge.bridgeLoadEmbeddingModel();
+    if (bridgeResult && bridgeResult.success) {
+      // Mark local state as loaded too so subsequent calls use cache
+      embeddingModelState = {
+        loaded: true,
+        model: null, // Bridge handles embedding
+        tokenizer: null,
+        dimensions: bridgeResult.dimensions
+      };
+      return bridgeResult;
     }
   }
 
@@ -1642,7 +1584,7 @@ export async function loadEmbeddingModel(options?: {
     // avoid a circular optional-dep at install time; the logic mirrors
     // @claude-flow/embeddings/src/transformers-loader.ts.
     let transformersSource: '@huggingface/transformers' | '@xenova/transformers' | null = null;
-    let pipelineFn: ((task: string, model?: string, options?: Record<string, unknown>) => Promise<unknown>) | null = null;
+    let pipelineFn: ((task: string, model?: string) => Promise<unknown>) | null = null;
 
     {
       const tryLoad = async (specifier: string): Promise<Record<string, unknown> | null> => {
@@ -1651,43 +1593,34 @@ export async function loadEmbeddingModel(options?: {
       };
       const hf = await tryLoad('@huggingface/transformers');
       if (hf && typeof hf.pipeline === 'function') {
-        pipelineFn = hf.pipeline as (t: string, m?: string, o?: Record<string, unknown>) => Promise<unknown>;
+        pipelineFn = hf.pipeline as (t: string, m?: string) => Promise<unknown>;
         transformersSource = '@huggingface/transformers';
-        configureTransformersEnv(hf, runtime.modelPath);
       } else {
         const xen = await tryLoad('@xenova/transformers');
         if (xen && typeof xen.pipeline === 'function') {
-          pipelineFn = xen.pipeline as (t: string, m?: string, o?: Record<string, unknown>) => Promise<unknown>;
+          pipelineFn = xen.pipeline as (t: string, m?: string) => Promise<unknown>;
           transformersSource = '@xenova/transformers';
-          configureTransformersEnv(xen, runtime.modelPath);
         }
       }
     }
 
-    if (transformers) {
+    if (pipelineFn && transformersSource) {
       if (verbose) {
-        const pathHint = runtime.modelPath ? ` from ${runtime.modelPath}` : '';
-        console.log(`Loading ONNX embedding model via ${transformersSource} (${runtime.modelName})${pathHint}...`);
+        console.log(`Loading ONNX embedding model via ${transformersSource} (all-MiniLM-L6-v2)...`);
       }
-      const embedder = await pipelineFn(
-        'feature-extraction',
-        runtime.modelName,
-        getTransformersPipelineOptions(runtime.modelPath),
-      );
+      const embedder = await pipelineFn('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
 
       embeddingModelState = {
         loaded: true,
         model: embedder,
         tokenizer: null,
-        dimensions: runtime.dimensions,
-        modelName: runtime.modelName,
-        modelPath: runtime.modelPath,
+        dimensions: 384 // MiniLM-L6 produces 384-dim vectors
       };
 
       return {
         success: true,
-        dimensions: runtime.dimensions,
-        modelName: runtime.modelName,
+        dimensions: 384,
+        modelName: 'Xenova/all-MiniLM-L6-v2',
         loadTime: Date.now() - startTime
       };
     }
@@ -1704,9 +1637,7 @@ export async function loadEmbeddingModel(options?: {
         loaded: true,
         model: { embed: reasoningBank.computeEmbedding },
         tokenizer: null,
-        dimensions: 768,
-        modelName: 'agentic-flow/reasoningbank',
-        modelPath: runtime.modelPath,
+        dimensions: 768
       };
 
       return {
@@ -1740,9 +1671,7 @@ export async function loadEmbeddingModel(options?: {
               loaded: true,
               model: (text: string) => onnxEmb.embed(text),
               tokenizer: null,
-              dimensions: probe.length || 384,
-              modelName: 'ruvector/onnx',
-              modelPath: runtime.modelPath,
+              dimensions: probe.length || 384
             };
             return {
               success: true,
@@ -1769,9 +1698,7 @@ export async function loadEmbeddingModel(options?: {
         loaded: true,
         model: (agenticFlow as any).embeddings,
         tokenizer: null,
-        dimensions: 768,
-        modelName: 'agentic-flow',
-        modelPath: runtime.modelPath,
+        dimensions: 768
       };
 
       return {
@@ -1787,9 +1714,7 @@ export async function loadEmbeddingModel(options?: {
       loaded: true,
       model: null, // Will use simple hash-based fallback
       tokenizer: null,
-      dimensions: 128, // Smaller fallback dimensions
-      modelName: 'hash-fallback',
-      modelPath: runtime.modelPath,
+      dimensions: 128 // Smaller fallback dimensions
     };
 
     return {
@@ -1817,29 +1742,16 @@ export async function generateEmbedding(text: string): Promise<{
   dimensions: number;
   model: string;
 }> {
-  const runtime = resolveEmbeddingRuntimeOptions();
-
-  // ADR-053: Try AgentDB v3 bridge first only when no explicit local model
-  // cache is configured; see the matching guard in loadEmbeddingModel().
-  if (!runtime.modelPath) {
-    const bridge = await getBridge();
-    if (bridge) {
-      const bridgeResult = await bridge.bridgeGenerateEmbedding(text);
-      if (bridgeResult) return bridgeResult;
-    }
+  // ADR-053: Try AgentDB v3 bridge first
+  const bridge = await getBridge();
+  if (bridge) {
+    const bridgeResult = await bridge.bridgeGenerateEmbedding(text);
+    if (bridgeResult) return bridgeResult;
   }
 
   // Ensure model is loaded
-  if (
-    !embeddingModelState?.loaded
-    || embeddingModelState.modelName !== runtime.modelName
-    || embeddingModelState.modelPath !== runtime.modelPath
-  ) {
-    await loadEmbeddingModel({
-      modelName: runtime.modelName,
-      modelPath: runtime.modelPath,
-      dimensions: runtime.dimensions,
-    });
+  if (!embeddingModelState?.loaded) {
+    await loadEmbeddingModel();
   }
 
   const state = embeddingModelState!;
@@ -1856,25 +1768,7 @@ export async function generateEmbedding(text: string): Promise<{
         return {
           embedding,
           dimensions: embedding.length,
-          model: state.modelName
-        };
-      }
-    } catch {
-      // Fall through to fallback
-    }
-  }
-
-  if (state.model && typeof (state.model as any).embed === 'function') {
-    try {
-      const output = await (state.model as any).embed(text);
-      const embedding = Array.isArray(output)
-        ? output
-        : output instanceof Float32Array ? Array.from(output) : null;
-      if (embedding) {
-        return {
-          embedding,
-          dimensions: embedding.length,
-          model: state.modelName,
+          model: 'onnx'
         };
       }
     } catch {
@@ -1887,7 +1781,7 @@ export async function generateEmbedding(text: string): Promise<{
   return {
     embedding,
     dimensions: state.dimensions,
-    model: state.modelName
+    model: 'hash-fallback'
   };
 }
 
@@ -2016,7 +1910,7 @@ export async function verifyMemoryInit(dbPath: string, options?: {
     const fs = await import('fs');
 
     // Load database
-    const fileBuffer = fs.readFileSync(dbPath);
+    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
     const db = new SQL.Database(fileBuffer);
 
     // Test 1: Schema verification
@@ -2161,8 +2055,10 @@ export async function verifyMemoryInit(dbPath: string, options?: {
 
     // Save changes
     const data = db.export();
-    fs.writeFileSync(dbPath, Buffer.from(data));
+    writeFileRestricted(dbPath, Buffer.from(data), { encrypt: true });
     db.close();
+    // #bug31: write outside pool — invalidate to avoid stale handle.
+    invalidatePool(dbPath);
 
     const passed = tests.filter(t => t.passed).length;
     const failed = tests.filter(t => !t.passed).length;
@@ -2223,31 +2119,8 @@ export async function storeEntry(options: {
           content: options.value,
         }).catch(() => {});
       }
-      if (!bridgeResult.success) {
-        return bridgeResult;
-      }
-      if (await rawMemoryEntryExists(options)) {
-        return bridgeResult;
-      }
-
-      // The AgentDB bridge can report success after writing only to an
-      // in-process/cache-backed controller. Verify the configured SQLite store
-      // before accepting success; otherwise write through to the durable DB.
-      const durableResult = await storeEntryWithBetterSqlite(options);
-      if (durableResult.success) {
-        return durableResult;
-      }
-      return {
-        success: false,
-        id: bridgeResult.id || '',
-        error: `Bridge reported success but durable SQLite verification failed: ${durableResult.error || 'unknown error'}`
-      };
+      return bridgeResult;
     }
-  }
-
-  const betterSqliteResult = await storeEntryWithBetterSqlite(options);
-  if (betterSqliteResult.success) {
-    return betterSqliteResult;
   }
 
   // Fallback: raw sql.js
@@ -2273,11 +2146,10 @@ export async function storeEntry(options: {
     // Ensure schema has all required columns (migration for older DBs)
     await ensureSchemaColumns(dbPath);
 
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-
-    const fileBuffer = fs.readFileSync(dbPath);
-    const db = new SQL.Database(fileBuffer);
+    // #bug31: pooled handle — first call cold-loads (~440 ms),
+    // subsequent calls in this process hit the in-memory cache (~10 ms).
+    const { db, source } = await getPooledDB(dbPath);
+    const _routedThrough: RouteSource = source;
 
     const id = `entry_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const now = Date.now();
@@ -2322,10 +2194,10 @@ export async function storeEntry(options: {
       ttl ? now + (ttl * 1000) : null
     ]);
 
-    // Save
-    const data = db.export();
-    fs.writeFileSync(dbPath, Buffer.from(data));
-    db.close();
+    // #bug31: persist via the pool — keeps the cached handle alive
+    // and refreshes our observed mtime so the next read in this
+    // process doesn't false-positive on the bump we just caused.
+    persistPooledDB(dbPath);
 
     // Add to HNSW index for faster future searches
     if (embeddingJson) {
@@ -2341,8 +2213,11 @@ export async function storeEntry(options: {
     return {
       success: true,
       id,
-      embedding: embeddingJson ? { dimensions: embeddingDimensions!, model: embeddingModel! } : undefined
-    };
+      embedding: embeddingJson ? { dimensions: embeddingDimensions!, model: embeddingModel! } : undefined,
+      // #bug31: surface which path served the request so benchmarks
+      // and tool callers can verify the pool is being hit.
+      _routedThrough
+    } as any;
   } catch (error) {
     return {
       success: false,
@@ -2412,11 +2287,8 @@ export async function searchEntries(options: {
       const { searchRabitq } = await import('./rabitq-index.js');
       const rabitqCandidates = await searchRabitq(queryEmbedding, { k: limit * 2, namespace: effectiveNamespace });
       if (rabitqCandidates && rabitqCandidates.length > 0) {
-        // Rerank candidates with exact cosine similarity from SQLite
-        const initSqlJs = (await import('sql.js')).default;
-        const SQL = await initSqlJs();
-        const fileBuffer = fs.readFileSync(dbPath);
-        const db = new SQL.Database(fileBuffer);
+        // #bug31: pooled handle (read-only rerank — no persist needed).
+        const { db } = await getPooledDB(dbPath);
         const reranked: { id: string; key: string; content: string; score: number; namespace: string }[] = [];
 
         for (const candidate of rabitqCandidates) {
@@ -2443,7 +2315,6 @@ export async function searchEntries(options: {
           }
           stmt.free();
         }
-        db.close();
 
         if (reranked.length > 0) {
           reranked.sort((a, b) => b.score - a.score);
@@ -2465,11 +2336,9 @@ export async function searchEntries(options: {
     }
 
     // Fall back to brute-force SQLite search
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-
-    const fileBuffer = fs.readFileSync(dbPath);
-    const db = new SQL.Database(fileBuffer);
+    // #bug31: pooled handle (read-only — no persist).
+    const { db, source } = await getPooledDB(dbPath);
+    const _bruteRoute: RouteSource = source;
 
     // Get entries with embeddings
     const searchStmt = db.prepare(
@@ -2526,7 +2395,7 @@ export async function searchEntries(options: {
       }
     }
 
-    db.close();
+    // #bug31: do NOT close — handle is shared via the pool.
 
     // Sort by score
     results.sort((a, b) => b.score - a.score);
@@ -2534,8 +2403,10 @@ export async function searchEntries(options: {
     return {
       success: true,
       results: results.slice(0, limit),
-      searchTime: Date.now() - startTime
-    };
+      searchTime: Date.now() - startTime,
+      // #bug31: surface route — caller / benchmark can verify cache hit.
+      _routedThrough: _bruteRoute
+    } as any;
   } catch (error) {
     return {
       success: false,
@@ -2584,7 +2455,6 @@ export async function listEntries(options: {
     id: string;
     key: string;
     namespace: string;
-    value: string;
     size: number;
     accessCount: number;
     createdAt: string;
@@ -2620,11 +2490,8 @@ export async function listEntries(options: {
     // Ensure schema has all required columns (migration for older DBs)
     await ensureSchemaColumns(dbPath);
 
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-
-    const fileBuffer = fs.readFileSync(dbPath);
-    const db = new SQL.Database(fileBuffer);
+    // #bug31: pooled handle (read-only listing — no persist).
+    const { db } = await getPooledDB(dbPath);
 
     // Get total count
     const countStmt = namespace
@@ -2662,7 +2529,6 @@ export async function listEntries(options: {
       id: string;
       key: string;
       namespace: string;
-      value: string;
       size: number;
       accessCount: number;
       createdAt: string;
@@ -2679,7 +2545,6 @@ export async function listEntries(options: {
           id: String(id).substring(0, 20),
           key: key || String(id).substring(0, 15),
           namespace: ns || 'default',
-          value: content ?? '',
           size: (content || '').length,
           accessCount: accessCount || 0,
           createdAt: createdAt || new Date().toISOString(),
@@ -2689,7 +2554,7 @@ export async function listEntries(options: {
       }
     }
 
-    db.close();
+    // #bug31: do NOT close — handle stays in the pool for reuse.
 
     return { success: true, entries, total };
   } catch (error) {
@@ -2750,11 +2615,8 @@ export async function getEntry(options: {
     // Ensure schema has all required columns (migration for older DBs)
     await ensureSchemaColumns(dbPath);
 
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-
-    const fileBuffer = fs.readFileSync(dbPath);
-    const db = new SQL.Database(fileBuffer);
+    // #bug31: pooled handle — read + atomic update of access_count.
+    const { db } = await getPooledDB(dbPath);
 
     // Find entry by key
     const getStmt = db.prepare(`
@@ -2774,7 +2636,7 @@ export async function getEntry(options: {
     const result = getRows.length > 0 ? [{ values: getRows }] : [];
 
     if (!result[0]?.values?.[0]) {
-      db.close();
+      // #bug31: do NOT close — pooled handle is shared.
       return { success: true, found: false };
     }
 
@@ -2789,11 +2651,8 @@ export async function getEntry(options: {
       WHERE id = ?
     `, [String(id)]);
 
-    // Save updated database
-    const data = db.export();
-    fs.writeFileSync(dbPath, Buffer.from(data));
-
-    db.close();
+    // #bug31: persist via the pool — keeps cached mtime in sync.
+    persistPooledDB(dbPath);
 
     let tags: string[] = [];
     if (tagsJson) {
@@ -2891,11 +2750,8 @@ export async function deleteEntry(options: {
     // Ensure schema has all required columns (migration for older DBs)
     await ensureSchemaColumns(dbPath);
 
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-
-    const fileBuffer = fs.readFileSync(dbPath);
-    const db = new SQL.Database(fileBuffer);
+    // #bug31: pooled handle — soft-delete + count + persist.
+    const { db } = await getPooledDB(dbPath);
 
     // Check if entry exists first
     const checkStmt = db.prepare(`
@@ -2914,10 +2770,9 @@ export async function deleteEntry(options: {
     const checkResult = checkRows.length > 0 ? [{ values: checkRows }] : [];
 
     if (!checkResult[0]?.values?.[0]) {
-      // Get remaining count before closing
       const countResult = db.exec(`SELECT COUNT(*) FROM memory_entries WHERE status = 'active'`);
       const remainingEntries = countResult[0]?.values?.[0]?.[0] as number || 0;
-      db.close();
+      // #bug31: do NOT close — pooled handle is shared.
       return {
         success: true,
         deleted: false,
@@ -2947,11 +2802,8 @@ export async function deleteEntry(options: {
     const countResult = db.exec(`SELECT COUNT(*) FROM memory_entries WHERE status = 'active'`);
     const remainingEntries = countResult[0]?.values?.[0]?.[0] as number || 0;
 
-    // Save updated database
-    const data = db.export();
-    fs.writeFileSync(dbPath, Buffer.from(data));
-
-    db.close();
+    // #bug31: persist via the pool (refreshes cached mtime).
+    persistPooledDB(dbPath);
 
     // Clean up in-memory HNSW index so ghost vectors don't appear in searches.
     // Remove the entry from the HNSW entries map and invalidate the index.

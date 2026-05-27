@@ -420,7 +420,11 @@ export const daaTools: MCPTool[] = [
 
       const agents = Object.values(store.agents);
 
-      return {
+      // #bug21 — daa_learning_status returned all-zeros without explaining
+      // whether DAA was idle vs broken. Mirror the Bug 11.3 idle-since-load
+      // pattern: the store loaded (we got past loadDAAStore()), so empty
+      // means "ready, no agents created yet".
+      const result: Record<string, unknown> = {
         success: true,
         summary: {
           total: agents.length,
@@ -438,6 +442,11 @@ export const daaTools: MCPTool[] = [
           adaptations: a.metrics.adaptations,
         })),
       };
+      if (agents.length === 0) {
+        result._status = 'idle';
+        result._note = 'DAA learning subsystem loaded; no agents registered yet. Use mcp__claude-flow__daa_agent_create to spawn an agent and start collecting learning telemetry.';
+      }
+      return result;
     },
   },
   {
@@ -552,14 +561,31 @@ export const daaTools: MCPTool[] = [
         },
       };
 
+      // #bug21 — daa_performance_metrics returned all-zero counters across
+      // agents/workflows/learning without explaining whether DAA was idle
+      // vs broken. Mirror the Bug 11.3 idle-since-load pattern: store
+      // loaded successfully (we got past loadDAAStore()), so all-zero is
+      // a "ready, awaiting first invocation" state, not a fault.
+      const isIdle =
+        agents.length === 0 &&
+        workflows.length === 0 &&
+        Object.keys(store.knowledge).length === 0;
+      const idleAnnotation: Record<string, string> = isIdle
+        ? {
+            _status: 'idle',
+            _note: 'DAA performance subsystem loaded; no agents/workflows/knowledge recorded yet. Use mcp__claude-flow__daa_agent_create or mcp__claude-flow__daa_workflow_create to populate metrics.',
+          }
+        : {};
+
       if (category === 'all') {
-        return { success: true, metrics };
+        return { success: true, metrics, ...idleAnnotation };
       }
 
       return {
         success: true,
         category,
         metrics: metrics[category as keyof typeof metrics],
+        ...idleAnnotation,
       };
     },
   },

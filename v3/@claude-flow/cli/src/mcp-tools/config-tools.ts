@@ -246,36 +246,46 @@ export const configTools: MCPTool[] = [
       const prefix = input.prefix as string;
       const includeDefaults = input.includeDefaults !== false;
 
-      // Merge stored values with defaults
-      let configs: Record<string, unknown> = {};
+      // ADR-093 F12: enumerate the full configuration union (defaults +
+      // stored values + scope-specific) so config_list matches config_export.
+      // The previous implementation built a flat record where stored values
+      // shadowed defaults silently, and scope keys only appeared when the
+      // caller passed a non-default scope — which made config_list
+      // systematically incomplete.
+
+      // Track the precedence so we can label sources accurately.
+      type Source = 'default' | 'stored' | `scope:${string}`;
+      const merged = new Map<string, { value: unknown; source: Source }>();
 
       if (includeDefaults) {
-        configs = { ...DEFAULT_CONFIG };
+        for (const [key, value] of Object.entries(DEFAULT_CONFIG)) {
+          merged.set(key, { value, source: 'default' });
+        }
+      }
+      for (const [key, value] of Object.entries(store.values)) {
+        merged.set(key, { value, source: 'stored' });
+      }
+      // Always include keys from every scope so they're discoverable; the
+      // scope filter only narrows which set is used as the *winner*.
+      for (const [scopeName, scopeValues] of Object.entries(store.scopes)) {
+        for (const [key, value] of Object.entries(scopeValues)) {
+          if (scope === scopeName || scope === 'default') {
+            merged.set(key, { value, source: `scope:${scopeName}` });
+          } else if (!merged.has(key)) {
+            // Surface scoped keys that aren't shadowed when listing default scope
+            merged.set(key, { value, source: `scope:${scopeName}` });
+          }
+        }
       }
 
-      // Add stored values
-      Object.assign(configs, store.values);
-
-      // Add scope-specific values
-      if (scope !== 'default' && store.scopes[scope]) {
-        Object.assign(configs, store.scopes[scope]);
-      }
-
-      // Filter by prefix
-      let entries = Object.entries(configs);
+      let entries = Array.from(merged.entries());
       if (prefix) {
         entries = entries.filter(([key]) => key.startsWith(prefix));
       }
-
-      // Sort by key
       entries.sort(([a], [b]) => a.localeCompare(b));
 
       return {
-        configs: entries.map(([key, value]) => ({
-          key,
-          value,
-          source: store.values[key] !== undefined ? 'stored' : 'default',
-        })),
+        configs: entries.map(([key, { value, source }]) => ({ key, value, source })),
         total: entries.length,
         scope,
         updatedAt: store.updatedAt,

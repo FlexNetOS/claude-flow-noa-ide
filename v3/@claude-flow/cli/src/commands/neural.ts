@@ -1717,14 +1717,19 @@ const benchmarkCommand: Command = {
       spinner.start();
       spinner.setText('Benchmarking MicroLoRA adaptation...');
 
-      // Load WASM file directly (Node.js compatible)
+      // Load WASM file directly (Node.js compatible).
+      // @ruvector/learning-wasm is an optionalDependency — if the package is
+      // not installed, the surrounding try/catch (see end of action) handles
+      // the failure and reports it to the user.
       const fs = await import('fs');
       const { createRequire } = await import('module');
       const require = createRequire(import.meta.url);
       const wasmPath = require.resolve('@ruvector/learning-wasm/ruvector_learning_wasm_bg.wasm');
       const wasmBuffer = fs.readFileSync(wasmPath);
 
-      const learningWasm = await import('@ruvector/learning-wasm');
+      // Indirect module name keeps TS from trying to resolve at compile time.
+      const learningWasmModule = '@ruvector/learning-wasm';
+      const learningWasm: any = await import(/* @vite-ignore */ learningWasmModule);
       learningWasm.initSync({ module: wasmBuffer });
 
       const lora = new learningWasm.WasmMicroLoRA(dim, 0.1, 0.01);

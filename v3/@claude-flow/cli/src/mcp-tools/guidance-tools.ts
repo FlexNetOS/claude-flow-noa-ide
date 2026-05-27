@@ -12,6 +12,7 @@ import { validateIdentifier, validateText } from './validate-input.js';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scanClaudeCodeRegistry } from '../registry/claude-code-registry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -368,7 +369,9 @@ function discoverSkills(): string[] {
 
 // ── MCP Tool Definitions ────────────────────────────────────
 
-const guidanceCapabilities: MCPTool = {
+// #bug39 — exported by name so the regression test can call the handler
+// directly without going through the MCP dispatch layer.
+export const guidanceCapabilities: MCPTool = {
   name: 'guidance_capabilities',
   description: 'List all capability areas with their tools, commands, agents, and skills. Use this to discover what Ruflo can do.',
   inputSchema: {
@@ -391,20 +394,46 @@ const guidanceCapabilities: MCPTool = {
 
     if (area) { const v = validateIdentifier(area, 'area'); if (!v.valid) return { content: [{ type: 'text', text: JSON.stringify({ error: v.error }, null, 2) }], isError: true }; }
 
+    // #bug22.2 — surface user-installed agents/skills/commands as a first-class
+    // capability area so guidance_capabilities is not blind to ~/.claude/.
+    const userArea = await buildUserInstalledArea();
+    // #bug39 — surface foreign MCP servers (plugin + claude.ai) so the
+    // router can suggest e.g. `mcp__plugin_mongodb_mongodb__find` for a
+    // "search MongoDB" task instead of falling back to a generic agent.
+    const foreignMcpArea = await buildForeignMcpArea();
+
     if (area) {
+      if (area === 'user-installed') {
+        return { content: [{ type: 'text', text: JSON.stringify(userArea.detailed, null, 2) }] };
+      }
+      if (area === 'foreign-mcp-servers') {
+        return { content: [{ type: 'text', text: JSON.stringify(foreignMcpArea.detailed, null, 2) }] };
+      }
       const cap = CAPABILITY_CATALOG[area];
       if (!cap) {
-        const available = Object.keys(CAPABILITY_CATALOG).join(', ');
+        const available = [...Object.keys(CAPABILITY_CATALOG), 'user-installed', 'foreign-mcp-servers'].join(', ');
         return { content: [{ type: 'text', text: JSON.stringify({ error: `Unknown area: ${area}`, available }, null, 2) }], isError: true };
       }
       return { content: [{ type: 'text', text: JSON.stringify(cap, null, 2) }] };
     }
 
     if (format === 'detailed') {
-      return { content: [{ type: 'text', text: JSON.stringify(CAPABILITY_CATALOG, null, 2) }] };
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            ...CAPABILITY_CATALOG,
+            'user-installed': userArea.detailed,
+            'foreign-mcp-servers': foreignMcpArea.detailed,
+          }, null, 2),
+        }],
+      };
     }
 
-    const summary = Object.entries(CAPABILITY_CATALOG).map(([key, val]) => ({
+    // #bug39 — `summary` mixes built-in/user (no serverCount) and foreign-mcp
+    // (has serverCount + serverNames). Widen the element type so the foreign
+    // entry can be pushed without TS rejecting the extra fields.
+    const summary: Array<Record<string, unknown>> = Object.entries(CAPABILITY_CATALOG).map(([key, val]) => ({
       area: key,
       name: val.name,
       description: val.description,
@@ -413,10 +442,117 @@ const guidanceCapabilities: MCPTool = {
       skillCount: val.skills.length,
       whenToUse: val.whenToUse,
     }));
+    summary.push(userArea.summary);
+    summary.push(foreignMcpArea.summary);
 
     return { content: [{ type: 'text', text: JSON.stringify({ areas: summary, totalAreas: summary.length }, null, 2) }] };
   },
 };
+
+// #bug22.2 — Build the synthetic "user-installed" capability area from the
+// filesystem registry. Returns BOTH the summary (for the list view) and the
+// detailed shape (for `area: 'user-installed'`). Failures during scanning
+// degrade to an empty area rather than throwing — this MUST never break
+// the rest of guidance_capabilities.
+async function buildUserInstalledArea(): Promise<{
+  summary: { area: string; name: string; description: string; toolCount: number; agentCount: number; skillCount: number; whenToUse: string };
+  detailed: CapabilityArea & { commands: string[]; plugins: string[] };
+}> {
+  let registry: { agents: { name: string }[]; skills: { name: string }[]; commands: { name: string }[]; plugins: { name: string }[] };
+  try {
+    registry = await scanClaudeCodeRegistry();
+  } catch {
+    registry = { agents: [], skills: [], commands: [], plugins: [] };
+  }
+
+  const agentNames = registry.agents.map(a => a.name).sort();
+  const skillNames = registry.skills.map(s => s.name).sort();
+  const commandNames = registry.commands.map(c => c.name).sort();
+  const pluginNames = registry.plugins.map(p => p.name).sort();
+
+  return {
+    summary: {
+      area: 'user-installed',
+      name: 'User-Installed (Claude Code)',
+      description: `Agents/skills/commands/plugins discovered on disk under ~/.claude/. Loaded dynamically — counts are accurate as of this scan (cached 60s).`,
+      toolCount: 0,
+      agentCount: agentNames.length,
+      skillCount: skillNames.length,
+      whenToUse: 'When the task matches a user-installed skill domain (polymarket, geo-audit, kali-osint, ceo, polybot-ops, etc.) — these are not in the built-in catalog but are first-class on the user\'s machine.',
+    },
+    detailed: {
+      name: 'User-Installed (Claude Code)',
+      description: `Agents/skills/commands/plugins discovered on disk under ~/.claude/. ${agentNames.length} agents, ${skillNames.length} skills, ${commandNames.length} commands, ${pluginNames.length} plugins.`,
+      tools: [],
+      commands: commandNames,
+      agents: agentNames,
+      skills: skillNames,
+      plugins: pluginNames,
+      whenToUse: 'When the task matches a user-installed skill domain (polymarket, geo-audit, kali-osint, ceo, polybot-ops, etc.).',
+    },
+  };
+}
+
+/**
+ * #bug39 — Build the synthetic "foreign-mcp-servers" capability area from
+ * the registry's MCP scan. These are NOT ruflo tools — they're third-party
+ * MCP servers (plugin-bundled or claude.ai integrations) that the LLM can
+ * call directly via their `mcp__<server>__*` tool prefix. Surfacing them
+ * here closes the routing-blindspot from the integration audit (mongodb,
+ * pinecone, context7, chrome-devtools, Notion, Gmail, Drive, etc. were
+ * previously invisible to ruflo's discovery surface).
+ *
+ * `source: 'user'` entries (ruflo / claude-flow / flow-nexus / ruv-swarm)
+ * are EXCLUDED — those are already first-class via the built-in catalog.
+ *
+ * Failures during the scan degrade to an empty area rather than throwing.
+ */
+async function buildForeignMcpArea(): Promise<{
+  summary: { area: string; name: string; description: string; toolCount: number; agentCount: number; skillCount: number; serverCount: number; serverNames: string[]; whenToUse: string };
+  detailed: CapabilityArea & { serverCount: number; serverNames: string[]; servers: Array<{ name: string; source: string; command?: string }> };
+}> {
+  let registry: { foreignMcpServers?: Array<{ name: string; source: string; command?: string }> };
+  try {
+    registry = await scanClaudeCodeRegistry();
+  } catch {
+    registry = { foreignMcpServers: [] };
+  }
+
+  // Drop our own servers — only `plugin` and `claude-ai` are "foreign"
+  // for the purposes of the discovery surface.
+  const foreign = (registry.foreignMcpServers ?? []).filter(s => s.source !== 'user');
+
+  // Cap the inline summary list at 20 names — long lists make the
+  // `summary` view unreadable. The full list lives in `detailed`.
+  const serverNames = foreign.map(s => s.name).sort();
+  const previewNames = serverNames.slice(0, 20);
+
+  return {
+    summary: {
+      area: 'foreign-mcp-servers',
+      name: 'Foreign MCP Servers',
+      description: 'MCP servers from Claude Code config (plugins, claude.ai integrations) — not ruflo-managed but accessible via mcp__<server>__* tools.',
+      toolCount: 0,
+      agentCount: 0,
+      skillCount: 0,
+      serverCount: foreign.length,
+      serverNames: previewNames,
+      whenToUse: 'When the task matches a non-ruflo MCP server (e.g., "search MongoDB" → mongodb server, "look up React docs" → context7).',
+    },
+    detailed: {
+      name: 'Foreign MCP Servers',
+      description: `${foreign.length} foreign MCP servers discovered across .mcp.json files. Call their tools via the mcp__<server>__<tool> prefix.`,
+      tools: [],
+      commands: [],
+      agents: [],
+      skills: [],
+      whenToUse: 'When the task matches a non-ruflo MCP server (mongodb, pinecone, context7, chrome-devtools, playwright, microsoft-learn, Notion, Gmail, Drive, Calendar, Canva, HuggingFace, etc.).',
+      serverCount: foreign.length,
+      serverNames,
+      servers: foreign.map(s => ({ name: s.name, source: s.source, command: s.command })),
+    },
+  };
+}
 
 const guidanceRecommend: MCPTool = {
   name: 'guidance_recommend',

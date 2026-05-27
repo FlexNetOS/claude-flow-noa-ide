@@ -193,3 +193,57 @@ export * from './resilience/index.js';
 // Services
 // =============================================================================
 export * from './services/index.js';
+
+// =============================================================================
+// Install Context — single source of truth for SwarmOps install paths
+// =============================================================================
+export {
+  resolveInstallContext,
+} from './install-context.js';
+export type {
+  InstallContext,
+  ResolveInstallContextOptions,
+} from './install-context.js';
+
+// =============================================================================
+// Swallow Error — standard recipient for absorbed-error catch blocks
+// =============================================================================
+export { swallowError } from './swallow-error.js';
+
+// =============================================================================
+// Controller Capabilities — typed view over ControllerRegistry
+// =============================================================================
+export {
+  getControllerCapabilities,
+} from './types/controller-capabilities.js';
+export type {
+  ControllerCapabilities,
+  ControllerRegistryLike,
+  ReasoningBankController,
+  ReasoningBankPatternInput,
+  ReasoningBankSearchOptsLegacy,
+  ReasoningBankSearchOptsAgentDB,
+  ReasoningBankOutcome,
+  LearningSystemController,
+  LearningFeedbackInput,
+  SkillsController,
+  SemanticRouterController,
+  AttestationLogController,
+  AttestationRecord,
+  GuardedVectorController,
+  CacheController,
+  CacheStats,
+  MutationGuardController,
+  MutationGuardInput,
+  MutationGuardResult,
+  HierarchicalMemoryController,
+  HierarchicalMemoryRecallQuery,
+  ReflexionMemoryController,
+  ReflexionStartInput,
+  ReflexionEndInput,
+  CausalGraphController,
+  MemoryConsolidationController,
+  NightlyLearnerController,
+  BatchOperationsController,
+  ContextSynthesizerController,
+} from './types/controller-capabilities.js';

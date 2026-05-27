@@ -260,26 +260,74 @@
   "hotPaths": [
     {
       "path": "",
-      "accessCount": 24,
-      "lastAccessed": 1779910966404,
+      "accessCount": 42,
+      "lastAccessed": 1779918111642,
       "type": "directory"
     },
     {
+      "path": "v3/@claude-flow/memory/src/cache-manager.ts",
+      "accessCount": 13,
+      "lastAccessed": 1779917816676,
+      "type": "file"
+    },
+    {
       "path": "v3/@claude-flow/cli/src",
-      "accessCount": 10,
-      "lastAccessed": 1779908839588,
+      "accessCount": 12,
+      "lastAccessed": 1779917821361,
+      "type": "directory"
+    },
+    {
+      "path": "v3/@claude-flow/memory/src",
+      "accessCount": 11,
+      "lastAccessed": 1779916702466,
       "type": "directory"
     },
     {
       "path": "tests/rvf-backend.test.ts",
-      "accessCount": 4,
-      "lastAccessed": 1779908075434,
+      "accessCount": 9,
+      "lastAccessed": 1779918102353,
       "type": "file"
     },
     {
+      "path": "tests/rvf-capability-verify.test.ts",
+      "accessCount": 6,
+      "lastAccessed": 1779918117553,
+      "type": "file"
+    },
+    {
+      "path": "tests",
+      "accessCount": 5,
+      "lastAccessed": 1779918113135,
+      "type": "directory"
+    },
+    {
+      "path": "v3/@claude-flow/memory/src/auto-memory-bridge.ts",
+      "accessCount": 4,
+      "lastAccessed": 1779912239395,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow",
+      "accessCount": 4,
+      "lastAccessed": 1779912308894,
+      "type": "directory"
+    },
+    {
       "path": "v3/@claude-flow/cli/src/services/worker-daemon.ts",
-      "accessCount": 3,
-      "lastAccessed": 1779908832235,
+      "accessCount": 4,
+      "lastAccessed": 1779914502968,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/database/rvf.ts",
+      "accessCount": 4,
+      "lastAccessed": 1779914504554,
+      "type": "file"
+    },
+    {
+      "path": "tests/rvf-learning-store.test.ts",
+      "accessCount": 4,
+      "lastAccessed": 1779918105911,
       "type": "file"
     },
     {
@@ -295,15 +343,21 @@
       "type": "file"
     },
     {
-      "path": "tests/rvf-capability-verify.test.ts",
-      "accessCount": 2,
-      "lastAccessed": 1779908076159,
-      "type": "file"
+      "path": "v3/goal_ui/src",
+      "accessCount": 3,
+      "lastAccessed": 1779912249262,
+      "type": "directory"
     },
     {
       "path": "v3/@claude-flow/cli/src/services/worker-queue.ts",
-      "accessCount": 2,
-      "lastAccessed": 1779909902717,
+      "accessCount": 3,
+      "lastAccessed": 1779915714450,
+      "type": "file"
+    },
+    {
+      "path": "tests/rvf-migration.test.ts",
+      "accessCount": 3,
+      "lastAccessed": 1779918106102,
       "type": "file"
     },
     {
@@ -316,12 +370,6 @@
       "path": "ruflo/src/ruvocal/src/lib/server/textGeneration/generate.ts",
       "accessCount": 2,
       "lastAccessed": 1779909912068,
-      "type": "file"
-    },
-    {
-      "path": "v3/@claude-flow/memory/src/cache-manager.ts",
-      "accessCount": 2,
-      "lastAccessed": 1779910837267,
       "type": "file"
     },
     {
@@ -343,33 +391,27 @@
       "type": "file"
     },
     {
-      "path": "ruflo/src/ruvocal/src/lib/server/database/rvf.ts",
-      "accessCount": 2,
-      "lastAccessed": 1779910980584,
-      "type": "file"
-    },
-    {
       "path": "ruflo/src/ruvocal/src/lib/server",
       "accessCount": 2,
       "lastAccessed": 1779911002067,
       "type": "directory"
     },
     {
+      "path": "v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779914505411,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/production/rate-limiter.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779917825673,
+      "type": "file"
+    },
+    {
       "path": "v3/@claude-flow/cli/src/memory/memory-initializer.ts",
       "accessCount": 1,
       "lastAccessed": 1779907732797,
-      "type": "file"
-    },
-    {
-      "path": "tests/rvf-learning-store.test.ts",
-      "accessCount": 1,
-      "lastAccessed": 1779908013658,
-      "type": "file"
-    },
-    {
-      "path": "tests/rvf-migration.test.ts",
-      "accessCount": 1,
-      "lastAccessed": 1779908021686,
       "type": "file"
     },
     {
@@ -391,21 +433,9 @@
       "type": "file"
     },
     {
-      "path": "v3/@claude-flow/cli/src/production/rate-limiter.ts",
-      "accessCount": 1,
-      "lastAccessed": 1779908812997,
-      "type": "file"
-    },
-    {
       "path": "v3/@claude-flow/cli/src/services/config-file-manager.ts",
       "accessCount": 1,
       "lastAccessed": 1779908813501,
-      "type": "file"
-    },
-    {
-      "path": "v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts",
-      "accessCount": 1,
-      "lastAccessed": 1779908814248,
       "type": "file"
     },
     {
@@ -413,12 +443,6 @@
       "accessCount": 1,
       "lastAccessed": 1779908841656,
       "type": "file"
-    },
-    {
-      "path": "tests",
-      "accessCount": 1,
-      "lastAccessed": 1779909454988,
-      "type": "directory"
     },
     {
       "path": "v3/@claude-flow/cli/src/production/circuit-breaker.ts",
@@ -526,6 +550,12 @@
       "path": "ruflo/src/ruvocal/src/routes/api/v2/conversations/+server.ts",
       "accessCount": 1,
       "lastAccessed": 1779911016067,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/memory/src/application/queries/search-memory.query.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779912203846,
       "type": "file"
     }
   ],

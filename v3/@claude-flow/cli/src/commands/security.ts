@@ -8,6 +8,58 @@
 import type { Command, CommandContext, CommandResult } from '../types.js';
 import { output } from '../output.js';
 import { execSync } from 'node:child_process';
+import { writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { resolveInstallContext } from '@claude-flow/shared';
+
+/**
+ * Bug 44: Persist scan results to audit-status.json so the statusline
+ * (and any other consumer that reads from `.claude-flow/security/audit-status.json`)
+ * reflects the latest scan. Previously the scan only printed to stdout —
+ * the file was written once at `ruflo init` time and then never updated,
+ * causing the Architecture statusline to permanently show `Security ●PENDING`
+ * even after a successful scan. This is the connected-component bug class
+ * Bug 26 fixed for the learning loop; same shape, different subsystem.
+ */
+async function persistAuditStatus(opts: {
+  target: string;
+  depth: string;
+  scanType: string;
+  findings: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}): Promise<void> {
+  try {
+    const ctx = resolveInstallContext();
+    const securityDir = join(ctx.claudeRoot, '.claude-flow', 'security');
+    await mkdir(securityDir, { recursive: true });
+    const auditPath = join(securityDir, 'audit-status.json');
+    const status = (opts.critical + opts.high) > 0 ? 'FAILED'
+                 : opts.findings > 0 ? 'PASSED_WITH_WARNINGS'
+                 : 'PASSED';
+    const payload = {
+      status,
+      lastScan: new Date().toISOString(),
+      cvesFixed: 0,
+      totalCves: opts.findings,
+      breakdown: {
+        critical: opts.critical,
+        high: opts.high,
+        medium: opts.medium,
+        low: opts.low,
+      },
+      target: opts.target,
+      depth: opts.depth,
+      scanType: opts.scanType,
+    };
+    await writeFile(auditPath, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch {
+    // Persistence failure must not break the scan — the scan output already
+    // printed; statusline staying stale is degraded UX, not data loss.
+  }
+}
 
 // Scan subcommand
 const scanCommand: Command = {
@@ -218,6 +270,18 @@ const scanCommand: Command = {
         `Critical: ${criticalCount}  High: ${highCount}  Medium: ${mediumCount}  Low: ${lowCount}`,
         `Total Issues: ${findings.length}`,
       ].join('\n'), 'Scan Summary');
+
+      // Bug 44: persist scan results so the statusline reflects state
+      await persistAuditStatus({
+        target: String(target),
+        depth: String(depth),
+        scanType: String(scanType),
+        findings: findings.length,
+        critical: criticalCount,
+        high: highCount,
+        medium: mediumCount,
+        low: lowCount,
+      });
 
       // Auto-fix if requested
       if (fix && criticalCount + highCount > 0) {

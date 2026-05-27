@@ -32,6 +32,31 @@ const analysisResultCache = new Map<string, { result: GraphAnalysisResult; times
 const ANALYSIS_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
 /**
+ * Cache for compiled exclude-pattern regexes used by `shouldExclude`.
+ * Glob-style patterns (containing `*`) are compiled into RegExp once and reused
+ * across every directory entry in a scan. Without this cache, the same pattern
+ * (e.g. `*.test.*`) would be re-parsed for every file visited during traversal.
+ *
+ * Keyed on the raw pattern string. Module-scoped — process-wide cache, no TTL
+ * needed since the pattern set is small and bounded by user-provided exclude lists.
+ */
+const excludePatternRegexCache = new Map<string, RegExp>();
+
+/**
+ * Get or build a compiled glob-style exclude regex.
+ * Converts `*` -> `.*` and anchors with `^…$`, mirroring the original inline
+ * construction at the call site.
+ */
+function getExcludeRegex(pattern: string): RegExp {
+  let regex = excludePatternRegexCache.get(pattern);
+  if (!regex) {
+    regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+    excludePatternRegexCache.set(pattern, regex);
+  }
+  return regex;
+}
+
+/**
  * Clear all graph caches
  */
 export function clearGraphCaches(): void {
@@ -355,8 +380,7 @@ export async function buildDependencyGraph(
     const name = basename(path);
     return exclude.some(pattern => {
       if (pattern.includes('*')) {
-        const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-        return regex.test(name);
+        return getExcludeRegex(pattern).test(name);
       }
       return name === pattern || path.includes(`/${pattern}/`);
     });

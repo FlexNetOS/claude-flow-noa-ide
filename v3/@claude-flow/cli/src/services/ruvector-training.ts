@@ -14,11 +14,13 @@
  * Created with ❤️ by ruv.io
  */
 
-import type {
-  WasmMicroLoRA,
-  WasmScopedLoRA,
-  WasmTrajectoryBuffer,
-} from '@ruvector/learning-wasm';
+// @ruvector/learning-wasm types — package is an optionalDependency, so types
+// are declared locally as `any` to keep the build green when the package is
+// not installed. See bug16c — the package is loaded dynamically with a JS
+// fallback (JsMicroLoRA / JsScopedLoRA / JsTrajectoryBuffer) below.
+type WasmMicroLoRA = any;
+type WasmScopedLoRA = any;
+type WasmTrajectoryBuffer = any;
 
 // @ruvector/attention types — use any since the NAPI exports vary across versions
 type FlashAttention = any;
@@ -320,7 +322,10 @@ export async function initializeTraining(config: TrainingConfig = {}): Promise<{
     const wasmPath = require.resolve('@ruvector/learning-wasm/ruvector_learning_wasm_bg.wasm');
     const wasmBuffer = fs.readFileSync(wasmPath);
 
-    const learningWasm = await import('@ruvector/learning-wasm');
+    // Indirect module name keeps TS from trying to resolve at compile time
+    // (the package is an optionalDependency that may not be installed).
+    const learningWasmModule = '@ruvector/learning-wasm';
+    const learningWasm: any = await import(/* @vite-ignore */ learningWasmModule);
     learningWasm.initSync({ module: wasmBuffer });
 
     microLoRA = new learningWasm.WasmMicroLoRA(dim, alpha, lr);

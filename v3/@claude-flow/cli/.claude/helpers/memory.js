@@ -1,13 +1,39 @@
 #!/usr/bin/env node
 /**
- * Claude Flow Memory Helper
+ * Ruflo Memory Helper
  * Simple key-value memory for cross-session context
  */
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const MEMORY_DIR = path.join(process.cwd(), '.claude-flow', 'data');
+function resolveFlowPath(...segs) {
+  // Drop redundant leading '.claude' segment for global-install case so we
+  // never produce ~/.claude/.claude/... (mirrors settings-generator #bug8).
+  function stripRedundant(home, parts) {
+    if (parts.length > 0 && parts[0] === '.claude') return parts.slice(1);
+    return parts;
+  }
+
+  const cwdPath = path.join(process.cwd(), ...segs);
+  try {
+    // Prefer cwd if its parent already exists (per-project install) or if
+    // we can create it (writable cwd, no global override needed).
+    const parent = path.dirname(cwdPath);
+    if (fs.existsSync(parent)) return cwdPath;
+    fs.mkdirSync(parent, { recursive: true });
+    // Probe writability — a successful mkdir is enough on POSIX/Windows.
+    return cwdPath;
+  } catch {
+    // Fall through to global fallback
+  }
+
+  const homeBase = path.join(os.homedir(), '.claude');
+  return path.join(homeBase, ...stripRedundant(homeBase, segs));
+}
+
+const MEMORY_DIR = resolveFlowPath('.claude-flow', 'data');
 const MEMORY_FILE = path.join(MEMORY_DIR, 'memory.json');
 
 function loadMemory() {

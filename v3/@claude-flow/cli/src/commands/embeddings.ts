@@ -572,6 +572,15 @@ const indexCommand: Command = {
     try {
       const { getHNSWStatus, getHNSWIndex, searchHNSWIndex, generateEmbedding } = await import('../memory/memory-initializer.js');
 
+      // Trigger lazy initialization before reading status, otherwise the
+      // singleton stays null and produces a misleading "@ruvector/core not
+      // available" warning even when the package is present (#1698).
+      await getHNSWIndex().catch(() => null);
+
+      // Probe whether @ruvector/core is loadable so we can distinguish
+      // "package missing" from "package present but index empty".
+      const ruvectorAvailable = await import('@ruvector/core').then(() => true).catch(() => false);
+
       // Get real HNSW status
       const status = getHNSWStatus();
 
@@ -615,10 +624,15 @@ const indexCommand: Command = {
             `  Speedup: ~${Math.round(speedup)}x`,
             `  Results: ${results?.length || 0} matches`,
           ].join('\n'), 'Search Performance');
-        } else if (!status.available) {
+        } else if (!status.available && !ruvectorAvailable) {
           output.writeln();
           output.printWarning('@ruvector/core not available');
           output.printInfo('Install: npm install @ruvector/core');
+        } else if (!status.available) {
+          output.writeln();
+          output.printWarning('HNSW index not initialized (but @ruvector/core is installed)');
+          output.printInfo('This usually means no embeddings have been stored yet.');
+          output.printInfo('Run: claude-flow memory store -k "key" --value "text"');
         } else {
           output.writeln();
           output.printInfo('Index is empty. Store some entries to populate it.');

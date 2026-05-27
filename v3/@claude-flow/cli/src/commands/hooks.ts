@@ -12,6 +12,17 @@ import { workerCommand } from './hooks/worker.js';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+/**
+ * #1686 — `?? 0` only defaults null/undefined; NaN slips through and
+ * surfaces as `"NaN"` (or earlier crashed `.toFixed`) in the metrics
+ * dashboard and pretrain output. Coerce to a finite number, fall back
+ * to `fallback` when the input is null/undefined/non-numeric/NaN/Infinity.
+ */
+function safeNum(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // ============================================================================
 // Coverage Data Reader - reads Jest/Istanbul coverage files from disk
 // ============================================================================
@@ -1072,21 +1083,36 @@ const pretrainCommand: Command = {
         await new Promise(resolve => setTimeout(resolve, 800));
       }
 
-      // Call MCP tool for pretraining
-      const result = await callMCPTool<{
-        path: string;
-        depth: string;
-        stats: {
-          filesAnalyzed: number;
-          patternsExtracted: number;
-          strategiesLearned: number;
-          trajectoriesEvaluated: number;
-          contradictionsResolved: number;
+      // Call MCP tool for pretraining. The tool currently returns
+      // `{ statistics: { ..., executionTime }, ... }` but earlier CLI
+      // versions read `result.stats` and `result.duration` (#1686). Accept
+      // either shape so the dashboard works whether you upgraded the tool
+      // or the CLI first.
+      const rawResult = await callMCPTool<{
+        path?: string;
+        depth?: string;
+        stats?: {
+          filesAnalyzed?: number;
+          patternsExtracted?: number;
+          strategiesLearned?: number;
+          trajectoriesEvaluated?: number;
+          contradictionsResolved?: number;
           documentsIndexed?: number;
           embeddingsGenerated?: number;
           hyperbolicProjections?: number;
         };
-        duration: number;
+        statistics?: {
+          filesAnalyzed?: number;
+          patternsExtracted?: number;
+          strategiesLearned?: number;
+          trajectoriesEvaluated?: number;
+          contradictionsResolved?: number;
+          documentsIndexed?: number;
+          embeddingsGenerated?: number;
+          hyperbolicProjections?: number;
+          executionTime?: number;
+        };
+        duration?: number;
       }>('hooks_pretrain', {
         path: repoPath,
         depth,
@@ -1098,6 +1124,13 @@ const pretrainCommand: Command = {
 
       spinner.succeed('Pretraining completed');
 
+      // Normalize shape: prefer `statistics`, fall back to `stats` for older tools.
+      // #1686 — coerce duration through safeNum so a NaN from the underlying
+      // pretrain pipeline surfaces as `0.0s` rather than `NaNs`.
+      const stats = (rawResult.statistics ?? rawResult.stats ?? {}) as Record<string, number | undefined>;
+      const durationMs = safeNum(rawResult.duration ?? rawResult.statistics?.executionTime);
+      const result = { ...rawResult, stats, duration: durationMs };
+
       if (ctx.flags.format === 'json') {
         output.printJson(result);
         return { success: true, data: result };
@@ -1105,25 +1138,26 @@ const pretrainCommand: Command = {
 
       output.writeln();
 
-      // Base stats
+      // Base stats — use ?? 0 fallbacks to keep the table readable even when
+      // the tool omits a counter rather than crashing on undefined.
       const tableData: Array<{ metric: string; value: string | number }> = [
-        { metric: 'Files Analyzed', value: result.stats.filesAnalyzed },
-        { metric: 'Patterns Extracted', value: result.stats.patternsExtracted },
-        { metric: 'Strategies Learned', value: result.stats.strategiesLearned },
-        { metric: 'Trajectories Evaluated', value: result.stats.trajectoriesEvaluated },
-        { metric: 'Contradictions Resolved', value: result.stats.contradictionsResolved },
+        { metric: 'Files Analyzed', value: stats.filesAnalyzed ?? 0 },
+        { metric: 'Patterns Extracted', value: stats.patternsExtracted ?? 0 },
+        { metric: 'Strategies Learned', value: stats.strategiesLearned ?? 0 },
+        { metric: 'Trajectories Evaluated', value: stats.trajectoriesEvaluated ?? 0 },
+        { metric: 'Contradictions Resolved', value: stats.contradictionsResolved ?? 0 },
       ];
 
       // Add embedding stats if available
-      if (withEmbeddings && result.stats.documentsIndexed !== undefined) {
+      if (withEmbeddings && stats.documentsIndexed !== undefined) {
         tableData.push(
-          { metric: 'Documents Indexed', value: result.stats.documentsIndexed },
-          { metric: 'Embeddings Generated', value: result.stats.embeddingsGenerated || 0 },
-          { metric: 'Hyperbolic Projections', value: result.stats.hyperbolicProjections || 0 }
+          { metric: 'Documents Indexed', value: stats.documentsIndexed },
+          { metric: 'Embeddings Generated', value: stats.embeddingsGenerated ?? 0 },
+          { metric: 'Hyperbolic Projections', value: stats.hyperbolicProjections ?? 0 }
         );
       }
 
-      tableData.push({ metric: 'Duration', value: `${(result.duration / 1000).toFixed(1)}s` });
+      tableData.push({ metric: 'Duration', value: `${(durationMs / 1000).toFixed(1)}s` });
 
       output.printTable({
         columns: [
@@ -1303,36 +1337,80 @@ const metricsCommand: Command = {
     output.writeln();
 
     try {
-      // Call MCP tool for metrics
-      const result = await callMCPTool<{
-        period: string;
-        patterns: {
-          total: number;
-          successful: number;
-          failed: number;
-          avgConfidence: number;
+      // Call MCP tool for metrics. The tool returns `{ summary, routing,
+      // edits, commands }` (see MetricsResult in v3/mcp/tools/hooks-tools.ts)
+      // but earlier CLI versions expected `{ patterns, agents, commands.avgRiskScore }`.
+      // Accept the union and normalize below — without the `?? 0` guards the
+      // dashboard crashed with "Cannot read properties of null (reading 'toFixed')"
+      // whenever a counter was missing (#1686).
+      const rawMetrics = await callMCPTool<{
+        period?: string;
+        category?: string;
+        timeRange?: string;
+        summary?: {
+          totalOperations?: number;
+          successRate?: number;
+          avgQuality?: number;
+          patternsLearned?: number;
         };
-        agents: {
-          routingAccuracy: number;
-          totalRoutes: number;
-          topAgent: string;
+        patterns?: {
+          total?: number;
+          successful?: number;
+          failed?: number;
+          avgConfidence?: number;
         };
-        commands: {
-          totalExecuted: number;
-          successRate: number;
-          avgRiskScore: number;
+        routing?: {
+          totalRoutes?: number;
+          avgConfidence?: number;
+          topAgents?: Array<{ agent: string; count: number; successRate: number }>;
         };
-        performance: {
-          flashAttention: string;
-          memoryReduction: string;
-          searchImprovement: string;
-          tokenReduction: string;
+        agents?: {
+          routingAccuracy?: number;
+          totalRoutes?: number;
+          topAgent?: string;
+        };
+        commands?: {
+          totalCommands?: number;
+          totalExecuted?: number;
+          successRate?: number;
+          avgExecutionTime?: number;
+          avgRiskScore?: number;
+        };
+        performance?: {
+          flashAttention?: string;
+          memoryReduction?: string;
+          searchImprovement?: string;
+          tokenReduction?: string;
         };
       }>('hooks_metrics', {
         period,
         includeV3: v3Dashboard,
         category: ctx.flags.category,
       });
+
+      // Normalize across both shapes; default every numeric to 0 so toFixed
+      // never sees null/undefined. #1686 — also coerce NaN through `safeNum`
+      // because `?? 0` only catches null/undefined; an upstream NaN would
+      // still land in `.toFixed(...)` and surface as `"NaN"`.
+      const totalPatterns = safeNum(rawMetrics.patterns?.total ?? rawMetrics.summary?.patternsLearned);
+      const successfulPatterns = safeNum(rawMetrics.patterns?.successful ?? Math.round(safeNum(rawMetrics.summary?.successRate) * totalPatterns));
+      const failedPatterns = Math.max(0, safeNum(rawMetrics.patterns?.failed ?? totalPatterns - successfulPatterns));
+      const avgConfidence = safeNum(rawMetrics.patterns?.avgConfidence ?? rawMetrics.summary?.avgQuality);
+
+      const routingAccuracy = safeNum(rawMetrics.agents?.routingAccuracy ?? rawMetrics.routing?.avgConfidence);
+      const totalRoutes = safeNum(rawMetrics.agents?.totalRoutes ?? rawMetrics.routing?.totalRoutes);
+      const topAgent = rawMetrics.agents?.topAgent ?? rawMetrics.routing?.topAgents?.[0]?.agent ?? 'n/a';
+
+      const totalCommands = safeNum(rawMetrics.commands?.totalExecuted ?? rawMetrics.commands?.totalCommands);
+      const commandSuccessRate = safeNum(rawMetrics.commands?.successRate);
+      const avgRiskScore = safeNum(rawMetrics.commands?.avgRiskScore ?? rawMetrics.commands?.avgExecutionTime);
+
+      const result = {
+        ...rawMetrics,
+        patterns: { total: totalPatterns, successful: successfulPatterns, failed: failedPatterns, avgConfidence },
+        agents: { routingAccuracy, totalRoutes, topAgent },
+        commands: { totalExecuted: totalCommands, successRate: commandSuccessRate, avgRiskScore },
+      };
 
       if (ctx.flags.format === 'json') {
         output.printJson(result);
@@ -1347,10 +1425,10 @@ const metricsCommand: Command = {
           { key: 'value', header: 'Value', width: 20, align: 'right' }
         ],
         data: [
-          { metric: 'Total Patterns', value: result.patterns.total },
-          { metric: 'Successful', value: output.success(String(result.patterns.successful)) },
-          { metric: 'Failed', value: output.error(String(result.patterns.failed)) },
-          { metric: 'Avg Confidence', value: `${(result.patterns.avgConfidence * 100).toFixed(1)}%` }
+          { metric: 'Total Patterns', value: totalPatterns },
+          { metric: 'Successful', value: output.success(String(successfulPatterns)) },
+          { metric: 'Failed', value: output.error(String(failedPatterns)) },
+          { metric: 'Avg Confidence', value: `${(avgConfidence * 100).toFixed(1)}%` }
         ]
       });
 
@@ -1364,9 +1442,9 @@ const metricsCommand: Command = {
           { key: 'value', header: 'Value', width: 20, align: 'right' }
         ],
         data: [
-          { metric: 'Routing Accuracy', value: `${(result.agents.routingAccuracy * 100).toFixed(1)}%` },
-          { metric: 'Total Routes', value: result.agents.totalRoutes },
-          { metric: 'Top Agent', value: output.highlight(result.agents.topAgent) }
+          { metric: 'Routing Accuracy', value: `${(routingAccuracy * 100).toFixed(1)}%` },
+          { metric: 'Total Routes', value: totalRoutes },
+          { metric: 'Top Agent', value: output.highlight(topAgent) }
         ]
       });
 
@@ -1380,9 +1458,9 @@ const metricsCommand: Command = {
           { key: 'value', header: 'Value', width: 20, align: 'right' }
         ],
         data: [
-          { metric: 'Total Executed', value: result.commands.totalExecuted },
-          { metric: 'Success Rate', value: `${(result.commands.successRate * 100).toFixed(1)}%` },
-          { metric: 'Avg Risk Score', value: result.commands.avgRiskScore.toFixed(2) }
+          { metric: 'Total Executed', value: totalCommands },
+          { metric: 'Success Rate', value: `${(commandSuccessRate * 100).toFixed(1)}%` },
+          { metric: 'Avg Risk Score', value: avgRiskScore.toFixed(2) }
         ]
       });
 

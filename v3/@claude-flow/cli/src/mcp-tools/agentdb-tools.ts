@@ -68,7 +68,26 @@ export const agentdbHealth: MCPTool = {
       const bridge = await getBridge();
       const health = await bridge.bridgeHealthCheck();
       if (!health) return { available: false, error: 'AgentDB bridge not available' };
-      return health;
+
+      // #bug6 — Honesty fix: callers used to receive a controllers list
+      // where vectorBackend / mutationGuard / gnnService / semanticRouter /
+      // guardedVectorBackend / rvfOptimizer / graphAdapter / attestationLog
+      // were emitted with `enabled: false`. That made the response look
+      // like every controller was registered when in fact only a handful
+      // had backing implementations. Split the list: keep `controllers`
+      // for live ones, surface the rest under `_unavailable` so the call
+      // doesn't pretend optional dependencies exist.
+      const allControllers = Array.isArray(health.controllers) ? health.controllers : [];
+      const enabled = allControllers.filter((c: any) => c?.enabled === true);
+      const disabled = allControllers
+        .filter((c: any) => c?.enabled === false)
+        .map((c: any) => (typeof c?.name === 'string' ? c.name : 'unknown'));
+
+      return {
+        ...health,
+        controllers: enabled,
+        ...(disabled.length > 0 ? { _unavailable: disabled } : {}),
+      };
     } catch (error) {
       return { available: false, error: sanitizeError(error) };
     }
@@ -122,13 +141,43 @@ export const agentdbPatternStore: MCPTool = {
       if (params.type) { const vType = validateIdentifier(params.type, 'type'); if (!vType.valid) return { success: false, error: vType.error }; }
       const pattern = validateString(params.pattern, 'pattern');
       if (!pattern) return { success: false, error: 'pattern is required (non-empty string, max 100KB)' };
+      const type = validateString(params.type, 'type', 200) ?? 'general';
+      const confidence = validateScore(params.confidence, 0.8);
+
       const bridge = await getBridge();
-      const result = await bridge.bridgeStorePattern({
-        pattern,
-        type: validateString(params.type, 'type', 200) ?? 'general',
-        confidence: validateScore(params.confidence, 0.8),
-      });
-      return result ?? { success: false, error: 'AgentDB bridge not available. Use memory_store/memory_search instead.' };
+      const result = await bridge.bridgeStorePattern({ pattern, type, confidence });
+      if (result) return result;
+
+      // ADR-093 F4: when the ReasoningBank controller registry returns
+      // null (the cause of audit-reported "AgentDB bridge not available"
+      // even though `agentdb_health.reasoningBank.enabled === true`), fall
+      // back to a direct memory_store write so the caller's pattern still
+      // persists. Surface the controller as `memory-store-fallback` so the
+      // path is observable instead of silently lost.
+      try {
+        const { storeEntry } = await import('../memory/memory-initializer.js');
+        const patternId = `pattern-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const value = JSON.stringify({ pattern, type, confidence, _fallback: 'reasoningBank-unavailable' });
+        await storeEntry({
+          key: patternId,
+          value,
+          namespace: 'pattern',
+          tags: [type, 'reasoning-pattern', 'fallback'],
+        });
+        return {
+          success: true,
+          patternId,
+          controller: 'memory-store-fallback',
+          note: 'ReasoningBank controller registry unavailable. Pattern persisted via memory_store. Run `agentdb_health` to inspect controller registration.',
+        };
+      } catch (fallbackErr) {
+        return {
+          success: false,
+          error: 'Pattern store failed: both ReasoningBank bridge and memory_store fallback unavailable',
+          fallbackError: sanitizeError(fallbackErr),
+          recommendation: 'Run agentdb_health to inspect controller registration and check that .swarm/memory.db is writable.',
+        };
+      }
     } catch (error) {
       return { success: false, error: sanitizeError(error) };
     }
@@ -594,6 +643,100 @@ export const agentdbSemanticRoute: MCPTool = {
   },
 };
 
+// ===== #1784: Delete tools — symmetry for hierarchical-store + causal-edge =====
+
+export const agentdbHierarchicalDelete: MCPTool = {
+  name: 'agentdb_hierarchical-delete',
+  description: 'Delete a hierarchical-memory entry by key. Returns controller="native-unsupported" when the entry is in a backend without a public delete API.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      key: { type: 'string', description: 'Memory entry key to delete' },
+      tier: {
+        type: 'string',
+        description: 'Optional tier filter (working, episodic, semantic)',
+        enum: ['working', 'episodic', 'semantic'],
+      },
+    },
+    required: ['key'],
+  },
+  handler: async (params: Record<string, unknown>) => {
+    try {
+      const vKey = validateIdentifier(params.key, 'key');
+      if (!vKey.valid) return { success: false, deleted: false, error: vKey.error };
+      if (params.tier) { const vTier = validateIdentifier(params.tier, 'tier'); if (!vTier.valid) return { success: false, deleted: false, error: vTier.error }; }
+      const key = validateString(params.key, 'key', 1000);
+      if (!key) return { success: false, deleted: false, error: 'key is required (non-empty string, max 1KB)' };
+      const tier = validateString(params.tier, 'tier', 20);
+      if (tier && !['working', 'episodic', 'semantic'].includes(tier)) {
+        return { success: false, deleted: false, error: `Invalid tier: ${tier}. Must be working, episodic, or semantic` };
+      }
+      const bridge = await getBridge();
+      const result = await bridge.bridgeDeleteHierarchical({ key, tier: tier ?? undefined });
+      return result ?? { success: false, deleted: false, error: 'AgentDB bridge not available' };
+    } catch (error) {
+      return { success: false, deleted: false, error: sanitizeError(error) };
+    }
+  },
+};
+
+export const agentdbCausalEdgeDelete: MCPTool = {
+  name: 'agentdb_causal-edge-delete',
+  description: 'Delete a causal edge between two memory entries. Returns controller="native-unsupported" when the edge lives in graph-node native storage (no public delete API).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sourceId: { type: 'string', description: 'Source entry ID' },
+      targetId: { type: 'string', description: 'Target entry ID' },
+      relation: { type: 'string', description: 'Optional relationship type filter' },
+    },
+    required: ['sourceId', 'targetId'],
+  },
+  handler: async (params: Record<string, unknown>) => {
+    try {
+      const vSourceId = validateIdentifier(params.sourceId, 'sourceId');
+      if (!vSourceId.valid) return { success: false, deleted: false, error: vSourceId.error };
+      const vTargetId = validateIdentifier(params.targetId, 'targetId');
+      if (!vTargetId.valid) return { success: false, deleted: false, error: vTargetId.error };
+      const sourceId = validateString(params.sourceId, 'sourceId', 500);
+      const targetId = validateString(params.targetId, 'targetId', 500);
+      if (!sourceId) return { success: false, deleted: false, error: 'sourceId is required (non-empty string)' };
+      if (!targetId) return { success: false, deleted: false, error: 'targetId is required (non-empty string)' };
+      const relation = validateString(params.relation, 'relation', 200) ?? undefined;
+      const bridge = await getBridge();
+      const result = await bridge.bridgeDeleteCausalEdge({ sourceId, targetId, relation });
+      return result ?? { success: false, deleted: false, error: 'AgentDB bridge not available' };
+    } catch (error) {
+      return { success: false, deleted: false, error: sanitizeError(error) };
+    }
+  },
+};
+
+export const agentdbCausalNodeDelete: MCPTool = {
+  name: 'agentdb_causal-node-delete',
+  description: 'Cascade-delete a causal node and all its incident edges from the SQL fallback. Native graph-node entries are unaffected (no delete API in the binding).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      nodeId: { type: 'string', description: 'Node ID to delete (cascades to all incident edges)' },
+    },
+    required: ['nodeId'],
+  },
+  handler: async (params: Record<string, unknown>) => {
+    try {
+      const vNodeId = validateIdentifier(params.nodeId, 'nodeId');
+      if (!vNodeId.valid) return { success: false, deletedNode: false, deletedEdges: 0, error: vNodeId.error };
+      const nodeId = validateString(params.nodeId, 'nodeId', 500);
+      if (!nodeId) return { success: false, deletedNode: false, deletedEdges: 0, error: 'nodeId is required (non-empty string)' };
+      const bridge = await getBridge();
+      const result = await bridge.bridgeDeleteCausalNode({ nodeId });
+      return result ?? { success: false, deletedNode: false, deletedEdges: 0, error: 'AgentDB bridge not available' };
+    } catch (error) {
+      return { success: false, deletedNode: false, deletedEdges: 0, error: sanitizeError(error) };
+    }
+  },
+};
+
 // ===== Export all tools =====
 
 export const agentdbTools: MCPTool[] = [
@@ -603,11 +746,14 @@ export const agentdbTools: MCPTool[] = [
   agentdbPatternSearch,
   agentdbFeedback,
   agentdbCausalEdge,
+  agentdbCausalEdgeDelete,
+  agentdbCausalNodeDelete,
   agentdbRoute,
   agentdbSessionStart,
   agentdbSessionEnd,
   agentdbHierarchicalStore,
   agentdbHierarchicalRecall,
+  agentdbHierarchicalDelete,
   agentdbConsolidate,
   agentdbBatch,
   agentdbContextSynthesize,

@@ -12,6 +12,7 @@ import { select, confirm, input } from '../prompt.js';
 import { callMCPTool, MCPClientError } from '../mcp-client.js';
 import { spawn as childSpawn, execSync } from 'child_process';
 import { mkdir, writeFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 
 // Worker type definitions for prompt generation
@@ -248,6 +249,41 @@ async function spawnClaudeCodeInstance(
     if (claudeAvailable && !dryRun) {
       // Build arguments - flags first, then prompt
       const claudeArgs: string[] = [];
+
+      // #1748 Issue 2 — pass --mcp-config so the spawned worker actually has
+      // mcp__ruflo__* tools registered. Before this, the coordination prompt
+      // referenced tools the worker didn't know about and exited silently.
+      // Resolution order:
+      //   1. explicit --mcp-config <path> flag passed by the caller
+      //   2. ./.mcp.json in cwd (project-local Ruflo MCP config)
+      //   3. ~/.claude.json or ~/.claude/mcp.json (user-global)
+      // If none found, we still spawn but warn — that's the pre-fix behavior
+      // and the user's debug log will surface the missing tools.
+      const explicitMcpConfig = flags['mcp-config'] as string | undefined;
+      let mcpConfigPath: string | undefined = explicitMcpConfig;
+      if (!mcpConfigPath) {
+        const candidates = [
+          join(process.cwd(), '.mcp.json'),
+          join(process.env.HOME || process.env.USERPROFILE || '', '.claude.json'),
+          join(process.env.HOME || process.env.USERPROFILE || '', '.claude', 'mcp.json'),
+        ];
+        for (const c of candidates) {
+          try {
+            if (c && existsSync(c)) { mcpConfigPath = c; break; }
+          } catch { /* continue */ }
+        }
+      }
+      if (mcpConfigPath) {
+        // #1780 — Claude Code's `--mcp-config` is variadic; passing it as two
+        // argv tokens (`--mcp-config`, `<path>`) lets a later positional (the
+        // hive-mind prompt) be slurped as a second config file, producing
+        // `ENAMETOOLONG: name too long, open` once the prompt exceeds PATH_MAX.
+        // Use `=`-syntax so the flag stays attached to its single value.
+        claudeArgs.push(`--mcp-config=${mcpConfigPath}`);
+        output.printInfo(`Spawned worker MCP config: ${mcpConfigPath}`);
+      } else {
+        output.printWarning('No .mcp.json or ~/.claude.json found — spawned worker will not have mcp__ruflo__* tools (#1748 Issue 2). Pass --mcp-config <path> or run "ruflo init" to generate one.');
+      }
 
       // Check for non-interactive mode
       const isNonInteractive = flags['non-interactive'] || flags.nonInteractive;
@@ -582,6 +618,11 @@ const spawnCommand: Command = {
       description: 'Run Claude Code in non-interactive mode',
       type: 'boolean',
       default: false
+    },
+    {
+      name: 'mcp-config',
+      description: 'Path to .mcp.json for the spawned worker (auto-detects ./.mcp.json or ~/.claude.json if omitted) — fixes #1748 Issue 2',
+      type: 'string'
     }
   ],
   examples: [
@@ -959,19 +1000,33 @@ const taskCommand: Command = {
     output.printInfo('Submitting task to hive...');
 
     try {
+      // #1791.1 — `hive-mind_task` was never registered in the bundled MCP
+      // server (the `mcp__ruflo__hive-mind_*` surface only exposes init,
+      // spawn, status, broadcast, consensus, memory, shutdown, leave). The
+      // CLI was dispatching to a tool that doesn't exist, producing
+      // `MCP tool not found: hive-mind_task` and aborting.
+      //
+      // Re-route to the existing `task_create` tool. Hive-specific options
+      // (consensus requirement, timeout) are preserved as tags so a future
+      // hive-mind worker / consensus tool can pick them up — the data is
+      // not lost just because the dedicated hive-mind tool isn't there yet.
+      const consensusTag = `consensus:${requireConsensus ? 'required' : 'none'}`;
+      const timeoutTag = `timeout:${timeout}s`;
+
       const result = await callMCPTool<{
         taskId: string;
+        type: string;
         description: string;
+        priority: string;
         status: string;
         assignedTo: string[];
-        priority: string;
-        requiresConsensus: boolean;
-        estimatedTime: string;
-      }>('hive-mind_task', {
+        tags: string[];
+        createdAt: string;
+      }>('task_create', {
+        type: 'hive-mind',
         description,
         priority,
-        requireConsensus,
-        timeout,
+        tags: ['hive-mind', consensusTag, timeoutTag],
       });
 
       if (ctx.flags.format === 'json') {
@@ -985,9 +1040,10 @@ const taskCommand: Command = {
           `Task ID: ${result.taskId}`,
           `Status: ${formatAgentStatus(result.status)}`,
           `Priority: ${formatPriority(priority)}`,
-          `Assigned: ${result.assignedTo.join(', ')}`,
-          `Consensus: ${result.requiresConsensus ? 'Yes' : 'No'}`,
-          `Est. Time: ${result.estimatedTime}`
+          `Assigned: ${result.assignedTo.length > 0 ? result.assignedTo.join(', ') : 'pending dispatch'}`,
+          `Consensus: ${requireConsensus ? 'Yes' : 'No'}`,
+          `Timeout: ${timeout}s`,
+          `Tags: ${result.tags.join(', ')}`
         ].join('\n'),
         'Task Submitted'
       );

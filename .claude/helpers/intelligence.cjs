@@ -10,24 +10,44 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const DATA_DIR = path.join(process.cwd(), '.claude-flow', 'data');
+
+function resolveFlowPath(...segs) {
+  // Drop redundant leading '.claude' segment for global-install case so we
+  // never produce ~/.claude/.claude/... (mirrors settings-generator #bug8).
+  function stripRedundant(home, parts) {
+    if (parts.length > 0 && parts[0] === '.claude') return parts.slice(1);
+    return parts;
+  }
+
+  const cwdPath = path.join(process.cwd(), ...segs);
+  try {
+    // Prefer cwd if its parent already exists (per-project install) or if
+    // we can create it (writable cwd, no global override needed).
+    const parent = path.dirname(cwdPath);
+    if (fs.existsSync(parent)) return cwdPath;
+    fs.mkdirSync(parent, { recursive: true });
+    // Probe writability — a successful mkdir is enough on POSIX/Windows.
+    return cwdPath;
+  } catch {
+    // Fall through to global fallback
+  }
+
+  const homeBase = path.join(os.homedir(), '.claude');
+  return path.join(homeBase, ...stripRedundant(homeBase, segs));
+}
+
+const DATA_DIR = resolveFlowPath('.claude-flow', 'data');
 const STORE_PATH = path.join(DATA_DIR, 'auto-memory-store.json');
 const RANKED_PATH = path.join(DATA_DIR, 'ranked-context.json');
 const PENDING_PATH = path.join(DATA_DIR, 'pending-insights.jsonl');
-const SESSION_DIR = path.join(process.cwd(), '.claude-flow', 'sessions');
+const SESSION_DIR = resolveFlowPath('.claude-flow', 'sessions');
 const SESSION_FILE = path.join(SESSION_DIR, 'current.json');
-
-// ── Safety limits (fixes #1530, #1531) ─────────────────────────────────────
-var MAX_DATA_FILE_SIZE = 10 * 1024 * 1024; // 10 MB — skip files larger than this
-var MAX_GRAPH_NODES = 5000;                 // skip PageRank if graph exceeds this
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 function readJSON(p) {
-  // Safety: skip files exceeding MAX_DATA_FILE_SIZE (#1531)
-  try { var stat = fs.statSync(p); if (stat.size > MAX_DATA_FILE_SIZE) { process.stderr.write("[INTELLIGENCE] WARN: Skipping " + path.basename(p) + " (" + Math.round(stat.size / 1048576) + "MB exceeds 10MB limit)\n"); return null; } } catch(e) { /* file may not exist */ }
   try { return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf-8")) : null; }
   catch { return null; }
 }
@@ -37,12 +57,14 @@ function writeJSON(p, data) {
   fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf-8");
 }
 
+// Read session context key
 function sessionGet(key) {
   var session = readJSON(SESSION_FILE);
   if (!session) return null;
   return key ? (session.context || {})[key] : session.context;
 }
 
+// Write session context key
 function sessionSet(key, value) {
   var session = readJSON(SESSION_FILE);
   if (!session) return;
@@ -51,34 +73,19 @@ function sessionSet(key, value) {
   writeJSON(SESSION_FILE, session);
 }
 
+// Tokenize text into words
 function tokenize(text) {
   if (!text) return [];
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(function(w) { return w.length > 2; });
 }
 
-// ── Deduplication helper (fixes #1518) ──────────────────────────────────────
-function deduplicateById(entries) {
-  if (!entries || !Array.isArray(entries)) return entries;
-  var seen = new Map();
-  for (var i = 0; i < entries.length; i++) {
-    var id = entries[i].id || entries[i].key;
-    if (id) {
-      seen.set(id, entries[i]);
-    } else {
-      seen.set('__no_id_' + seen.size, entries[i]);
-    }
-  }
-  return Array.from(seen.values());
-}
-
+// Bootstrap entries from MEMORY.md files when store is empty
 function bootstrapFromMemoryFiles() {
   var entries = [];
-  // Scope to current project only (not all 51+ project dirs)
-  var projectSlug = process.cwd().replace(/^\//, '').replace(/\//g, '-');
   var candidates = [
-    path.join(os.homedir(), ".claude", "projects", projectSlug, "memory"),
-    path.join(process.cwd(), ".claude-flow", "memory"),
-    path.join(process.cwd(), ".claude", "memory"),
+    path.join(os.homedir(), ".claude", "projects"),
+    resolveFlowPath(".claude-flow", "memory"),
+    resolveFlowPath(".claude", "memory"),
   ];
   for (var i = 0; i < candidates.length; i++) {
     try {
@@ -99,8 +106,8 @@ function bootstrapFromMemoryFiles() {
           var content = fs.readFileSync(files[k], "utf-8");
           var sections = content.split(/^##\s+/m).filter(function(s) { return s.trim().length > 20; });
           for (var s = 0; s < sections.length; s++) {
-            var lines = sections[s].split("\n");
-            var title = lines[0] ? lines[0].trim() : "section-" + s;
+            var lines2 = sections[s].split("\n");
+            var title = lines2[0] ? lines2[0].trim() : "section-" + s;
             entries.push({
               id: "mem-" + entries.length,
               content: sections[s].substring(0, 500),
@@ -118,6 +125,7 @@ function bootstrapFromMemoryFiles() {
   return entries;
 }
 
+// Load entries from auto-memory-store or bootstrap from MEMORY.md
 function loadEntries() {
   var store = readJSON(STORE_PATH);
   // Support both formats: flat array or { entries: [...] }
@@ -145,6 +153,7 @@ function loadEntries() {
   return bootstrapFromMemoryFiles();
 }
 
+// Simple keyword match score
 function matchScore(promptWords, entryWords) {
   if (!promptWords.length || !entryWords.length) return 0;
   var entrySet = {};
@@ -161,7 +170,7 @@ var cachedEntries = null;
 
 module.exports = {
   init: function() {
-    cachedEntries = deduplicateById(loadEntries());
+    cachedEntries = loadEntries();
     var ranked = cachedEntries.map(function(e) {
       return { id: e.id, content: e.content, summary: e.summary, category: e.category, confidence: e.confidence, words: e.words };
     });
@@ -185,14 +194,18 @@ module.exports = {
     var prevMatched = sessionGet("lastMatchedPatterns");
     var matchedIds = top.map(function(s) { return s.entry.id; });
     sessionSet("lastMatchedPatterns", matchedIds);
-    var lines = ["[INTELLIGENCE] Relevant patterns for this task:"];
+    if (prevMatched && Array.isArray(prevMatched)) {
+      var newSet = {};
+      for (var i = 0; i < matchedIds.length; i++) newSet[matchedIds[i]] = true;
+    }
+    var lines2 = ["[INTELLIGENCE] Relevant patterns for this task:"];
     for (var j = 0; j < top.length; j++) {
       var e = top[j];
       var conf = e.entry.confidence || 0.5;
       var summary = (e.entry.summary || e.entry.content || "").substring(0, 80);
-      lines.push("  * (" + conf.toFixed(2) + ") " + summary);
+      lines2.push("  * (" + conf.toFixed(2) + ") " + summary);
     }
-    return lines.join("\n");
+    return lines2.join("\n");
   },
 
   recordEdit: function(file) {
@@ -216,15 +229,5 @@ module.exports = {
       } catch (e) { /* skip */ }
     }
     return { entries: count, edges: 0, newEntries: 0 };
-  },
-
-  stats: function(json) {
-    var ranked = readJSON(RANKED_PATH);
-    var count = ranked && ranked.entries ? ranked.entries.length : 0;
-    if (json) {
-      console.log(JSON.stringify({ entries: count, computedAt: ranked ? ranked.computedAt : null }));
-    } else {
-      console.log('[INTELLIGENCE] Stats: ' + count + ' entries loaded');
-    }
   },
 };

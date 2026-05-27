@@ -13,6 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { swallowError } from '@claude-flow/shared';
 
 interface RabitqEntry {
   id: string;
@@ -185,7 +186,10 @@ export async function buildRabitqIndex(options?: {
         builtAt: rabitqState.builtAt,
         wasmVersion: mod.version(),
       }));
-    } catch { /* best-effort */ }
+    } catch (err) {
+      // best-effort — metadata is a hint, not a correctness requirement
+      swallowError('rabitq-index.persist-meta', err);
+    }
 
     const rawBytes = entries.length * dimensions * 4; // f32 = 4 bytes
     const quantizedBytes = entries.length * Math.ceil(dimensions / 8); // 1 bit per dim

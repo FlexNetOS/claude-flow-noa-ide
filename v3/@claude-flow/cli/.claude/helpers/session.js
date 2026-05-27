@@ -1,13 +1,39 @@
 #!/usr/bin/env node
 /**
- * Claude Flow Session Manager
+ * Ruflo Session Manager
  * Handles session lifecycle: start, restore, end
  */
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const SESSION_DIR = path.join(process.cwd(), '.claude-flow', 'sessions');
+function resolveFlowPath(...segs) {
+  // Drop redundant leading '.claude' segment for global-install case so we
+  // never produce ~/.claude/.claude/... (mirrors settings-generator #bug8).
+  function stripRedundant(home, parts) {
+    if (parts.length > 0 && parts[0] === '.claude') return parts.slice(1);
+    return parts;
+  }
+
+  const cwdPath = path.join(process.cwd(), ...segs);
+  try {
+    // Prefer cwd if its parent already exists (per-project install) or if
+    // we can create it (writable cwd, no global override needed).
+    const parent = path.dirname(cwdPath);
+    if (fs.existsSync(parent)) return cwdPath;
+    fs.mkdirSync(parent, { recursive: true });
+    // Probe writability — a successful mkdir is enough on POSIX/Windows.
+    return cwdPath;
+  } catch {
+    // Fall through to global fallback
+  }
+
+  const homeBase = path.join(os.homedir(), '.claude');
+  return path.join(homeBase, ...stripRedundant(homeBase, segs));
+}
+
+const SESSION_DIR = resolveFlowPath('.claude-flow', 'sessions');
 const SESSION_FILE = path.join(SESSION_DIR, 'current.json');
 
 const commands = {
@@ -98,14 +124,6 @@ const commands = {
     fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
 
     return session;
-  },
-
-  get: (key) => {
-    if (!fs.existsSync(SESSION_FILE)) return null;
-    try {
-      const session = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8'));
-      return key ? (session.context || {})[key] : session.context;
-    } catch { return null; }
   },
 
   metric: (name) => {

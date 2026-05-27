@@ -14,7 +14,7 @@ Claude Flow V3 is a next-generation AI agent coordination system built on 10 Arc
 V3 represents a complete architectural overhaul:
 - **10x faster testing** with Vitest
 - **150x-12,500x faster search** with HNSW indexing
-- **2.49x-7.47x Flash Attention speedup**
+- **2.49x-7.47x Flash Attention speedup** *(optional — requires the `@claude-flow/neural` workspace package to be built; `hooks_intelligence_stats` reports `_unavailable: ['flash']` when it is not loaded)*
 - **50-75% memory reduction**
 
 ## Features
@@ -43,7 +43,7 @@ V3 represents a complete architectural overhaul:
 | Event Bus (100k events) | <50ms | ~6ms |
 | Map Lookup (100k gets) | <20ms | ~16ms |
 | Array.find vs Map O(1) | N/A | 978x speedup |
-| Flash Attention | 2.49x-7.47x | Validated |
+| Flash Attention | 2.49x-7.47x | Validated *(optional — requires `@claude-flow/neural` build)* |
 | AgentDB Search | 150x-12,500x | HNSW indexed |
 
 ## AgentDB / RAG behavior
@@ -475,7 +475,7 @@ pnpm test:coverage
 | Category | Metric | Target |
 |----------|--------|--------|
 | **Search** | AgentDB HNSW | 150x-12,500x faster |
-| **Attention** | Flash Attention | 2.49x-7.47x speedup |
+| **Attention** | Flash Attention | 2.49x-7.47x speedup *(optional — requires `@claude-flow/neural` build; absent backends are reported under `_unavailable` instead of being faked as `speedup: 1`)* |
 | **Memory** | Reduction | 50-75% |
 | **Code** | Total lines | <5,000 |
 | **Startup** | Cold start | <500ms |

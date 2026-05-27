@@ -61,29 +61,97 @@ export interface ToolResult {
 
 let _wasmReady = false;
 
+// #bug18 — `@ruvector/rvagent-wasm` is an optionalDependency that may not
+// be installed at runtime. Routing dynamic imports through an indirect
+// module name keeps TypeScript from trying to resolve the package at
+// compile time and lets us catch the runtime ERR_MODULE_NOT_FOUND in one
+// place. Same pattern as bug16c (`@ruvector/learning-wasm`).
+const RVAGENT_WASM_MODULE = '@ruvector/rvagent-wasm';
+
+/**
+ * Sentinel string included in error messages so MCP / CLI handlers can
+ * detect "WASM runtime missing" vs other failures and emit a friendly
+ * `_hint` to the user instead of a raw `ERR_MODULE_NOT_FOUND` stack.
+ */
+export const RVAGENT_WASM_NOT_INSTALLED = '@ruvector/rvagent-wasm not installed';
+
+/**
+ * Best-effort detection of "module not found" errors. Node throws
+ * `ERR_MODULE_NOT_FOUND` (ESM) or `MODULE_NOT_FOUND` (CJS) depending on
+ * the resolver path; both surface as either `err.code` or in the message.
+ */
+export function isRvagentWasmMissingError(err: unknown): boolean {
+  if (!err) return false;
+  const code = (err as { code?: string }).code;
+  if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Cannot find package '@ruvector\/rvagent-wasm'/.test(msg)
+    || /Cannot find module '@ruvector\/rvagent-wasm'/.test(msg)
+    // Vite/Vitest resolver phrasing — different wording, same root cause.
+    || /Failed to load url @ruvector\/rvagent-wasm/.test(msg)
+    || msg.includes(RVAGENT_WASM_NOT_INSTALLED);
+}
+
+/**
+ * Load the optional @ruvector/rvagent-wasm module via an indirect module
+ * name so TS doesn't resolve it at compile time. Returns `null` when the
+ * package is not installed (the typical case — it's an optionalDependency).
+ */
+async function loadRvagentWasmModule(): Promise<any | null> {
+  try {
+    return await import(/* @vite-ignore */ RVAGENT_WASM_MODULE);
+  } catch (err) {
+    if (isRvagentWasmMissingError(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Internal helper — call after `initAgentWasm()` succeeded to grab the
+ * loaded module. Throws a recognizable error if the package is missing
+ * (callers should already have gated on `isAgentWasmAvailable()` /
+ * `initAgentWasm()`).
+ */
+async function requireRvagentWasm(): Promise<any> {
+  const mod = await loadRvagentWasmModule();
+  if (mod === null) {
+    throw new Error(
+      `${RVAGENT_WASM_NOT_INSTALLED}. Install it with: npm install @ruvector/rvagent-wasm`
+    );
+  }
+  return mod;
+}
+
 /**
  * Check if @ruvector/rvagent-wasm is installed and loadable.
  */
 export async function isAgentWasmAvailable(): Promise<boolean> {
-  try {
-    const mod = await import('@ruvector/rvagent-wasm');
-    return typeof mod.WasmAgent === 'function';
-  } catch {
-    return false;
-  }
+  const mod = await loadRvagentWasmModule();
+  return mod !== null && typeof mod.WasmAgent === 'function';
 }
 
 /**
  * Initialize the WASM module for Node.js. Safe to call multiple times.
  * Uses initSync with file-loaded WASM bytes (browser fetch doesn't work in Node).
+ *
+ * Throws an error containing `RVAGENT_WASM_NOT_INSTALLED` when the
+ * optional package is missing — handlers should detect this via
+ * `isRvagentWasmMissingError` and return a friendly `{ error, _hint }`
+ * shape instead of a raw stack trace.
  */
 export async function initAgentWasm(): Promise<void> {
   if (_wasmReady) return;
+  const mod = await loadRvagentWasmModule();
+  if (mod === null) {
+    throw new Error(
+      `${RVAGENT_WASM_NOT_INSTALLED}. Install it with: npm install @ruvector/rvagent-wasm`
+    );
+  }
   try {
-    const mod = await import('@ruvector/rvagent-wasm');
     // In Node.js, load WASM bytes from disk and use initSync
     const require_ = createRequire(import.meta.url);
-    const wasmPath = require_.resolve('@ruvector/rvagent-wasm/rvagent_wasm_bg.wasm');
+    // Indirect module name keeps TS from attempting compile-time resolution.
+    const wasmPath = require_.resolve(`${RVAGENT_WASM_MODULE}/rvagent_wasm_bg.wasm`);
     const wasmBytes = readFileSync(wasmPath);
     mod.initSync(wasmBytes);
     _wasmReady = true;
@@ -108,10 +176,13 @@ function generateId(): string {
  */
 export async function createWasmAgent(config: WasmAgentConfig = {}): Promise<WasmAgentInfo> {
   await initAgentWasm();
-  const mod = await import('@ruvector/rvagent-wasm');
+  const mod = await requireRvagentWasm();
 
+  // #1810 — was hardcoded `anthropic:claude-sonnet-4-20250514`. Updated to
+  // current Sonnet (4.6) so new gallery agents don't silently inherit a
+  // year-old model. Callers can still override via `config.model`.
   const configJson = JSON.stringify({
-    model: config.model ?? 'anthropic:claude-sonnet-4-20250514',
+    model: config.model ?? 'anthropic:claude-sonnet-4-6',
     instructions: config.instructions ?? 'You are a helpful coding assistant.',
     max_turns: config.maxTurns ?? 50,
   });
@@ -135,7 +206,18 @@ export async function createWasmAgent(config: WasmAgentConfig = {}): Promise<Was
 }
 
 /**
- * Send a prompt to a WASM agent. Requires a model provider to be set.
+ * Send a prompt to a WASM agent.
+ *
+ * ADR-095 G4: the bundled @ruvector/rvagent-wasm doesn't actually run an
+ * LLM — its prompt() method echoes input back as `"echo: <input>"`. We
+ * detect that stub output and route the prompt through Anthropic's
+ * Messages API so users get a real response. The WASM agent's sandbox
+ * (virtual filesystem, tool execution) still works for non-LLM ops via
+ * executeWasmTool — we're just patching the "talk to a model" hole.
+ *
+ * If ANTHROPIC_API_KEY is not set, returns the stub output verbatim so
+ * the failure mode is obvious to the caller (matches the previous
+ * behaviour rather than throwing for users without keys configured).
  */
 export async function promptWasmAgent(agentId: string, input: string): Promise<string> {
   const entry = agents.get(agentId);
@@ -143,10 +225,38 @@ export async function promptWasmAgent(agentId: string, input: string): Promise<s
 
   entry.info.state = 'running';
   try {
-    const result = await entry.agent.prompt(input);
+    const wasmResult = await entry.agent.prompt(input);
     entry.info.state = 'idle';
     syncAgentInfo(entry);
-    return result;
+
+    // Detect the WASM echo stub.
+    const isEchoStub = typeof wasmResult === 'string' &&
+      (wasmResult === `echo: ${input}` || /^echo: /.test(wasmResult.slice(0, 12)));
+
+    if (!isEchoStub) {
+      return wasmResult;
+    }
+
+    // Echo stub detected — route through a real LLM call.
+    if (!process.env.ANTHROPIC_API_KEY) {
+      // No key configured; surface the stub honestly with a hint.
+      return `${wasmResult}\n[NOTE: bundled WASM agent has no LLM; set ANTHROPIC_API_KEY to enable real responses via Anthropic Messages API]`;
+    }
+
+    const { callAnthropicMessages, resolveAnthropicModel } = await import('../mcp-tools/agent-execute-core.js');
+    const model = resolveAnthropicModel(entry.info.config.model);
+    const systemPrompt = entry.info.config.instructions || 'You are a helpful coding assistant running in a Ruflo WASM agent sandbox.';
+    const result = await callAnthropicMessages({
+      prompt: input,
+      systemPrompt,
+      model,
+      maxTokens: 2048,
+    });
+    if (!result.success) {
+      return `${wasmResult}\n[NOTE: bundled WASM agent has no LLM; Anthropic fallback failed: ${result.error}]`;
+    }
+    // Return the real LLM output, not the echo stub.
+    return result.output ?? '';
   } catch (err) {
     entry.info.state = 'error';
     throw err;
@@ -266,7 +376,7 @@ export async function createWasmMcpServer(agentId: string): Promise<(jsonRpc: st
   const entry = agents.get(agentId);
   if (!entry) throw new Error(`WASM agent not found: ${agentId}`);
 
-  const mod = await import('@ruvector/rvagent-wasm');
+  const mod = await requireRvagentWasm();
   const server = new mod.WasmMcpServer(entry.agent);
 
   return (jsonRpc: string) => server.handle_request(jsonRpc);
@@ -279,7 +389,7 @@ let _gallery: any | null = null;
 async function getGallery(): Promise<any> {
   if (_gallery) return _gallery;
   await initAgentWasm();
-  const mod = await import('@ruvector/rvagent-wasm');
+  const mod = await requireRvagentWasm();
   _gallery = new mod.WasmGallery();
   return _gallery;
 }
@@ -356,7 +466,7 @@ export async function buildRvfContainer(opts: {
   skills?: Array<{ name: string; description: string; trigger: string; content: string }>;
 }): Promise<Uint8Array> {
   await initAgentWasm();
-  const mod = await import('@ruvector/rvagent-wasm');
+  const mod = await requireRvagentWasm();
   const builder = new mod.WasmRvfBuilder();
 
   for (const p of opts.prompts ?? []) {

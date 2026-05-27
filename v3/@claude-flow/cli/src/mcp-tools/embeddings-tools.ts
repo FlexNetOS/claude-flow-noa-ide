@@ -157,14 +157,14 @@ function cosineSimilarity(a: number[], b: number[]): number {
 export const embeddingsTools: MCPTool[] = [
   {
     name: 'embeddings_init',
-    description: 'Initialize the ONNX embedding subsystem with hyperbolic support',
+    description: 'Initialize the embedding subsystem. Probes the live Ollama daemon for `mxbai-embed-large` (1024-dim) and falls back to bundled MiniLM (384-dim). Reports the actually-active embedder so callers can route accordingly.',
     category: 'embeddings',
     inputSchema: {
       type: 'object',
       properties: {
         model: {
           type: 'string',
-          description: 'ONNX model ID',
+          description: 'ONNX model ID (used only for the legacy fallback config; the active embedder is auto-detected from Ollama).',
           enum: ['Xenova/all-MiniLM-L6-v2', 'Xenova/all-mpnet-base-v2'],
           default: 'Xenova/all-MiniLM-L6-v2',
         },
@@ -199,13 +199,24 @@ export const embeddingsTools: MCPTool[] = [
 
       const existingConfig = loadConfig();
       if (existingConfig && !force) {
+        // #bug43.3: even when the static config is "already initialized",
+        // probe + report the live embedder so the caller knows what's
+        // actually firing for memory_store / memory_search.
+        let active: { model: string; dim: number; source: string; fallback: boolean } | null = null;
+        try {
+          const { getActiveEmbedder } = await import('../memory/embedder-resolver.js');
+          const a = await getActiveEmbedder();
+          active = { model: a.model, dim: a.dim, source: a.source, fallback: a.isFallback };
+        } catch { /* ignore */ }
         return {
           success: false,
+          initialized: true,
           error: 'Embeddings already initialized. Use force=true to overwrite.',
           existingConfig: {
             model: existingConfig.model,
             initialized: existingConfig.initialized,
           },
+          active,
         };
       }
 
@@ -244,8 +255,20 @@ export const embeddingsTools: MCPTool[] = [
         // Best-effort reset for long-running MCP processes.
       }
 
+      // #bug43.3: actually initialize the embedder pipeline rather than
+      // returning a dormant `initialized: false`. We probe the resolver
+      // here so a freshly-pulled `mxbai-embed-large` is picked up and
+      // the result reflects what the bridge will actually use.
+      let active: { model: string; dim: number; source: string; fallback: boolean } | null = null;
+      try {
+        const { getActiveEmbedder } = await import('../memory/embedder-resolver.js');
+        const a = await getActiveEmbedder({ force: true });
+        active = { model: a.model, dim: a.dim, source: a.source, fallback: a.isFallback };
+      } catch { /* probe failed, leave null */ }
+
       return {
         success: true,
+        initialized: true,
         config: {
           model,
           dimension,
@@ -253,11 +276,14 @@ export const embeddingsTools: MCPTool[] = [
           hyperbolic: hyperbolic ? { enabled: true, curvature } : { enabled: false },
           neural: { enabled: true },
         },
+        active,
         paths: {
           config: getConfigPath(),
           models: modelPath,
         },
-        message: 'Embedding subsystem initialized successfully',
+        message: active
+          ? `Embedding subsystem initialized — active embedder: ${active.model} (${active.dim}d, source=${active.source})`
+          : 'Embedding subsystem initialized (active embedder unavailable)',
       };
     },
   },
@@ -855,7 +881,48 @@ export const embeddingsTools: MCPTool[] = [
         };
       }
 
-      return {
+      // ADR-093 F5: distinguish "@ruvector/core installed" from "wired into
+      // the embedding pipeline". Previously this collapsed both into a
+      // single `ruvector: boolean` field, which gave callers no way to
+      // tell whether re-running embeddings_init would help (#1698 partial
+      // regression on the MCP boundary).
+      let ruvectorAvailable = false;
+      let ruvectorVersion: string | undefined;
+      try {
+        const mod = await import('@ruvector/core');
+        ruvectorAvailable = !!(mod as Record<string, unknown>);
+        try {
+          // Best-effort: many packages expose a `version` constant
+          ruvectorVersion = (mod as { version?: string }).version;
+        } catch { /* ignore */ }
+      } catch { /* not installed */ }
+
+      const ruvectorEnabled = config.neural.ruvector?.enabled ?? false;
+
+      // #bug21 — embeddings_status reports `initialized: true` with config
+      // details but no indication of whether any embeddings have actually
+      // been stored. Probe the memory store for an embedding count so the
+      // idle case ("initialized but never populated") is distinguishable
+      // from "active". Mirrors the Bug 11.3 idle-since-load pattern.
+      let embeddingCount: number | null = null;
+      try {
+        const memInit = await import('../memory/memory-initializer.js').catch(() => null);
+        const fn = (memInit as Record<string, unknown> | null)?.searchEntries as
+          | ((args: Record<string, unknown>) => Promise<{ results: unknown[] }>)
+          | undefined;
+        if (typeof fn === 'function') {
+          // Empty query returns the unfiltered set; cap to 1 since we only
+          // need the count distinction (zero vs non-zero).
+          const probe = await fn({ query: '', limit: 1, threshold: 0, namespace: 'all' });
+          embeddingCount = Array.isArray(probe.results) ? probe.results.length : 0;
+        }
+      } catch {
+        // Probe failed — leave embeddingCount null, fall through without
+        // the idle annotation. A backend-broken case is not the bug-21 scope.
+      }
+      const isIdle = embeddingCount === 0;
+
+      const result: Record<string, unknown> = {
         success: true,
         initialized: true,
         config: {
@@ -865,7 +932,16 @@ export const embeddingsTools: MCPTool[] = [
           hyperbolic: config.hyperbolic,
           neural: {
             enabled: config.neural.enabled,
-            ruvector: config.neural.ruvector?.enabled ?? false,
+            // Backwards-compatible: keep the boolean view (truthy when wired).
+            ruvector: ruvectorEnabled,
+            // New shape — additive, non-breaking. Callers that need to
+            // distinguish "package is installed" from "feature wired in"
+            // read these instead of guessing from a single bool.
+            ruvectorStatus: {
+              available: ruvectorAvailable,
+              enabled: ruvectorEnabled,
+              version: ruvectorVersion,
+            },
           },
         },
         paths: {
@@ -880,6 +956,13 @@ export const embeddingsTools: MCPTool[] = [
           features: ['semantic search', 'hyperbolic projection', 'neural substrate'],
         },
       };
+
+      if (isIdle) {
+        result._status = 'idle';
+        result._note = 'Embeddings initialized; no embeddings stored yet. Use mcp__claude-flow__embeddings_generate (or memory_store) to populate the index.';
+      }
+
+      return result;
     },
   },
 

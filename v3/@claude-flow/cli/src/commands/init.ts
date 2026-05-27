@@ -188,7 +188,6 @@ const initAction = async (ctx: CommandContext): Promise<CommandResult> => {
   const skipClaude = ctx.flags['skip-claude'] as boolean;
   const onlyClaude = ctx.flags['only-claude'] as boolean;
   const noGlobal = ctx.flags['no-global'] as boolean;
-  const noAttribution = ctx.flags['no-attribution'] as boolean;
   const codexMode = ctx.flags.codex as boolean;
   const dualMode = ctx.flags.dual as boolean;
   const cwd = ctx.cwd;
@@ -258,18 +257,6 @@ const initAction = async (ctx: CommandContext): Promise<CommandResult> => {
   // who rely on it; opting in via --no-global keeps the global file pristine.
   if (noGlobal) {
     options.skipGlobalClaudeMd = true;
-  }
-
-  // #1670 — opt-out of the RuFlo Co-Authored-By trailer and PR-body footer
-  // that get written into the project's .claude/settings.json. CLI flag is
-  // primary; RUFLO_NO_ATTRIBUTION env var is a convenience for CI/scripted
-  // runs that don't want to thread the flag through every invocation.
-  if (
-    noAttribution ||
-    process.env.RUFLO_NO_ATTRIBUTION === '1' ||
-    process.env.RUFLO_NO_ATTRIBUTION === 'true'
-  ) {
-    options.noAttribution = true;
   }
 
   // Create spinner
@@ -1087,13 +1074,6 @@ export const initCommand: Command = {
     {
       name: 'no-global',
       description: 'Skip the ~/.claude/CLAUDE.md "Ruflo Integration" pointer block (#1744)',
-      type: 'boolean',
-      default: false,
-    },
-    {
-      name: 'no-attribution',
-      description:
-        'Suppress the RuFlo Co-Authored-By commit trailer and PR-body footer in .claude/settings.json (#1670). Also honors RUFLO_NO_ATTRIBUTION=1 in the env.',
       type: 'boolean',
       default: false,
     },

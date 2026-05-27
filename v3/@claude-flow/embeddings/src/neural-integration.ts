@@ -283,16 +283,20 @@ export async function listEmbeddingModels(): Promise<Array<{
 }
 
 /**
- * Download embedding model
+ * Download embedding model.
+ *
+ * #1700 item 2: previously this propagated `Cannot find package 'agentic-flow'`
+ * when the optional peer wasn't installed, breaking `embeddings init` even
+ * though the rest of the embedding pipeline (Xenova/transformers ONNX) does
+ * not need agentic-flow. Now we try the agentic-flow path first and fall
+ * back to a no-op success when it isn't installed — the model still loads
+ * lazily on first `embeddings_generate` call via @xenova/transformers.
  */
 export async function downloadEmbeddingModel(
   modelId: string,
   targetDir?: string,
   onProgress?: (progress: { percent: number; bytesDownloaded: number; totalBytes: number }) => void
 ): Promise<string> {
-  const modelDir = targetDir ?? '.models';
-  const modelName = modelId.includes('/') ? modelId : `Xenova/${modelId}`;
-
   try {
     const mod = await import('agentic-flow/embeddings').catch((err) => {
       throw err;
@@ -305,58 +309,22 @@ export async function downloadEmbeddingModel(
       // Treat as lazy-fetch path — @xenova/transformers will download on
       // first generate(). #1700 item 2 follow-up.
       console.warn('[embeddings] agentic-flow installed but does not expose downloadModel — ' +
-        'falling back to Transformers.js download.');
-      return await downloadWithTransformers(modelName, modelDir, onProgress);
+        'falling back to lazy fetch via @xenova/transformers on first generate.');
+      return targetDir ?? '.models';
     }
     return await (downloadFn as (id: string, dir: string, cb?: typeof onProgress) => Promise<string>)(
-      modelId, modelDir, onProgress
+      modelId, targetDir ?? '.models', onProgress
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Distinguish "package missing" / "subpath unsupported" from real
-    // download errors so callers can surface the right hint to users.
-    // #1468: Windows + Node strict-ESM raises
-    //   `Package subpath './embeddings' is not defined by "exports"`
-    // when the bundled agentic-flow's package.json doesn't declare the
-    // ./embeddings entry. WSL/Linux is more permissive on the same code,
-    // so the bug only surfaces on Windows. Treat both shapes as
-    // "agentic-flow neural extras unavailable, fall back to lazy fetch".
-    if (
-      /Cannot find package 'agentic-flow'|Cannot find module/.test(msg)
-      || /Package subpath ['"]\.\/embeddings['"] is not defined/.test(msg)
-      || /ERR_PACKAGE_PATH_NOT_EXPORTED/.test(msg)
-    ) {
-      console.warn('[embeddings] agentic-flow neural extras unavailable — skipping eager model download. ' +
-        'Using Transformers.js to populate the configured model cache. ' +
-        `Reason: ${msg}`);
-      return await downloadWithTransformers(modelName, modelDir, onProgress);
+    // Distinguish "package missing" from real download errors so callers
+    // can surface the right hint to users.
+    if (/Cannot find package 'agentic-flow'|Cannot find module/.test(msg)) {
+      console.warn('[embeddings] agentic-flow not installed — skipping eager model download. ' +
+        'Models will be fetched lazily by @xenova/transformers on first generate. ' +
+        'For pre-downloaded models, run: npm install agentic-flow');
+      return targetDir ?? '.models';
     }
     throw err;
   }
-}
-
-async function downloadWithTransformers(
-  modelName: string,
-  targetDir: string,
-  onProgress?: (progress: { percent: number; bytesDownloaded: number; totalBytes: number }) => void
-): Promise<string> {
-  const { loadTransformersPipeline } = await import('./transformers-loader.js');
-  const handle = await loadTransformersPipeline();
-  if (!handle) {
-    throw new Error(
-      'No transformers package available. Install @huggingface/transformers or @xenova/transformers to download ONNX embeddings.'
-    );
-  }
-
-  await handle.pipeline('feature-extraction', modelName, {
-    cache_dir: targetDir,
-    progress_callback: (progress: Record<string, unknown>) => {
-      const loaded = typeof progress.loaded === 'number' ? progress.loaded : 0;
-      const total = typeof progress.total === 'number' ? progress.total : 0;
-      const percent = total > 0 ? (loaded / total) * 100 : 0;
-      onProgress?.({ percent, bytesDownloaded: loaded, totalBytes: total });
-    },
-  });
-
-  return targetDir;
 }

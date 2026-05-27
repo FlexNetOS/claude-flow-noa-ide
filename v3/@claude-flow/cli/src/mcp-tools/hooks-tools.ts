@@ -3,18 +3,17 @@
  * Provides intelligent hooks functionality via MCP protocol
  */
 
-import { mkdirSync, writeFileSync, existsSync, readFileSync, statSync, unlinkSync, readdirSync, rmSync } from 'fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync, statSync, unlinkSync, readdirSync, rmSync, appendFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
+import { homedir } from 'os';
 import { type MCPTool, getProjectCwd } from './types.js';
 import { validateIdentifier, validateText, validatePath } from './validate-input.js';
+import { scanClaudeCodeRegistry } from '../registry/claude-code-registry.js';
 import {
-  hooksWorkerList,
-  hooksWorkerDispatch,
-  hooksWorkerStatus,
-  hooksWorkerDetect,
-  hooksWorkerCancel,
-} from './hooks-worker-tools.js';
-export { hooksWorkerList, hooksWorkerDispatch, hooksWorkerStatus, hooksWorkerDetect, hooksWorkerCancel };
+  matchUserSkillsForTask,
+  matchUserSkillsForTaskSemantic,
+  type UserSkillMatch,
+} from '../registry/skill-matcher.js';
 
 // Real vector search functions - lazy loaded to avoid circular imports
 let searchEntriesFn: ((options: {
@@ -101,11 +100,12 @@ async function getEWCConsolidator() {
 }
 
 // MoE Router - lazy loaded
-let moeRouter: Awaited<ReturnType<typeof import('../ruvector/moe-router.js').getMoERouter>> | null = null;
+// #1773 item 4 — moe-router migrated to @claude-flow/neural
+let moeRouter: Awaited<ReturnType<typeof import('@claude-flow/neural').getMoERouter>> | null = null;
 async function getMoERouter() {
   if (!moeRouter) {
     try {
-      const { getMoERouter: getMoE } = await import('../ruvector/moe-router.js');
+      const { getMoERouter: getMoE } = await import('@claude-flow/neural');
       moeRouter = await getMoE();
     } catch {
       moeRouter = null;
@@ -401,11 +401,12 @@ function getRouterBackendInfo(): { backend: string; speed: string } {
 }
 
 // Flash Attention - lazy loaded
-let flashAttention: Awaited<ReturnType<typeof import('../ruvector/flash-attention.js').getFlashAttention>> | null = null;
+// #1773 item 4 — flash-attention migrated to @claude-flow/neural
+let flashAttention: Awaited<ReturnType<typeof import('@claude-flow/neural').getFlashAttention>> | null = null;
 async function getFlashAttention() {
   if (!flashAttention) {
     try {
-      const { getFlashAttention: getFlash } = await import('../ruvector/flash-attention.js');
+      const { getFlashAttention: getFlash } = await import('@claude-flow/neural');
       flashAttention = await getFlash();
     } catch {
       flashAttention = null;
@@ -434,6 +435,15 @@ interface TrajectoryStep {
   result: string;
   quality: number;
   timestamp: string;
+  /**
+   * Gap 4 — optional per-step cost annotation. Populated by the cost-recorder
+   * join (see services/cost-recorder.ts) when a session+stepIndex match is
+   * available. Optional preserves backwards compatibility — older trajectories
+   * recorded before Gap 4 simply lack the field, which trace-loader handles
+   * gracefully. Tokens are raw counts; `total` is USD summed from the
+   * pricing-table entry (null when the model is unpriced).
+   */
+  cost?: { input: number; output: number; cacheRead: number; cacheCreation: number; total: number } | null;
 }
 
 interface TrajectoryData {
@@ -448,6 +458,50 @@ interface TrajectoryData {
 
 // In-memory trajectory tracking (persisted on end)
 const activeTrajectories = new Map<string, TrajectoryData>();
+
+/**
+ * Gap 4 v1.5 — tracks the current stepIndex for each active trajectory.
+ * The trajectoryId IS the sessionId in cost-recorder terms (see trace-loader's
+ * `enrichWithCosts`, which JOINs cost entries by `t.id` against `entry.sessionId`).
+ *
+ * Used by agent-execute-core.ts so callers don't have to plumb `stepIndex`
+ * explicitly through every dispatch — `callAnthropicMessages` looks the
+ * value up by sessionId and falls back to it when input.stepIndex is omitted.
+ *
+ * Lifecycle (mirrors activeTrajectories):
+ *   - hooks_intelligence_trajectory-start → set(sid, -1)  (no steps yet,
+ *     next push lands at index 0). Pre-seeded with -1 so callers can detect
+ *     "trajectory active but no step yet" vs "no trajectory" (null).
+ *   - hooks_intelligence_trajectory-step  → set(sid, steps.length - 1) AFTER
+ *     the push (i.e. index of the just-pushed step).
+ *   - hooks_intelligence_trajectory-end   → delete(sid).
+ *
+ * In-process only — restart resets state. That's intentional: no persistence,
+ * no migration cost, no stale entries leaking between MCP daemon restarts.
+ */
+const activeSessionStepIndex = new Map<string, number>();
+
+/**
+ * Returns the current stepIndex for a trajectory (sessionId), or null when
+ * the trajectory is unknown / not active / hasn't logged a step yet (-1
+ * sentinel from trajectory-start is normalized to null here so callers see
+ * a clean "no step bound" signal). Exposed so agent-execute-core.ts can
+ * auto-attribute costs without an explicit `stepIndex` from the caller.
+ */
+export function getCurrentStepIndex(sessionId: string): number | null {
+  const v = activeSessionStepIndex.get(sessionId);
+  if (v === undefined) return null;
+  if (v < 0) return null;
+  return v;
+}
+
+/**
+ * Test-only helper to clear the active-step Map between test runs.
+ * Not part of the public MCP surface; gated by underscore-prefix convention.
+ */
+export function _resetActiveSessionStepIndex(): void {
+  activeSessionStepIndex.clear();
+}
 
 // Memory store types and helpers
 interface MemoryEntry {
@@ -888,9 +942,16 @@ export const hooksPostCommand: MCPTool = {
   },
 };
 
+/**
+ * #bug23.0 — `matchUserSkillsForTask` was extracted to
+ * `../registry/skill-matcher.ts` so `swarm_init` (#bug23) can reuse the
+ * same scorer. The function semantics are unchanged from #bug22.3 — see
+ * the extracted module for full docs.
+ */
+
 export const hooksRoute: MCPTool = {
   name: 'hooks_route',
-  description: 'Route task to optimal agent using semantic similarity (native HNSW or pure JS)',
+  description: 'Get a 3-tier routing recommendation for a task: Tier 1 (Agent Booster, 0ms / $0 — for var-to-const, add-types, etc.), Tier 2 (Haiku — simple), Tier 3 (Sonnet/Opus — complex). Use this BEFORE spawning an agent to avoid sending simple transforms to Sonnet. Native tools have no equivalent — Claude Code does not introspect its own model-selection cost. Returns the recommended model + a `[AGENT_BOOSTER_AVAILABLE]` literal when the WASM bypass applies. Also surfaces user-installed skills/agents from ~/.claude/ that match the task (e.g. polymarket-analyzer for trading tasks).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -907,6 +968,45 @@ export const hooksRoute: MCPTool = {
 
     { const v = validateText(task, 'task'); if (!v.valid) return { success: false, error: v.error }; }
     if (context) { const v = validateText(context, 'context'); if (!v.valid) return { success: false, error: v.error }; }
+
+    // #bug22.3 — Always score user-installed skills/agents against the task
+    // BEFORE running the built-in routing logic, so the response can surface
+    // the user's `polymarket-analyzer` / `kali-osint-*` / `ceo` etc. as
+    // alternatives even when AgentDB / semantic router lock onto a built-in
+    // pattern. Failures here must never break routing.
+    //
+    // #bug40 — Use the SEMANTIC matcher (#bug25.2) by default. The keyword
+    // bag-of-words fallback was producing false positives like ranking
+    // `kali-metasploit` top-1 for a "JWT auth refactor" task because of the
+    // shared "auth" token. The semantic path embeds task + skill via Ollama
+    // and uses cosine similarity (with a keyword blend), which correctly
+    // distinguishes "pentest with metasploit" from "JWT auth refactor".
+    // When Ollama is unreachable `matchUserSkillsForTaskSemantic` transparently
+    // falls back to the keyword scorer (`backend: 'keyword'`), so this swap
+    // never reduces availability — only correctness.
+    let userMatches: UserSkillMatch[] = [];
+    let userMatchBackend: 'embedding' | 'keyword' | 'hybrid' | 'none' = 'none';
+    try {
+      const registry = await scanClaudeCodeRegistry();
+      const semanticResult = await matchUserSkillsForTaskSemantic(
+        task,
+        context,
+        registry.skills,
+        registry.agents,
+      );
+      userMatches = semanticResult.matches;
+      userMatchBackend = semanticResult.backend;
+    } catch {
+      // Registry / Ollama unavailable — final safety net, fall back to the
+      // pure keyword scorer rather than dropping user matches entirely.
+      try {
+        const registry = await scanClaudeCodeRegistry();
+        userMatches = matchUserSkillsForTask(task, context, registry.skills, registry.agents);
+        userMatchBackend = 'keyword';
+      } catch {
+        /* registry truly unavailable — keep going with built-in routing only. */
+      }
+    }
 
     // Phase 5: Try AgentDB's SemanticRouter / LearningSystem first
     if (useSemanticRouter) {
@@ -936,6 +1036,11 @@ export const hooksRoute: MCPTool = {
               confidence: Math.round((agentdbRoute.confidence - (0.1 * (i + 1))) * 100) / 100,
               reason: `Alternative from ${agentdbRoute.controller}`,
             })),
+            // #bug22.3 — even when AgentDB is confident, expose user-installed
+            // matches so the caller can override (e.g. "yes route to coder,
+            // but the user has polymarket-analyzer that's literally written
+            // for this exact task").
+            userInstalledMatches: userMatches,
             estimatedMetrics: {
               successProbability: Math.round(agentdbRoute.confidence * 100) / 100,
               estimatedDuration: complexity === 'high' ? '2-4 hours' : complexity === 'medium' ? '30-60 min' : '10-30 min',
@@ -1019,6 +1124,32 @@ export const hooksRoute: MCPTool = {
       backendInfo = 'keyword matching';
     }
 
+    // #bug22.3 — promote a strong user-installed skill/agent to primary
+    // when its score clearly outranks the built-in match. The threshold is
+    // intentionally conservative (>=4 keyword hits, with name-tokens
+    // weighted 2× per matchUserSkillsForTask) so we only override when the
+    // user wrote a skill/agent that's a near-perfect lexical fit. Built-in
+    // results are kept as alternatives so the caller never loses signal.
+    const STRONG_USER_MATCH_THRESHOLD = 4;
+    let primarySource: 'built-in' | 'user' = 'built-in';
+    if (userMatches.length > 0 && userMatches[0].score >= STRONG_USER_MATCH_THRESHOLD) {
+      const topUser = userMatches[0];
+      const builtInAgents = agents;
+      agents = [topUser.name, ...builtInAgents];
+      // Map keyword score (0..N) into a 0..1 confidence — clamp at 0.95.
+      confidence = Math.min(0.6 + topUser.score * 0.05, 0.95);
+      matchedPattern = `user-${topUser.type}:${topUser.name}`;
+      // #bug40 — backend label reflects which matcher actually scored this.
+      // `hybrid` = Ollama embed + keyword blend (preferred). `embedding` =
+      // pure semantic. `keyword` = Ollama unreachable, fell back. `none` =
+      // registry itself failed.
+      routingMethod = `user-installed-${userMatchBackend}`;
+      backendInfo = userMatchBackend === 'keyword' || userMatchBackend === 'none'
+        ? 'user-installed registry (keyword match — Ollama unreachable)'
+        : `user-installed registry (semantic ${userMatchBackend} match via Ollama)`;
+      primarySource = 'user';
+    }
+
     // Determine complexity
     const taskLower = task.toLowerCase();
     const complexity = taskLower.includes('complex') || taskLower.includes('architecture') || task.length > 200
@@ -1043,15 +1174,22 @@ export const hooksRoute: MCPTool = {
       primaryAgent: {
         type: agents[0],
         confidence: Math.round(confidence * 100) / 100,
-        reason: routingMethod.startsWith('semantic')
-          ? `Semantic similarity to "${matchedPattern}" pattern (${Math.round(confidence * 100)}%)`
-          : `Task contains keywords matching ${agents[0]} specialization`,
+        source: primarySource,
+        reason: primarySource === 'user'
+          ? `User-installed ${userMatches[0].type} "${userMatches[0].name}" matched ${userMatches[0].matchedKeywords.length} task keywords (${userMatches[0].matchedKeywords.join(', ')})`
+          : routingMethod.startsWith('semantic')
+            ? `Semantic similarity to "${matchedPattern}" pattern (${Math.round(confidence * 100)}%)`
+            : `Task contains keywords matching ${agents[0]} specialization`,
       },
       alternativeAgents: agents.slice(1).map((agent, i) => ({
         type: agent,
         confidence: Math.round((confidence - (0.1 * (i + 1))) * 100) / 100,
         reason: `Alternative agent for ${agent} capabilities`,
       })),
+      // #bug22.3 — full list of user-installed candidates with their scores,
+      // regardless of whether one was promoted to primary. Lets callers
+      // build their own ranking on top of ours.
+      userInstalledMatches: userMatches,
       estimatedMetrics: {
         successProbability: Math.round(confidence * 100) / 100,
         estimatedDuration: complexity === 'high' ? '2-4 hours' : complexity === 'medium' ? '30-60 min' : '10-30 min',
@@ -1066,6 +1204,659 @@ export const hooksRoute: MCPTool = {
   },
 };
 
+// =============================================================================
+// ROUTING-B — `hooks_route_specialist` MCP tool
+// -----------------------------------------------------------------------------
+// Companion to `hooksRoute`. Where `hooksRoute` returns a single end-to-end
+// routing decision (3-tier model + matched pattern + AgentDB context),
+// `hooksRouteSpecialist` is a *pure ranker*: given a task description, score
+// every known specialist agent type and return the top-N candidates so the
+// caller (typically a lead agent before `Agent({...})` dispatch) can pick a
+// language- or domain-specific worker instead of defaulting to generic
+// `coder`/`tester`/`reviewer`.
+//
+// All inputs are normalized to lower-case; matching is substring-based so
+// multi-word tokens like "memory leak" or "cold start" work without a real
+// tokenizer. No I/O — the registry and token tables are static and embedded
+// here on purpose (the Agent tool's catalog isn't queryable from inside CLI
+// code).
+// =============================================================================
+
+interface SpecialistAgentEntry {
+  /** Canonical agent type as accepted by the Agent tool's `subagent_type`. */
+  name: string;
+  /** Language families the agent specializes in (lower-case keys of LANGUAGE_TOKENS). */
+  langs?: string[];
+  /** Frameworks/runtimes the agent specializes in (lower-case keys of FRAMEWORK_TOKENS). */
+  frameworks?: string[];
+  /** Domain tags (lower-case keys of DOMAIN_TOKENS). */
+  domains?: string[];
+  /** Generics get a small score penalty so specialists win ties. */
+  isGeneric?: boolean;
+  /** Optional one-line summary surfaced in `reason`. */
+  description?: string;
+}
+
+const SPECIALIST_AGENT_REGISTRY: readonly SpecialistAgentEntry[] = [
+  // Language specialists
+  { name: 'typescript-expert', langs: ['typescript'], domains: ['refactor', 'performance'], description: 'TypeScript with strict typing, advanced types' },
+  { name: 'python-expert', langs: ['python'], domains: ['refactor', 'performance'], description: 'Python with async/await and type hints' },
+  { name: 'rust-expert', langs: ['rust'], domains: ['performance', 'refactor'], description: 'Rust with ownership and lifetimes' },
+  { name: 'golang-expert', langs: ['go'], domains: ['performance', 'refactor'], description: 'Go with goroutines and channels' },
+  { name: 'swift-developer', langs: ['swift'], frameworks: ['swiftui', 'uikit', 'appkit'], description: 'Swift on Apple platforms' },
+  { name: 'apple-ui-designer', langs: ['swift'], frameworks: ['swiftui', 'uikit', 'appkit'], domains: ['ui', 'design'], description: 'Apple HIG UI/UX' },
+  { name: 'java-expert', langs: ['java'], domains: ['refactor', 'performance'], description: 'Java with modern patterns' },
+  { name: 'csharp-expert', langs: ['csharp'], domains: ['refactor', 'performance'], description: 'C# / .NET expert' },
+  { name: 'ruby-expert', langs: ['ruby'], frameworks: ['rails'], description: 'Ruby with Rails idioms' },
+
+  // Framework / runtime specialists
+  { name: 'backend-dev', frameworks: ['express', 'fastapi', 'nestjs'], domains: ['backend', 'api'], description: 'Backend service development' },
+  { name: 'mobile-dev', frameworks: ['react-native', 'expo'], domains: ['mobile'], description: 'Cross-platform mobile development' },
+  { name: 'react-expert', frameworks: ['react', 'next'], langs: ['typescript'], domains: ['ui'], description: 'React + Next.js UI engineer' },
+
+  // Domain specialists
+  { name: 'security-auditor', domains: ['security', 'audit', 'vulnerability', 'cve'], description: 'Security audit + CVE / OWASP triage' },
+  { name: 'security-architect', domains: ['security', 'architecture', 'threat-modeling'], description: 'Security architecture + threat modeling' },
+  { name: 'performance-engineer', domains: ['performance', 'optimize', 'cache', 'profile'], description: 'Performance optimization + caching' },
+  { name: 'performance-profiler', domains: ['profile', 'bottleneck', 'monitoring', 'performance'], description: 'Profiling + bottleneck detection' },
+  { name: 'refactoring-specialist', domains: ['refactor', 'technical-debt', 'design-pattern', 'cleanup'], description: 'Refactor + design patterns' },
+  { name: 'system-architect', domains: ['architecture', 'system-design', 'adr', 'design-pattern'], description: 'System architecture + ADRs' },
+  { name: 'database-optimizer', domains: ['database', 'query', 'index', 'schema'], description: 'Database query + index tuning' },
+  { name: 'api-designer', domains: ['api', 'rest', 'graphql', 'openapi'], description: 'API contract design (REST / GraphQL / OpenAPI)' },
+  { name: 'infrastructure-architect', domains: ['cloud', 'kubernetes', 'aws', 'gcp', 'azure'], description: 'Cloud infrastructure architecture' },
+  { name: 'deployment-engineer', domains: ['ci-cd', 'docker', 'deploy'], description: 'CI/CD + container deployment' },
+  { name: 'debugger', domains: ['debug', 'stack-trace', 'error', 'root-cause'], description: 'Stack-trace + root-cause debugging' },
+  { name: 'test-engineer', domains: ['test', 'tdd', 'bdd', 'integration-test', 'e2e'], description: 'Test strategy (TDD / BDD / e2e)' },
+  { name: 'researcher', domains: ['research', 'investigate'], description: 'Deep research + investigation' },
+
+  // ROUTING-broad — non-coding domain specialists
+  { name: 'agentic-payments', domains: ['payments', 'commerce', 'billing', 'subscription', 'ecommerce'], description: 'Payment / billing / e-commerce specialist' },
+  { name: 'crypto-research-scientist', domains: ['crypto-research', 'market-microstructure', 'trading-strategy'], description: 'Primary-source crypto trading research' },
+  { name: 'solana-trading-specialist', domains: ['solana', 'pump-fun', 'raydium', 'jupiter', 'jito', 'meteora'], description: 'Solana DEX / pump.fun / atomic arb' },
+  { name: 'polymarket-dev', domains: ['polymarket', 'polybot', 'live-draw', 'gamma-api', 'clob'], description: 'Polymarket trading bot + CLOB/Gamma APIs' },
+  { name: 'flashloan-arbitrage-specialist', domains: ['flashloan', 'atomic-arb', 'aave', 'balancer', 'liquidation'], description: 'Flashloan + atomic arbitrage' },
+  { name: 'kali-operator', domains: ['pentest', 'ctf', 'kali', 'metasploit', 'nmap', 'gobuster', 'hashcat'], description: 'Authorized pentest + CTF (Kali)' },
+  { name: 'metasploit-operator', domains: ['metasploit', 'msfvenom', 'msfconsole', 'msfdb', 'post-exploitation'], description: 'Metasploit Framework operator' },
+  { name: 'osint-investigator', domains: ['osint', 'recon', 'footprint', 'reverse-image', 'geolocate'], description: 'Single-target OSINT investigator' },
+  { name: 'github-researcher', domains: ['oss-tool-search', 'github-stars', 'oss-alternative'], description: 'GitHub OSS tool research' },
+  { name: 'geo-ai-visibility', domains: ['ai-visibility', 'llms-txt', 'ai-citation', 'geo'], description: 'AI search visibility + crawler access' },
+  { name: 'geo-content', domains: ['geo-content', 'eeat', 'topical-authority', 'ai-content-detection'], description: 'GEO content authority + E-E-A-T' },
+  { name: 'geo-platform-analysis', domains: ['geo-platform', 'ai-overview', 'perplexity', 'chatgpt-search', 'gemini-search'], description: 'AI search platform analysis' },
+  { name: 'geo-schema', domains: ['schema-markup', 'jsonld', 'structured-data', 'sameas', 'speakable'], description: 'Schema.org / JSON-LD structured data' },
+  { name: 'geo-technical', domains: ['geo-technical', 'crawlability', 'core-web-vitals', 'inp'], description: 'GEO technical SEO + crawlability' },
+  { name: 'geo-brand-mentions', domains: ['brand-mentions', 'sameas', 'co-citation'], description: 'Brand mentions + co-citation graph' },
+  { name: 'trading-ml-expert', domains: ['order-book', 'vpin', 'isotonic-calibration', 'trading-ml'], description: 'Order-book microstructure + ML calibration' },
+
+  // Generic fallbacks (penalized when specialists exist)
+  { name: 'general-purpose', isGeneric: true, description: 'Generic fallback for unstructured tasks' },
+  { name: 'coder', isGeneric: true, description: 'Generic implementation worker' },
+  { name: 'tester', isGeneric: true, description: 'Generic test author' },
+  { name: 'reviewer', isGeneric: true, description: 'Generic code reviewer' },
+];
+
+const LANGUAGE_TOKENS: Record<string, readonly string[]> = {
+  typescript: ['typescript', '.ts', '.tsx', 'tsconfig', 'tsc', 'noimplicitany', 'ts-node'],
+  python: ['python', '.py', 'pip', 'venv', 'asyncio', 'pytest', 'mypy', 'pyproject'],
+  swift: ['swift', 'swiftui', 'xcode', 'spm', '.swift'],
+  rust: ['rust', '.rs', 'cargo', 'clippy', 'rustc'],
+  go: ['golang', 'go mod', 'go build', 'goroutine'],
+  java: ['java', '.java', 'maven', 'gradle', 'jvm'],
+  csharp: ['c#', 'csharp', '.cs ', 'dotnet', '.net'],
+  ruby: ['ruby', '.rb', 'gemfile', 'bundler'],
+};
+
+const FRAMEWORK_TOKENS: Record<string, readonly string[]> = {
+  react: ['react', 'jsx', 'tsx', 'usestate', 'useeffect', 'usememo'],
+  next: ['next.js', 'nextjs', 'app router'],
+  fastapi: ['fastapi', 'pydantic'],
+  express: ['express', 'expressjs'],
+  nestjs: ['nestjs', 'nest.js'],
+  swiftui: ['swiftui'],
+  uikit: ['uikit'],
+  appkit: ['appkit'],
+  'react-native': ['react-native', 'react native'],
+  expo: ['expo'],
+  rails: ['rails', 'ruby on rails'],
+};
+
+const DOMAIN_TOKENS: Record<string, readonly string[]> = {
+  performance: ['perf ', 'performance', 'optimize', 'optimisation', 'optimization', 'lazy load', 'lazy-load', 'cold start', 'memory leak', 'prompt-cache'],
+  optimize: ['optimize', 'optimization', 'speed up', 'faster'],
+  cache: ['cache', 'caching', 'lru', 'memoize'],
+  profile: ['profile', 'profiling', 'flamegraph'],
+  bottleneck: ['bottleneck', 'hot path'],
+  monitoring: ['monitor', 'monitoring', 'observability', 'metrics'],
+
+  security: ['security', 'auth', 'cve', 'vuln', 'sast', 'owasp', 'penetration', 'hardening', 'threat'],
+  audit: ['audit', 'auditing', 'compliance'],
+  vulnerability: ['vulnerability', 'vulnerabilities', 'exploit'],
+  cve: ['cve', 'cve-'],
+  'threat-modeling': ['threat model', 'threat-modeling', 'attack surface'],
+
+  refactor: ['refactor', 'refactoring', 'cleanup', 'extract', 'hoist', 'rename'],
+  'technical-debt': ['technical debt', 'tech debt', 'legacy code'],
+  'design-pattern': ['design pattern', 'design-pattern', 'pattern'],
+
+  architecture: ['architecture', 'system design', 'bounded context', 'domain driven', 'domain-driven', 'architectural'],
+  'system-design': ['system design', 'system-design'],
+  adr: ['adr', 'architecture decision'],
+
+  database: ['database', 'sqlite', 'postgres', 'postgresql', 'mysql', 'mongodb', 'sql ', 'migration'],
+  query: ['query', 'queries'],
+  index: ['index', 'indexing', 'btree'],
+  schema: ['schema', 'ddl'],
+
+  api: ['api design', 'rest api', 'restful', 'graphql', 'openapi', 'swagger', 'endpoint'],
+  rest: ['rest ', 'restful', 'rest api'],
+  graphql: ['graphql'],
+  openapi: ['openapi', 'swagger'],
+
+  test: ['test', 'tdd', 'bdd', 'pytest', 'vitest', 'jest', 'integration test', 'integration-test', 'e2e', 'unit test'],
+  tdd: ['tdd', 'test-driven'],
+  bdd: ['bdd', 'behavior-driven'],
+  'integration-test': ['integration test', 'integration-test'],
+  e2e: ['e2e', 'end-to-end', 'playwright', 'cypress'],
+
+  cloud: ['cloud', 'iaas', 'paas'],
+  aws: ['aws', 'amazon web services', 's3', 'lambda', 'ec2'],
+  gcp: ['gcp', 'google cloud'],
+  azure: ['azure'],
+  kubernetes: ['kubernetes', 'k8s', 'helm'],
+  'ci-cd': ['ci/cd', 'ci-cd', 'github actions', 'gitlab ci', 'jenkins'],
+  docker: ['docker', 'dockerfile', 'container'],
+  deploy: ['deploy', 'deployment', 'release'],
+
+  debug: ['debug', 'debugging'],
+  'stack-trace': ['stack trace', 'stack-trace', 'traceback'],
+  error: ['error ', 'exception', 'crash'],
+  'root-cause': ['root cause', 'root-cause'],
+
+  research: ['research', 'investigate', 'investigation', 'survey'],
+  ui: ['ui ', 'ux', 'user interface', 'usability'],
+  design: ['design ', 'mockup', 'wireframe'],
+  mobile: ['mobile', 'ios', 'android'],
+  backend: ['backend', 'back-end', 'server-side'],
+
+  // ROUTING-broad — non-coding domain tokens
+  payments: ['payment', 'stripe', 'paypal', 'braintree', 'adyen', 'mollie', 'klarna', 'checkout', 'subscription billing', 'invoice', 'refund', 'chargeback', 'cart abandon', 'apple pay', 'google pay'],
+  commerce: ['ecommerce', 'e-commerce', 'cart', 'storefront'],
+  billing: ['billing', 'invoice', 'subscription billing'],
+  subscription: ['subscription', 'recurring billing'],
+  ecommerce: ['ecommerce', 'e-commerce', 'storefront'],
+
+  pentest: ['pentest', 'penetration test', 'ctf', 'hackthebox', 'htb ', 'picoctf', 'tryhackme', 'kali', 'nmap', 'gobuster', 'hashcat', 'hash crack', 'privesc', 'reverse shell', 'post-exploitation', 'lateral movement', 'kerberoast', 'asreproast'],
+  ctf: ['ctf', 'hackthebox', 'htb ', 'picoctf', 'tryhackme'],
+  kali: ['kali'],
+  metasploit: ['metasploit', 'msfvenom', 'msfconsole', 'msfdb', 'msf module'],
+  msfvenom: ['msfvenom'],
+  msfconsole: ['msfconsole'],
+  msfdb: ['msfdb'],
+  nmap: ['nmap'],
+  gobuster: ['gobuster', 'ffuf'],
+  hashcat: ['hashcat', 'hash crack'],
+  'post-exploitation': ['post-exploitation', 'post exploitation', 'lateral movement', 'kerberoast', 'asreproast'],
+
+  osint: ['osint', 'open source intelligence', 'open-source intelligence', 'recon', 'footprint', 'doxxing', 'doxx', 'sherlock', 'maigret', 'holehe', 'phoneinfoga', 'ghunt', 'reverse image search', 'email enumeration', 'domain investigation', 'geolocate', 'email phish'],
+  recon: ['recon', 'footprint'],
+  footprint: ['footprint', 'footprinting'],
+  'reverse-image': ['reverse image', 'reverse image search'],
+  geolocate: ['geolocate', 'geolocation'],
+
+  'crypto-research': ['crypto research', 'crypto strategy', 'trading strategy', 'backtest', 'funding rate', 'funding-rate', 'market making', 'market-making', 'on-chain signal', 'on chain signal', 'mev research', 'defi research', 'orderbook depth'],
+  'market-microstructure': ['market microstructure', 'orderbook', 'order book imbalance', 'vpin', 'ofi', 'vamp', 'yang-zhang', 'garman-klass'],
+  'trading-strategy': ['trading strategy', 'crypto strategy', 'backtest', 'kelly', 'sharpe'],
+  solana: ['solana', 'raydium', 'pump.fun', 'pumpfun', 'jupiter aggregator', 'jito', 'meteora', 'spl token', 'token-2022', 'helius', 'triton', 'shyft', 'kamino', 'marginfi', 'drift protocol'],
+  'pump-fun': ['pump.fun', 'pumpfun'],
+  raydium: ['raydium'],
+  jupiter: ['jupiter aggregator', 'jupiter swap'],
+  jito: ['jito', 'jito bundle'],
+  meteora: ['meteora'],
+  polymarket: ['polymarket', 'polybot', 'gamma api', 'clob', 'negrisk', 'conditionid'],
+  polybot: ['polybot'],
+  'live-draw': ['live_draw', 'live-draw', 'oracle_crash', 'oracle crash'],
+  'gamma-api': ['gamma api'],
+  clob: ['clob'],
+  flashloan: ['flashloan', 'flash loan', 'flash-loan', 'aave flashloan', 'balancer flashloan'],
+  'atomic-arb': ['atomic arb', 'atomic-arb'],
+  aave: ['aave'],
+  balancer: ['balancer'],
+  liquidation: ['liquidation bot', 'liquidation'],
+  'order-book': ['order book imbalance', 'orderbook', 'order book'],
+  vpin: ['vpin'],
+  'isotonic-calibration': ['isotonic calibration', 'triple-barrier label'],
+  'trading-ml': ['order book imbalance', 'vpin', 'yang-zhang', 'garman-klass', 'isotonic calibration'],
+
+  'oss-tool-search': ['github tool search', 'find oss tool', 'oss alternative', 'oss-alternative', 'open source replacement', 'github stars analysis', 'github repo evaluation'],
+  'github-stars': ['github stars analysis', 'github repo evaluation'],
+  'oss-alternative': ['oss alternative', 'open source replacement'],
+
+  'apple-design': ['apple hig', 'human interface guidelines', 'sf symbols', 'sf pro', 'macos design', 'ios design', 'ipados design', 'watchos design', 'visionos design', 'apple native ui', 'swiftui mockup', 'macos sidebar', 'ios sidebar'],
+  'macos-ui': ['macos design', 'macos sidebar', 'macos ui'],
+  'ios-ui': ['ios design', 'ios sidebar', 'ios ui'],
+  'ipados-ui': ['ipados design', 'ipados ui'],
+  'watchos-ui': ['watchos design', 'watchos ui'],
+  'visionos-ui': ['visionos design', 'visionos ui'],
+  'sf-symbols': ['sf symbols'],
+  hig: ['apple hig', 'human interface guidelines'],
+
+  'ai-visibility': ['ai visibility', 'llms.txt', 'ai citation', 'ai overview', 'perplexity', 'chatgpt search', 'gemini search', 'brand in ai', 'ai crawler', 'ai search optimi'],
+  'llms-txt': ['llms.txt'],
+  'ai-citation': ['ai citation', 'ai overview', 'perplexity citation'],
+  geo: ['geo audit', 'ai search optimi', 'llms.txt', 'ai citation'],
+  'geo-content': ['e-e-a-t', 'eeat', 'topical authority', 'helpful content', 'ai content detection'],
+  eeat: ['e-e-a-t', 'eeat'],
+  'topical-authority': ['topical authority'],
+  'helpful-content': ['helpful content'],
+  'ai-content-detection': ['ai content detection'],
+  'geo-platform': ['ai overview', 'perplexity', 'chatgpt search', 'gemini search', 'google sge'],
+  'ai-overview': ['ai overview', 'google sge'],
+  perplexity: ['perplexity'],
+  'chatgpt-search': ['chatgpt search'],
+  'gemini-search': ['gemini search'],
+  'schema-markup': ['schema markup', 'jsonld', 'json-ld', 'structured data', 'sameas', 'speakable schema'],
+  jsonld: ['jsonld', 'json-ld'],
+  'structured-data': ['structured data'],
+  sameas: ['sameas'],
+  speakable: ['speakable schema'],
+  'geo-technical': ['crawlability', 'core web vitals', 'inp ', 'robots.txt for ai'],
+  crawlability: ['crawlability'],
+  'core-web-vitals': ['core web vitals'],
+  inp: ['inp '],
+  'brand-mentions': ['brand mention', 'brand mentions', 'co-citation', 'brand co-occurrence'],
+  'co-citation': ['co-citation', 'co citation'],
+};
+
+/**
+ * UNMATCHED_DOMAIN_HINTS — non-coding domains where SwarmOps has no specialist
+ * agent today. Detected via substring scan; surfaced via `hints` so the lead
+ * picks 'general-purpose' consciously rather than the router defaulting to
+ * coder. Each entry is [domain-label, list-of-substring-tokens].
+ */
+const UNMATCHED_DOMAIN_HINTS: Array<readonly [string, readonly string[]]> = [
+  ['legal', ['contract review', 'gdpr', 'ccpa', 'privacy policy', 'terms of service', 'ts&cs', 'compliance audit', 'data processing agreement', ' dpa ', 'sub-processor', 'sub processor', 'cookie banner', 'eu ai act', ' dsa ', ' dma ', 'hipaa workflow', 'soc2 compliance', 'soc 2 compliance']],
+  ['marketing', ['content marketing', 'seo audit', 'email campaign', 'drip campaign', 'brand strategy', 'social media campaign', 'advertising', 'conversion rate', 'copywriting', 'ad copy', 'marketing funnel', 'growth hacking', 'email marketing']],
+  ['finance', ['accounting', 'double-entry', 'double entry', 'ledger reconcil', 'reconcile the ar', 'reconcile the ap', 'reconcile the ledger', 'financial audit', 'tax filing', 'payroll', 'accounts receivable', 'accounts payable', 'financial reporting', 'p&l', 'balance sheet']],
+  ['hr', ['recruit', 'sourcing candidate', 'candidate screening', 'job description', 'salary band', 'performance review', 'onboarding plan', 'hr policy', 'hr policies']],
+  ['sales', ['crm setup', 'salesforce config', 'hubspot setup', 'pipeline analysis', 'sales playbook', 'lead scoring', 'outbound campaign', 'account-based marketing', ' abm ']],
+  ['healthcare', ['hipaa workflow', 'clinical workflow', 'ehr', 'emr', 'medical records', 'patient record', 'medical record system']],
+  ['education', ['curriculum', 'lesson plan', 'pedagogy', 'edtech', 'course design', 'learning objective']],
+  ['writing', ['white paper', 'ghostwrit', 'editorial style', 'blog post outline', 'press release', 'technical writing']],
+  ['design-non-apple', ['wireframe ', 'ux research', 'user testing', 'persona development', 'figma ']],
+  ['project-mgmt', ['jira setup', 'asana setup', 'sprint planning', 'product roadmap', 'project roadmap', 'gantt chart', 'critical path']],
+  ['operations', [' sop ', 'business continuity', ' bcp ']],
+];
+
+/** Detect which keys of a token table appear (case-insensitive substring) in `taskLower`. */
+function detectMatches(
+  taskLower: string,
+  table: Record<string, readonly string[]>,
+): { keys: string[]; tokensByKey: Map<string, string[]> } {
+  const keys: string[] = [];
+  const tokensByKey = new Map<string, string[]>();
+  for (const [key, patterns] of Object.entries(table)) {
+    const matched: string[] = [];
+    for (const pat of patterns) {
+      if (taskLower.includes(pat)) matched.push(pat);
+    }
+    if (matched.length > 0) {
+      keys.push(key);
+      tokensByKey.set(key, matched);
+    }
+  }
+  return { keys, tokensByKey };
+}
+
+interface ScoredAgent {
+  agentType: string;
+  score: number;
+  matchedTokens: string[];
+  reason: string;
+  isGeneric: boolean;
+}
+
+function scoreAgent(
+  agent: SpecialistAgentEntry,
+  taskLower: string,
+  langKeys: string[],
+  langTokens: Map<string, string[]>,
+  fwKeys: string[],
+  fwTokens: Map<string, string[]>,
+  domainKeys: string[],
+  domainTokens: Map<string, string[]>,
+): ScoredAgent | null {
+  let score = 0;
+  const reasons: string[] = [];
+  const matched: string[] = [];
+
+  // +3 per matched language token
+  if (agent.langs) {
+    for (const lang of agent.langs) {
+      if (langKeys.includes(lang)) {
+        score += 3;
+        const toks = langTokens.get(lang) ?? [];
+        matched.push(...toks);
+        reasons.push(`language match: ${lang}`);
+      }
+    }
+  }
+
+  // +2 per matched framework token
+  if (agent.frameworks) {
+    for (const fw of agent.frameworks) {
+      if (fwKeys.includes(fw)) {
+        score += 2;
+        const toks = fwTokens.get(fw) ?? [];
+        matched.push(...toks);
+        reasons.push(`framework match: ${fw}`);
+      }
+    }
+  }
+
+  // +1 per matched domain token
+  if (agent.domains) {
+    for (const dom of agent.domains) {
+      if (domainKeys.includes(dom)) {
+        score += 1;
+        const toks = domainTokens.get(dom) ?? [];
+        matched.push(...toks);
+        reasons.push(`domain match: ${dom}`);
+      }
+    }
+  }
+
+  // +5 boost if the agent's name appears literally in the task description
+  if (taskLower.includes(agent.name.toLowerCase())) {
+    score += 5;
+    matched.push(agent.name.toLowerCase());
+    reasons.push(`agent name appears in task`);
+  }
+
+  // -1 generic penalty (only if the agent already has a score — generics with
+  // no signal stay at 0 and are filtered out below)
+  if (agent.isGeneric && score > 0) {
+    score -= 1;
+  }
+
+  if (score <= 0) return null;
+
+  // De-duplicate matchedTokens while preserving order
+  const seen = new Set<string>();
+  const uniqueMatched = matched.filter(t => {
+    if (seen.has(t)) return false;
+    seen.add(t);
+    return true;
+  });
+
+  const reason = agent.description
+    ? `${agent.description} (${reasons.join('; ')})`
+    : reasons.join('; ');
+
+  return {
+    agentType: agent.name,
+    score,
+    matchedTokens: uniqueMatched,
+    reason,
+    isGeneric: agent.isGeneric === true,
+  };
+}
+
+interface RankSpecialistResult {
+  candidates: Array<{
+    agentType: string;
+    confidence: number;
+    matchedTokens: string[];
+    reason: string;
+  }>;
+  fallback: string | null;
+  detectedLanguages: string[];
+  detectedFrameworks: string[];
+  detectedDomains: string[];
+  /** ROUTING-broad — non-coding domains detected with no SwarmOps specialist. */
+  unmatchedDomains: string[];
+  /** ROUTING-broad — human-readable hints, one per unmatched domain. */
+  hints: string[];
+}
+
+/** Pure ranker — no I/O, no async, deterministic. Exported for tests. */
+export function rankSpecialistAgents(
+  task: string,
+  options: { limit?: number; includeGenerics?: boolean } = {},
+): RankSpecialistResult {
+  const limit = Math.max(1, Math.min(15, options.limit ?? 5));
+  const includeGenerics = options.includeGenerics === true;
+
+  const taskLower = (task ?? '').toLowerCase();
+
+  if (!taskLower.trim()) {
+    return {
+      candidates: [],
+      fallback: 'general-purpose',
+      detectedLanguages: [],
+      detectedFrameworks: [],
+      detectedDomains: [],
+      unmatchedDomains: [],
+      hints: [],
+    };
+  }
+
+  const { keys: langKeys, tokensByKey: langTokens } = detectMatches(taskLower, LANGUAGE_TOKENS);
+  const { keys: fwKeys, tokensByKey: fwTokens } = detectMatches(taskLower, FRAMEWORK_TOKENS);
+  const { keys: domainKeys, tokensByKey: domainTokens } = detectMatches(taskLower, DOMAIN_TOKENS);
+
+  const scored: ScoredAgent[] = [];
+  for (const agent of SPECIALIST_AGENT_REGISTRY) {
+    const result = scoreAgent(
+      agent,
+      taskLower,
+      langKeys,
+      langTokens,
+      fwKeys,
+      fwTokens,
+      domainKeys,
+      domainTokens,
+    );
+    if (result) scored.push(result);
+  }
+
+  // includeGenerics=false hides coder/tester/reviewer/general-purpose UNLESS
+  // they're the only candidates (otherwise the caller would get an empty list
+  // for tasks that genuinely don't fit any specialist).
+  let pool = scored;
+  if (!includeGenerics) {
+    const specialists = scored.filter(s => !s.isGeneric);
+    if (specialists.length > 0) pool = specialists;
+  }
+
+  // Highest score first; stable tiebreak on agent name for determinism.
+  pool.sort((a, b) => (b.score - a.score) || a.agentType.localeCompare(b.agentType));
+
+  const candidates = pool.slice(0, limit).map(s => ({
+    agentType: s.agentType,
+    confidence: Math.min(1.0, Math.max(0, s.score / 10)),
+    matchedTokens: s.matchedTokens,
+    reason: s.reason,
+  }));
+
+  // ROUTING-broad — detect non-coding domains with no SwarmOps specialist
+  const unmatchedDomains: string[] = [];
+  const hints: string[] = [];
+  for (const [label, tokens] of UNMATCHED_DOMAIN_HINTS) {
+    let hit = false;
+    for (const tok of tokens) {
+      if (taskLower.includes(tok)) { hit = true; break; }
+    }
+    if (hit) {
+      unmatchedDomains.push(label);
+      hints.push(
+        `Domain detected: ${label} — no SwarmOps specialist; 'general-purpose' is the safe choice`,
+      );
+    }
+  }
+
+  return {
+    candidates,
+    fallback: candidates.length === 0 ? 'general-purpose' : null,
+    detectedLanguages: langKeys,
+    detectedFrameworks: fwKeys,
+    detectedDomains: domainKeys,
+    unmatchedDomains,
+    hints,
+  };
+}
+
+export const hooksRouteSpecialist: MCPTool = {
+  name: 'hooks_route_specialist',
+  description:
+    'Rank specialist agent types for a given task. Returns top-N agents with confidence scores so the caller can choose the best fit instead of defaulting to generic coder/tester/reviewer. Companion to hooks_route — this is the active query path (caller asks "which specialist fits this task?") rather than the passive 3-tier model picker.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      task: {
+        type: 'string',
+        description: 'Task description to route (the user-prompt or agent-spawn description)',
+      },
+      limit: {
+        type: 'number',
+        description: 'Number of candidates to return (default 5, max 15)',
+      },
+      includeGenerics: {
+        type: 'boolean',
+        description:
+          'Include generic agents (coder, tester, reviewer, general-purpose) in results. Default false: specialists only.',
+      },
+    },
+    required: ['task'],
+  },
+  handler: async (params: Record<string, unknown>) => {
+    const task = params.task as string;
+    const rawLimit = params.limit;
+    const includeGenerics = params.includeGenerics === true;
+
+    {
+      const v = validateText(task, 'task');
+      if (!v.valid) return { success: false, error: v.error };
+    }
+
+    const limit = typeof rawLimit === 'number' && Number.isFinite(rawLimit)
+      ? rawLimit
+      : undefined;
+
+    return rankSpecialistAgents(task, { limit, includeGenerics });
+  },
+};
+
+
+// ADR-094 / #bug5 — `pending-insights.jsonl` was written by
+// helpers/intelligence.cjs:recordEdit() (post-edit hook) but only consumed
+// at session-end (consolidate()). Between sessions the JSONL grew while
+// hooks_metrics stayed at zero. drainPendingInsights() reads new lines
+// since last drain (tracked via sibling .consumed-offset file) and returns
+// counters per event type. It does NOT truncate — the consolidator still
+// needs the full file at session-end.
+interface PendingInsightsDrainResult {
+  edits: number;
+  files: string[];
+  trajectoriesEnded: number;
+  routes: number;
+  drained: number;
+}
+
+function resolvePendingInsightsPath(): string {
+  // Test/env override — lets callers (and regression tests) point the drain
+  // at an arbitrary path without mutating $HOME or process.cwd().
+  const override = process.env.RUFLO_PENDING_INSIGHTS_PATH;
+  if (override && override.length > 0) return override;
+
+  // Prefer ~/.claude/.claude-flow/data/pending-insights.jsonl (global install
+  // matches what helpers/intelligence.cjs writes when CWD=~/.claude). Fall
+  // back to CWD-relative path for project-local installs.
+  const home = homedir();
+  const globalPath = join(home, '.claude', '.claude-flow', 'data', 'pending-insights.jsonl');
+  if (existsSync(globalPath)) return globalPath;
+  return resolve(join('.claude-flow', 'data', 'pending-insights.jsonl'));
+}
+
+function drainPendingInsights(): PendingInsightsDrainResult {
+  const result: PendingInsightsDrainResult = {
+    edits: 0,
+    files: [],
+    trajectoriesEnded: 0,
+    routes: 0,
+    drained: 0,
+  };
+
+  try {
+    const insightsPath = resolvePendingInsightsPath();
+    if (!existsSync(insightsPath)) return result;
+
+    const offsetPath = `${insightsPath}.consumed-offset`;
+    let lastOffset = 0;
+    if (existsSync(offsetPath)) {
+      try {
+        const raw = readFileSync(offsetPath, 'utf-8').trim();
+        const parsed = parseInt(raw, 10);
+        if (Number.isFinite(parsed) && parsed >= 0) lastOffset = parsed;
+      } catch {
+        // corrupt offset — restart from 0 (worst case = double-count once)
+      }
+    }
+
+    const stat = statSync(insightsPath);
+    // If the file shrank (rotated/truncated), reset offset.
+    if (lastOffset > stat.size) lastOffset = 0;
+    if (lastOffset === stat.size) return result; // no new data
+
+    // Read just the new tail. For typical pending-insights sizes this is
+    // small; readFileSync + slice is fine. Keep it simple over fd-positional
+    // reads to avoid an extra abstraction.
+    const full = readFileSync(insightsPath, 'utf-8');
+    const newSlice = full.slice(lastOffset);
+    const lines = newSlice.split('\n').filter(l => l.trim().length > 0);
+
+    const fileSet = new Set<string>();
+    for (const line of lines) {
+      try {
+        const evt = JSON.parse(line) as { type?: string; file?: string };
+        result.drained++;
+        switch (evt.type) {
+          case 'edit':
+            result.edits++;
+            if (evt.file && typeof evt.file === 'string') fileSet.add(evt.file);
+            break;
+          case 'trajectory-end':
+          case 'trajectoryEnd':
+            result.trajectoriesEnded++;
+            break;
+          case 'route':
+          case 'routing':
+            result.routes++;
+            break;
+          default:
+            // Unknown event — still counted in drained so callers can detect
+            // activity even when event types evolve.
+            break;
+        }
+      } catch {
+        // Malformed line — skip.
+      }
+    }
+    result.files = Array.from(fileSet);
+
+    // Persist new offset (idempotent for next call). Best-effort — failures
+    // here only cause the next drain to re-read (double-count), not data loss.
+    try {
+      mkdirSync(dirname(offsetPath), { recursive: true });
+      writeFileSync(offsetPath, String(stat.size), 'utf-8');
+    } catch {
+      // non-fatal
+    }
+  } catch {
+    // Drain is opportunistic — never fail the metrics call.
+  }
+
+  return result;
+}
+
 export const hooksMetrics: MCPTool = {
   name: 'hooks_metrics',
   description: 'View learning metrics dashboard',
@@ -1079,47 +1870,92 @@ export const hooksMetrics: MCPTool = {
   handler: async (params: Record<string, unknown>) => {
     const period = (params.period as string) || '24h';
 
-    // Try to read real counts from memory store
-    const store = loadMemoryStore();
-    const entries = Object.values(store.entries);
+    // ADR-093 F1: read from the same trajectory/pattern store that
+    // hooks_post-task and hooks_intelligence_stats write to. Previously
+    // this handler key-substring-filtered the memory store for "pattern",
+    // "route", "task" — none of which match the trajectory keys that
+    // post-task actually writes — so counters stayed at 0 forever (#1686).
+    const stats = getIntelligenceStatsFromMemory();
 
-    // Count patterns by looking at stored pattern entries
-    const patternEntries = entries.filter(e => e.key.includes('pattern'));
-    const routingEntries = entries.filter(e => e.key.includes('route') || e.key.includes('routing'));
-    const taskEntries = entries.filter(e => e.key.includes('task'));
+    // Routing outcomes are persisted to a separate file (loadRoutingOutcomes)
+    // by post-task; surface them so the dashboard sees command counters too.
+    let routingOutcomes: Array<{ success: boolean; agent?: string }> = [];
+    try {
+      routingOutcomes = loadRoutingOutcomes() as Array<{ success: boolean; agent?: string }>;
+    } catch { /* non-fatal */ }
 
-    if (entries.length === 0) {
-      return {
-        _real: true,
-        _note: 'No metrics data collected yet. Data populates from hooks_post-task, hooks_post-edit, hooks_post-command, and hooks_route calls.',
-        period,
-        patterns: { total: 0, successful: 0, failed: 0, avgConfidence: null },
-        agents: { routingAccuracy: null, totalRoutes: 0, topAgent: null },
-        commands: { totalExecuted: 0, successRate: null, avgRiskScore: null },
-        lastUpdated: new Date().toISOString(),
-      };
+    // ADR-094 / #bug5: helpers/intelligence.cjs:recordEdit() appends edits
+    // to pending-insights.jsonl on every post-edit hook, but the only prior
+    // consumer was session-end consolidation. Drain new lines (with offset
+    // tracking for idempotence) so the dashboard reflects in-session edits.
+    const pendingDrained = drainPendingInsights();
+
+    const totalCommands = routingOutcomes.length + pendingDrained.edits;
+    const successfulCommands = routingOutcomes.filter(o => o.success).length;
+    const successRate = totalCommands > 0 ? successfulCommands / totalCommands : null;
+
+    // Compute top agent from routing outcomes
+    const agentCounts: Record<string, number> = {};
+    for (const o of routingOutcomes) {
+      if (o.agent) agentCounts[o.agent] = (agentCounts[o.agent] || 0) + 1;
     }
+    const topAgent = Object.entries(agentCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+    const successful = stats.trajectories.successful + pendingDrained.trajectoriesEnded;
+    const total = stats.trajectories.total + pendingDrained.trajectoriesEnded;
+    const failed = Math.max(0, total - successful);
+
+    const totalRoutes = stats.routing.decisions + pendingDrained.routes;
+
+    // #bug11.1 — hooks_intelligence_pattern-store writes through the SQL+HNSW
+    // bridge (memory-bridge.bridgeStorePattern), but `stats.patterns.learned`
+    // is sourced from the JSON memory store (loadMemoryStore) which the
+    // bridge never updates. As a result hooks_metrics reported `patterns: 0`
+    // even when `intelligence_stats.hnsw.indexSize > 0`. Mirror the bridge
+    // floor that hooksIntelligenceStats now uses (#bug3) so the dashboard
+    // reflects bridge-stored patterns. Use Math.max — both sources are
+    // valid; the bridge may carry older patterns the JSON store doesn't
+    // know about, while the JSON+drain path may carry in-session edits the
+    // bridge hasn't indexed yet.
+    let bridgePatternCount = 0;
+    try {
+      const { bridgeGetHNSWStatus } = await import('../memory/memory-bridge.js');
+      const bridgeStatus = await bridgeGetHNSWStatus();
+      bridgePatternCount = bridgeStatus?.entryCount ?? 0;
+    } catch { /* bridge not available */ }
+
+    const memoryStorePatternCount = stats.patterns.learned + pendingDrained.edits;
+    const totalPatterns = Math.max(bridgePatternCount, memoryStorePatternCount);
 
     return {
+      _real: true,
+      _dataSource: 'intelligence-stats + routing-outcomes + pending-insights + hnsw-bridge',
+      _pendingDrained: pendingDrained,
+      _patternsBreakdown: {
+        bridgeHNSW: bridgePatternCount,
+        memoryStore: stats.patterns.learned,
+        drainedEdits: pendingDrained.edits,
+      },
       period,
       patterns: {
-        total: patternEntries.length,
-        successful: null,
-        failed: null,
-        avgConfidence: null,
+        total: totalPatterns,
+        successful,
+        failed,
+        avgConfidence: stats.routing.avgConfidence || null,
       },
       agents: {
-        routingAccuracy: null,
-        totalRoutes: routingEntries.length,
-        topAgent: null,
+        routingAccuracy: stats.routing.avgConfidence || null,
+        totalRoutes,
+        topAgent,
       },
       commands: {
-        totalExecuted: taskEntries.length,
-        successRate: null,
+        totalExecuted: totalCommands,
+        successRate,
         avgRiskScore: null,
       },
-      dataSource: 'memory-store',
-      entriesFound: entries.length,
+      _note: total === 0 && totalCommands === 0 && pendingDrained.drained === 0 && totalPatterns === 0
+        ? 'No metrics data collected yet. Run hooks_post-task / hooks_intelligence_trajectory-end / hooks_route to populate.'
+        : undefined,
       lastUpdated: new Date().toISOString(),
     };
   },
@@ -1508,8 +2344,8 @@ export const hooksPretrain: MCPTool = {
     const depth = (params.depth as string) || 'medium';
     const startTime = performance.now();
 
-    // Real file scanning — count files by extension, extract patterns
-    const { readdirSync, statSync } = await import('node:fs');
+    // Real file scanning — count files by extension, extract patterns.
+    // (readdirSync/statSync already imported statically at the top.)
     const extCounts: Record<string, number> = {};
     let filesAnalyzed = 0;
     let totalLines = 0;
@@ -2320,6 +3156,9 @@ export const hooksTrajectoryStart: MCPTool = {
     };
 
     activeTrajectories.set(trajectoryId, trajectory);
+    // Gap 4 v1.5 — pre-seed step-index Map. -1 means "trajectory active but
+    // no step pushed yet". getCurrentStepIndex() normalizes -1 → null.
+    activeSessionStepIndex.set(trajectoryId, -1);
 
     // Persist pending trajectory to disk so it survives MCP restarts
     const storeFn = await getRealStoreFunction();
@@ -2358,6 +3197,20 @@ export const hooksTrajectoryStep: MCPTool = {
       action: { type: 'string', description: 'Action taken' },
       result: { type: 'string', description: 'Action result' },
       quality: { type: 'number', description: 'Quality score (0-1)' },
+      // Gap 4 v1.5 — optional inline cost annotation. When present, wins over
+      // the trace-loader JOIN (see services/trace-loader.ts:442). Omit and the
+      // loader joins by sessionId+stepIndex from cost-stats.json at render time.
+      cost: {
+        type: 'object',
+        description: 'Optional per-step cost breakdown (USD, sub-cent precision). Omit to let the trace loader JOIN cost-stats.json by sessionId+stepIndex.',
+        properties: {
+          input: { type: 'number' },
+          output: { type: 'number' },
+          cacheRead: { type: 'number' },
+          cacheCreation: { type: 'number' },
+          total: { type: 'number' },
+        },
+      },
     },
     required: ['trajectoryId', 'action'],
   },
@@ -2372,15 +3225,43 @@ export const hooksTrajectoryStep: MCPTool = {
     { const v = validateIdentifier(trajectoryId, 'trajectoryId'); if (!v.valid) return { success: false, error: v.error }; }
     { const v = validateText(action, 'action'); if (!v.valid) return { success: false, error: v.error }; }
 
+    // Optional inline cost annotation (Gap 4 v1.5). Coerce shape defensively
+    // so a malformed object never makes it into the trajectory record.
+    let cost: TrajectoryStep['cost'] | undefined;
+    const rawCost = params.cost;
+    if (rawCost && typeof rawCost === 'object') {
+      const c = rawCost as Record<string, unknown>;
+      if (
+        typeof c.input === 'number' &&
+        typeof c.output === 'number' &&
+        typeof c.cacheRead === 'number' &&
+        typeof c.cacheCreation === 'number' &&
+        typeof c.total === 'number'
+      ) {
+        cost = {
+          input: c.input,
+          output: c.output,
+          cacheRead: c.cacheRead,
+          cacheCreation: c.cacheCreation,
+          total: c.total,
+        };
+      }
+    }
+
     // Add step to real trajectory if it exists
     const trajectory = activeTrajectories.get(trajectoryId);
     if (trajectory) {
-      trajectory.steps.push({
+      const step: TrajectoryStep = {
         action,
         result,
         quality,
         timestamp,
-      });
+      };
+      if (cost !== undefined) step.cost = cost;
+      trajectory.steps.push(step);
+      // Gap 4 v1.5 — record the just-pushed index so agent-execute-core can
+      // attribute Anthropic-call costs to this step without explicit plumbing.
+      activeSessionStepIndex.set(trajectoryId, trajectory.steps.length - 1);
     }
 
     return {
@@ -2451,6 +3332,8 @@ export const hooksTrajectoryEnd: MCPTool = {
 
       // Remove from active trajectories
       activeTrajectories.delete(trajectoryId);
+      // Gap 4 v1.5 — release step-index slot too.
+      activeSessionStepIndex.delete(trajectoryId);
     }
 
     // SONA Learning - process trajectory outcome for routing optimization
@@ -2792,15 +3675,39 @@ export const hooksIntelligenceStats: MCPTool = {
       };
     }
 
-    // EWC++ stats from real implementation
-    let ewcStats = {
-      consolidations: 0,
-      catastrophicForgettingPrevented: 0,
-      fisherUpdates: 0,
-      avgPenalty: 0,
-      totalPatterns: 0,
-      implementation: 'not-loaded' as string,
-    };
+    // #bug6 — Honesty fix: only emit stats blocks for subsystems whose
+    // lazy-loader actually resolved a real implementation. Previously every
+    // subsystem returned a stub with `implementation: 'not-loaded'` (and
+    // flash returned `speedup: 1`), which contradicted the README's
+    // 2.49x-7.47x claim and made it impossible to tell from the stats alone
+    // which subsystems were live. Now: null loader -> key omitted from
+    // output, name pushed to `_unavailable`. Loaded subsystems carry their
+    // real `implementation` tag (no `'not-loaded'` placeholder reaches the
+    // wire).
+    const unavailableSubsystems: string[] = [];
+
+    // #bug11.3 — A loaded subsystem with all-zero counters reads identically
+    // to a broken/unloaded one in the JSON wire format, even though Bug 6
+    // separated those cases via _unavailable. Add a `status: 'idle-since-load'`
+    // annotation when (a) the subsystem loaded successfully AND (b) its
+    // primary counter is still 0. The loadedSince timestamp uses process
+    // start time as a proxy (the loaders are lazy-singletons resolved before
+    // the first stats call is served).
+    const loadedSince = new Date(Date.now() - process.uptime() * 1000).toISOString();
+    const idleAnnotation = (primaryCounter: number) =>
+      primaryCounter === 0 ? { status: 'idle-since-load', loadedSince } : {};
+
+    // EWC++ stats — only emit when the consolidator actually loaded
+    let ewcStats: {
+      consolidations: number;
+      catastrophicForgettingPrevented: number;
+      fisherUpdates: number;
+      avgPenalty: number;
+      totalPatterns: number;
+      implementation: string;
+      status?: string;
+      loadedSince?: string;
+    } | null = null;
     if (ewc) {
       const realEwc = ewc.getConsolidationStats();
       ewcStats = {
@@ -2810,19 +3717,24 @@ export const hooksIntelligenceStats: MCPTool = {
         avgPenalty: Math.round(realEwc.avgPenalty * 1000) / 1000,
         totalPatterns: realEwc.totalPatterns,
         implementation: 'real-ewc++',
+        ...idleAnnotation(realEwc.consolidationCount),
       };
+    } else {
+      unavailableSubsystems.push('ewc');
     }
 
-    // MoE stats from real implementation
-    let moeStats = {
-      expertsTotal: 8,
-      expertsActive: 0,
-      routingDecisions: memoryStats.routing.decisions,
-      avgRoutingTimeMs: 0,
-      avgConfidence: memoryStats.routing.avgConfidence,
-      loadBalance: null as { giniCoefficient: number; coefficientOfVariation: number; expertUsage: Record<string, number> } | null,
-      implementation: 'not-loaded' as string,
-    };
+    // MoE stats — only emit when the router actually loaded
+    let moeStats: {
+      expertsTotal: number;
+      expertsActive: number;
+      routingDecisions: number;
+      avgRoutingTimeMs: number;
+      avgConfidence: number;
+      loadBalance: { giniCoefficient: number; coefficientOfVariation: number; expertUsage: Record<string, number> } | null;
+      implementation: string;
+      status?: string;
+      loadedSince?: string;
+    } | null = null;
     if (moe) {
       const loadBalance = moe.getLoadBalance();
       const activeExperts = Object.values(loadBalance.routingCounts).filter((u: number) => u > 0).length;
@@ -2841,33 +3753,51 @@ export const hooksIntelligenceStats: MCPTool = {
           expertUsage: loadBalance.routingCounts,
         },
         implementation: 'real-moe',
+        // #bug11.3 — primary counter for MoE is routingDecisions (totalRoutings).
+        // expertsActive=0 alone isn't enough — a router could have routed many
+        // decisions all to the same expert.
+        ...idleAnnotation(loadBalance.totalRoutings),
       };
+    } else {
+      unavailableSubsystems.push('moe');
     }
 
-    // Flash Attention stats from real implementation
-    let flashStats = {
-      speedup: 1.0,
-      avgComputeTimeMs: 0,
-      blockSize: 64,
-      implementation: 'not-loaded' as string,
-    };
+    // Flash Attention stats — only emit when the kernel actually loaded.
+    // (Previously emitted `speedup: 1` even when not loaded, contradicting
+    // the README's 2.49x-7.47x claim.)
+    let flashStats: {
+      speedup: number;
+      avgComputeTimeMs: number;
+      blockSize: number;
+      implementation: string;
+      status?: string;
+      loadedSince?: string;
+    } | null = null;
     if (flash) {
+      const speedup = Math.round(flash.getSpeedup() * 100) / 100;
       flashStats = {
-        speedup: Math.round(flash.getSpeedup() * 100) / 100,
+        speedup,
         avgComputeTimeMs: 0, // Would need benchmarking
         blockSize: 64,
         implementation: 'real-flash-attention',
+        // #bug11.3 — speedup of 0 (or 1.0 baseline) means the kernel hasn't
+        // been exercised yet. Flash attention reports 0 until first call.
+        ...idleAnnotation(speedup),
       };
+    } else {
+      unavailableSubsystems.push('flash');
     }
 
-    // LoRA stats from real implementation
-    let loraStats = {
-      rank: 8,
-      alpha: 16,
-      adaptations: 0,
-      avgLoss: 0,
-      implementation: 'not-loaded' as string,
-    };
+    // LoRA stats — only emit when the adapter actually loaded
+    let loraStats: {
+      rank: number;
+      alpha: number;
+      adaptations: number;
+      avgLoss: number;
+      implementation: string;
+      status?: string;
+      loadedSince?: string;
+    } | null = null;
     if (lora) {
       const realLora = lora.getStats();
       loraStats = {
@@ -2876,8 +3806,16 @@ export const hooksIntelligenceStats: MCPTool = {
         adaptations: realLora.totalAdaptations,
         avgLoss: Math.round(realLora.avgAdaptationNorm * 10000) / 10000,
         implementation: 'real-lora',
+        ...idleAnnotation(realLora.totalAdaptations),
       };
+    } else {
+      unavailableSubsystems.push('lora');
     }
+
+    // SONA never goes "not-loaded" — it always falls back to memoryStats.
+    // Track unavailability separately so callers know whether the real
+    // optimizer is live vs. the memory-fallback path.
+    if (!sona) unavailableSubsystems.push('sona');
 
     // ruvllm native backend stats
     let ruvllmStats = { coordinator: 'unavailable' as string, trajectories: 0, contrastiveTrainer: 'unavailable' as string | object, trainingBackend: 'unavailable' as string, graphDatabase: { backend: 'unavailable', totalNodes: 0, totalEdges: 0 } as Record<string, unknown> };
@@ -2902,15 +3840,54 @@ export const hooksIntelligenceStats: MCPTool = {
       ruvllmStats.graphDatabase = { backend: gs.backend, totalNodes: gs.totalNodes, totalEdges: gs.totalEdges, avgDegree: gs.avgDegree };
     } catch { /* not available */ }
 
-    const stats = {
+    // ADR-094 / #bug3 — HNSW index size used to reflect the JSON memory store
+    // (loadMemoryStore) which the SQL+HNSW bridge never updates. As a result
+    // the counter was stuck at 0 even after pattern-store via
+    // bridgeStorePattern(). Resolve the real backend count by asking the
+    // singleton (memory-initializer.getHNSWStatus → hnswIndex.entries.size)
+    // *and* the bridge (memory-bridge.bridgeGetHNSWStatus → SELECT COUNT(*)
+    // FROM memory_entries WHERE embedding IS NOT NULL), and take the max.
+    // Fall back to the legacy memory-store count if neither backend is
+    // initialized (preserves prior behaviour for legacy data).
+    let hnswIndexSize = memoryStats.memory.indexSize;
+    let hnswSource: 'singleton' | 'bridge' | 'memory-store' = 'memory-store';
+    try {
+      const { getHNSWStatus } = await import('../memory/memory-initializer.js');
+      const singleton = getHNSWStatus();
+      if (singleton && typeof singleton.entryCount === 'number' && singleton.entryCount > hnswIndexSize) {
+        hnswIndexSize = singleton.entryCount;
+        hnswSource = 'singleton';
+      } else if (singleton && typeof singleton.entryCount === 'number' && singleton.entryCount > 0 && hnswSource === 'memory-store') {
+        // singleton has data but doesn't exceed memory-store count; still prefer it
+        // because it's authoritative for the in-memory HNSW index.
+        hnswIndexSize = Math.max(hnswIndexSize, singleton.entryCount);
+        hnswSource = 'singleton';
+      }
+    } catch {
+      // singleton not available
+    }
+    try {
+      const { bridgeGetHNSWStatus } = await import('../memory/memory-bridge.js');
+      const bridgeStatus = await bridgeGetHNSWStatus();
+      if (bridgeStatus && typeof bridgeStatus.entryCount === 'number' && bridgeStatus.entryCount > hnswIndexSize) {
+        hnswIndexSize = bridgeStatus.entryCount;
+        hnswSource = 'bridge';
+      }
+    } catch {
+      // bridge not available
+    }
+
+    // #bug6 — Build the stats payload by including only the subsystems whose
+    // backing implementation actually loaded. Unloaded ones are surfaced via
+    // a top-level `_unavailable: [...]` field so callers can tell what's
+    // optional vs. simply absent. SONA always emits (memory-fallback path),
+    // matching the prior contract for the basic stats response.
+    const stats: Record<string, unknown> = {
       sona: sonaStats,
-      moe: moeStats,
-      ewc: ewcStats,
-      flash: flashStats,
-      lora: loraStats,
       ruvllm: ruvllmStats,
       hnsw: {
-        indexSize: memoryStats.memory.indexSize,
+        indexSize: hnswIndexSize,
+        hnswSource,
         avgSearchTimeMs: 0.12,
         cacheHitRate: memoryStats.memory.totalAccessCount > 0
           ? Math.min(0.95, 0.5 + (memoryStats.memory.totalAccessCount / 1000))
@@ -2920,23 +3897,34 @@ export const hooksIntelligenceStats: MCPTool = {
       dataSource: sona ? 'real-implementations' : 'memory-fallback',
       lastUpdated: new Date().toISOString(),
     };
+    if (moeStats) stats.moe = moeStats;
+    if (ewcStats) stats.ewc = ewcStats;
+    if (flashStats) stats.flash = flashStats;
+    if (loraStats) stats.lora = loraStats;
+    if (unavailableSubsystems.length > 0) stats._unavailable = unavailableSubsystems;
 
     if (detailed) {
+      // implementationStatus mirrors what's actually in `stats` — only
+      // loaded subsystems get a 'loaded' tag. Unloaded ones already appear
+      // in `_unavailable`, so we don't duplicate them with 'not-loaded'.
+      const implementationStatus: Record<string, string> = {};
+      if (sona) implementationStatus.sona = 'loaded';
+      if (ewc) implementationStatus.ewc = 'loaded';
+      if (moe) implementationStatus.moe = 'loaded';
+      if (flash) implementationStatus.flash = 'loaded';
+      if (lora) implementationStatus.lora = 'loaded';
+
+      const performance: Record<string, number> = {
+        sonaLearningMs: sonaStats.avgLearningTimeMs,
+      };
+      if (moeStats) performance.moeRoutingMs = moeStats.avgRoutingTimeMs;
+      if (flashStats) performance.flashSpeedup = flashStats.speedup;
+      if (ewcStats) performance.ewcPenalty = ewcStats.avgPenalty;
+
       return {
         ...stats,
-        implementationStatus: {
-          sona: sona ? 'loaded' : 'not-loaded',
-          ewc: ewc ? 'loaded' : 'not-loaded',
-          moe: moe ? 'loaded' : 'not-loaded',
-          flash: flash ? 'loaded' : 'not-loaded',
-          lora: lora ? 'loaded' : 'not-loaded',
-        },
-        performance: {
-          sonaLearningMs: sonaStats.avgLearningTimeMs,
-          moeRoutingMs: moeStats.avgRoutingTimeMs,
-          flashSpeedup: flashStats.speedup,
-          ewcPenalty: ewcStats.avgPenalty,
-        },
+        implementationStatus,
+        performance,
       };
     }
 
@@ -3112,42 +4100,90 @@ export const hooksIntelligenceAttention: MCPTool = {
         }
       }
     } else if (mode === 'flash') {
-      // Try Flash Attention
+      // Try Flash Attention. ADR-093 F10: previously this attended over
+      // synthetic cosine-derived keys/values with constant-vector values,
+      // which produced uniform 0.333 weights and labels like "Flash
+      // attention target #1/2/3". Now we attend over actual stored
+      // patterns when available — real semantic content yields non-uniform
+      // weights and human-readable labels.
       const flash = await getFlashAttention();
       if (flash) {
         try {
           const embResult = await getQueryEmbedding(query, 384);
           embeddingSource = embResult.source;
           const q = embResult.embedding;
+
+          // Pull real stored patterns to attend over. If none exist yet,
+          // fall back to the synthetic harness but mark it honestly.
+          const realPatterns: Array<{ id: string; content: string; embedding?: number[] }> = [];
+          try {
+            const { searchEntries: searchFn } = await import('../memory/memory-initializer.js');
+            const hits = await searchFn({ query, limit: topK });
+            if (Array.isArray(hits)) {
+              for (const h of hits.slice(0, topK)) {
+                const content = (h as Record<string, unknown>).content ?? (h as Record<string, unknown>).value ?? '';
+                const id = String((h as Record<string, unknown>).id ?? (h as Record<string, unknown>).key ?? `pattern-${realPatterns.length}`);
+                realPatterns.push({ id, content: String(content) });
+              }
+            }
+          } catch { /* memory not initialized — fall through to synthetic */ }
+
+          const useReal = realPatterns.length > 0;
           const keys: Float32Array[] = [];
           const values: Float32Array[] = [];
+          const labels: string[] = [];
 
-          // Generate some keys/values
-          for (let k = 0; k < topK; k++) {
-            const key = new Float32Array(384);
-            const value = new Float32Array(384);
-            for (let i = 0; i < 384; i++) {
-              key[i] = Math.cos((k + 1) * (i + 1) * 0.01);
-              value[i] = k + 1;
+          if (useReal) {
+            // Build keys from real pattern embeddings (re-embed if no vector cached)
+            for (let k = 0; k < realPatterns.length; k++) {
+              const p = realPatterns[k];
+              let keyEmbedding: Float32Array;
+              if (p.embedding && p.embedding.length === 384) {
+                keyEmbedding = new Float32Array(p.embedding);
+              } else {
+                const enc = await getQueryEmbedding(p.content.slice(0, 1024), 384);
+                keyEmbedding = enc.embedding;
+              }
+              const value = new Float32Array(384);
+              // Value carries pattern identity strength — magnitude = recency proxy (k position)
+              const strength = 1 / (k + 1);
+              for (let i = 0; i < 384; i++) value[i] = keyEmbedding[i] * strength;
+              keys.push(keyEmbedding);
+              values.push(value);
+              const label = p.content.length > 0
+                ? `${p.id}: ${p.content.slice(0, 60)}${p.content.length > 60 ? '…' : ''}`
+                : p.id;
+              labels.push(label);
             }
-            keys.push(key);
-            values.push(value);
+          } else {
+            // No real patterns — surface a synthetic harness honestly.
+            for (let k = 0; k < topK; k++) {
+              const key = new Float32Array(384);
+              const value = new Float32Array(384);
+              for (let i = 0; i < 384; i++) {
+                key[i] = Math.cos((k + 1) * (i + 1) * 0.01);
+                value[i] = k + 1;
+              }
+              keys.push(key);
+              values.push(value);
+              labels.push(`(synthetic harness) pattern #${k + 1}`);
+            }
           }
 
           const attentionResult = flash.attention([q], keys, values);
           // Compute softmax weights from output magnitudes
           const outputMags = attentionResult.output[0]
-            ? Array.from(attentionResult.output[0]).slice(0, topK).map(v => Math.abs(v))
-            : new Array(topK).fill(1);
+            ? Array.from(attentionResult.output[0]).slice(0, keys.length).map(v => Math.abs(v))
+            : new Array(keys.length).fill(1);
           const sumMags = outputMags.reduce((a, b) => a + b, 0) || 1;
-          for (let i = 0; i < topK; i++) {
+          for (let i = 0; i < keys.length; i++) {
             results.push({
               index: i,
               weight: outputMags[i] / sumMags,
-              pattern: `Flash attention target #${i + 1}`,
+              pattern: labels[i],
             });
           }
-          implementation = 'real-flash-attention';
+          implementation = useReal ? 'real-flash-attention+memory' : 'real-flash-attention+synthetic-harness';
         } catch {
           // Fall back to placeholder
         }
@@ -3180,7 +4216,6 @@ export const hooksIntelligenceAttention: MCPTool = {
   },
 };
 
-<<<<<<< ours
 // =============================================================================
 // Worker Dispatch Tools (12 Background Workers)
 // =============================================================================
@@ -3520,6 +4555,24 @@ export const hooksWorkerDispatch: MCPTool = {
     const workerId = `worker_${trigger}_${++workerIdCounter}_${Date.now().toString(36)}`;
     const config = WORKER_CONFIGS[trigger];
 
+    // ADR-093 F2: stop returning status:"completed" for a worker that
+    // never ran (#1700 item 1). Detect daemon presence via PID file and
+    // surface honest verdicts (`no-daemon` / `queued` / `synthetic`).
+    const cwd = getProjectCwd();
+    const pidFile = join(cwd, '.claude-flow', 'daemon.pid');
+    let daemonPid: number | null = null;
+    let daemonAlive = false;
+    if (existsSync(pidFile)) {
+      try {
+        const raw = readFileSync(pidFile, 'utf-8').trim();
+        const pid = parseInt(raw, 10);
+        if (Number.isFinite(pid) && pid > 0) {
+          daemonPid = pid;
+          try { process.kill(pid, 0); daemonAlive = true; } catch { daemonAlive = false; }
+        }
+      } catch { /* unreadable PID file */ }
+    }
+
     const worker: {
       id: string;
       trigger: WorkerTrigger;
@@ -3533,7 +4586,7 @@ export const hooksWorkerDispatch: MCPTool = {
       id: workerId,
       trigger,
       context,
-      status: 'running',
+      status: daemonAlive ? 'pending' : 'pending',
       progress: 0,
       phase: 'initializing',
       startedAt: new Date(),
@@ -3542,62 +4595,24 @@ export const hooksWorkerDispatch: MCPTool = {
     activeWorkers.set(workerId, worker);
 
     // Determine honest status
-    let reportedStatus: 'dispatched' | 'completed' | 'failed' | 'no-daemon' | 'synthetic-completed';
+    let reportedStatus: 'queued' | 'no-daemon' | 'synthetic-completed';
     let note: string;
-    let executionDurationMs: number | undefined;
-    let executionError: string | undefined;
-
     if (!daemonAlive) {
       reportedStatus = 'no-daemon';
       note = 'No worker daemon detected. Run `claude-flow daemon start` to enable real worker execution. The dispatch was recorded in-process but no actual work will run.';
+    } else if (background) {
+      // Daemon is alive — record the queued worker. The daemon polls activeWorkers
+      // via its own state file, so this constitutes a real queue entry.
+      reportedStatus = 'queued';
+      note = `Worker queued for daemon (pid ${daemonPid}). Poll hooks_worker-status to track progression — do not assume completion until status === "completed".`;
     } else {
-      // #1845 — actually run the worker. We mirror the `daemon trigger -w` CLI
-      // pattern: instantiate a WorkerDaemon in-process and call triggerWorker().
-      // Both this process and the running daemon (pid ${daemonPid}) share state
-      // via the atomically-written state file, so success/run counters update
-      // for either caller. This replaces the previous "queued" lie where the
-      // request never reached the daemon.
-      const { getDaemon } = await import('../services/worker-daemon.js');
-
-      const runWorker = async (): Promise<void> => {
-        worker.status = 'running';
-        worker.phase = 'executing';
-        try {
-          const daemon = getDaemon(cwd);
-          const result = await daemon.triggerWorker(trigger as never);
-          if (result.success) {
-            worker.status = 'completed';
-            worker.phase = 'completed';
-            worker.progress = 100;
-          } else {
-            worker.status = 'failed';
-            worker.phase = 'failed';
-            executionError = result.error;
-          }
-          executionDurationMs = result.durationMs;
-        } catch (err) {
-          worker.status = 'failed';
-          worker.phase = 'failed';
-          executionError = err instanceof Error ? err.message : String(err);
-        } finally {
-          worker.completedAt = new Date();
-        }
-      };
-
-      if (background) {
-        // Fire-and-forget. Caller polls hooks_worker-status for completion.
-        void runWorker();
-        reportedStatus = 'dispatched';
-        note = `Worker dispatched in-process (pid ${process.pid}); state syncs with the running daemon (pid ${daemonPid}) via .claude-flow/daemon-state.json. Poll hooks_worker-status to track progression — do not assume completion until status === "completed".`;
-      } else {
-        // Synchronous: await the worker completion before responding.
-        await runWorker();
-        reportedStatus = worker.status === 'completed' ? 'completed' : 'failed';
-        note =
-          worker.status === 'completed'
-            ? `Worker completed in ${executionDurationMs ?? 0}ms; state synced with daemon (pid ${daemonPid}).`
-            : `Worker failed${executionError ? `: ${executionError}` : ''}.`;
-      }
+      // Synchronous mode without a runner — be honest about it
+      reportedStatus = 'synthetic-completed';
+      worker.progress = 100;
+      worker.phase = 'completed';
+      worker.status = 'completed';
+      worker.completedAt = new Date();
+      note = 'Synchronous mode: worker record marked completed but no real work executed (no in-process runner). Use background:true with the daemon for real execution.';
     }
 
     return {
@@ -3611,11 +4626,11 @@ export const hooksWorkerDispatch: MCPTool = {
         estimatedDuration: config.estimatedDuration,
         capabilities: config.capabilities,
       },
-      status: background ? 'scheduled' : 'completed',
+      status: reportedStatus,
+      daemonAlive,
+      daemonPid: daemonAlive ? daemonPid : null,
       background,
       note,
-      ...(executionDurationMs !== undefined ? { durationMs: executionDurationMs } : {}),
-      ...(executionError ? { error: executionError } : {}),
       timestamp: new Date().toISOString(),
     };
   },
@@ -3747,8 +4762,6 @@ export const hooksWorkerDetect: MCPTool = {
     return result;
   },
 };
-=======
->>>>>>> theirs
 
 // Model router - lazy loaded
 let modelRouterInstance: Awaited<ReturnType<typeof import('../ruvector/model-router.js').getModelRouter>> | null = null;
@@ -3890,7 +4903,6 @@ function analyzeComplexityFallback(task: string): number {
   return Math.min(1, Math.max(0, 0.3 + highCount * 0.2 - lowCount * 0.15 + lengthScore * 0.2));
 }
 
-<<<<<<< ours
 // Worker cancel tool
 export const hooksWorkerCancel: MCPTool = {
   name: 'hooks_worker-cancel',
@@ -3932,65 +4944,6 @@ export const hooksWorkerCancel: MCPTool = {
       workerId,
       cancelled: true,
       timestamp: new Date().toISOString(),
-=======
-// #1916: the `ruflo hooks teammate-idle` / `ruflo hooks task-completed` CLI
-// subcommands (Agent Teams hooks) referenced unregistered tools. Minimal
-// acknowledgement handlers with the shapes the CLI expects — auto-assignment
-// and pattern-learning are delegated to the task-queue consumer / intelligence
-// pipeline (a tracked #1916 follow-up).
-export const hooksTeammateIdle: MCPTool = {
-  name: 'hooks_teammate-idle',
-  description: 'Agent Teams hook — fired when a teammate agent finishes its turn; reports whether a pending task can be auto-assigned. Use when native Task is wrong because you have a persistent multi-agent team with a shared task list and want idle workers picked up automatically rather than re-spawning subagents. For a one-shot Task, native Task is fine. (Auto-assignment is delegated to the task-queue consumer — this acknowledges the event today.)',
-  category: 'hooks',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      teammateId: { type: 'string', description: 'ID of the idle teammate' },
-      teamName: { type: 'string', description: 'Team name' },
-      autoAssign: { type: 'boolean', description: 'Auto-assign a pending task if available' },
-      checkTaskList: { type: 'boolean', description: 'Consult the shared task list' },
-      timestamp: { type: 'number', description: 'Event timestamp (ms)' },
-    },
-  },
-  handler: async (input) => {
-    const teammateId = String(input.teammateId ?? '');
-    return {
-      success: true,
-      teammateId,
-      action: 'waiting' as const,
-      pendingTasks: 0,
-      message: 'teammate-idle acknowledged; auto-assignment requires the task-queue consumer (#1916 follow-up)',
-    };
-  },
-};
-
-export const hooksTaskCompleted: MCPTool = {
-  name: 'hooks_task-completed',
-  description: 'Agent Teams hook — fired when a task is marked complete; records completion and (eventually) trains patterns + notifies the team lead. Use when native TodoWrite is wrong because the work was a persisted, agent-assigned task whose outcome should feed cross-session learning and team coordination. For an in-session checklist tick, native TodoWrite is fine. (Pattern-learning is delegated to the intelligence pipeline — this records the completion today.)',
-  category: 'hooks',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      taskId: { type: 'string', description: 'ID of the completed task' },
-      teammateId: { type: 'string', description: 'Teammate that completed it' },
-      success: { type: 'boolean', description: 'Whether the task succeeded' },
-      quality: { type: 'number', description: 'Quality score 0-1' },
-      trainPatterns: { type: 'boolean', description: 'Feed the outcome to the learning pipeline' },
-      notifyLead: { type: 'boolean', description: 'Notify the team lead' },
-    },
-    required: ['taskId'],
-  },
-  handler: async (input) => {
-    const taskId = String(input.taskId ?? '');
-    const quality = typeof input.quality === 'number' ? input.quality : (input.success === false ? 0 : 1);
-    return {
-      success: true,
-      taskId,
-      patternsLearned: 0,
-      leadNotified: input.notifyLead === true,
-      metrics: { duration: 0, quality, learningUpdates: 0 },
-      note: 'completion recorded; pattern-learning is delegated to the intelligence pipeline (#1916 follow-up)',
->>>>>>> theirs
     };
   },
 };
@@ -4002,6 +4955,7 @@ export const hooksTools: MCPTool[] = [
   hooksPreCommand,
   hooksPostCommand,
   hooksRoute,
+  hooksRouteSpecialist,
   hooksMetrics,
   hooksList,
   hooksPreTask,

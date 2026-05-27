@@ -14,20 +14,10 @@
  */
 
 export { QLearningRouter, createQLearningRouter, type QLearningRouterConfig, type RouteDecision } from './q-learning-router.js';
-export {
-  MoERouter,
-  getMoERouter,
-  resetMoERouter,
-  createMoERouter,
-  EXPERT_NAMES,
-  NUM_EXPERTS,
-  INPUT_DIM,
-  HIDDEN_DIM,
-  type ExpertType,
-  type MoERouterConfig,
-  type RoutingResult,
-  type LoadBalanceStats,
-} from './moe-router.js';
+// #1773 item 4 — moe-router migrated to @claude-flow/neural. Direct
+// consumers (hooks-tools.ts) import from '@claude-flow/neural' explicitly;
+// re-exporting through this barrel would force vitest to resolve the
+// neural pkg's transitive @ruvector/sona dep eagerly. Keep imports direct.
 export { ASTAnalyzer, createASTAnalyzer, type ASTAnalysis, type ASTNode, type ASTAnalyzerConfig } from './ast-analyzer.js';
 export {
   DiffClassifier,
@@ -100,17 +90,10 @@ export {
   type CircularDependency,
   type GraphAnalysisResult,
 } from './graph-analyzer.js';
-export {
-  FlashAttention,
-  getFlashAttention,
-  resetFlashAttention,
-  computeAttention,
-  benchmarkFlashAttention,
-  getFlashAttentionSpeedup,
-  type FlashAttentionConfig,
-  type AttentionResult,
-  type BenchmarkResult,
-} from './flash-attention.js';
+// #1773 item 4 — flash-attention migrated to @claude-flow/neural. Direct
+// consumers (hooks-tools.ts, neural-tools.ts) import from '@claude-flow/neural'
+// explicitly; re-exporting through this barrel pulls the package's
+// transitive @ruvector/sona dep into vitest's eager resolution.
 export {
   LoRAAdapter,
   getLoRAAdapter,
@@ -220,11 +203,14 @@ export async function isRuvectorAvailable(): Promise<boolean> {
 }
 
 /**
- * Check if @ruvector/learning-wasm is available and loadable
+ * Check if @ruvector/learning-wasm is available and loadable.
+ * The package is an optionalDependency, so we use an indirect module name
+ * to bypass TypeScript's module resolution at compile time.
  */
 export async function isWasmBackendAvailable(): Promise<boolean> {
   try {
-    const wasm = await import('@ruvector/learning-wasm');
+    const learningWasmModule = '@ruvector/learning-wasm';
+    const wasm: any = await import(/* @vite-ignore */ learningWasmModule);
     return typeof wasm.WasmMicroLoRA === 'function' && typeof wasm.initSync === 'function';
   } catch {
     return false;

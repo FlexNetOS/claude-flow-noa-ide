@@ -317,15 +317,12 @@ export interface InitOptions {
    */
   skipGlobalClaudeMd?: boolean;
   /**
-   * Suppress the RuFlo `Co-Authored-By` commit trailer and `🤖 Generated
-   * with [RuFlo]` PR-body footer in the generated `.claude/settings.json`.
-   * When true, `attribution.commit` and `attribution.pr` are written as
-   * empty strings — the schema-documented way to disable both lines.
-   * Set via `--no-attribution` or env `RUFLO_NO_ATTRIBUTION=1`. Companion
-   * to PR #1713 which addressed the hook-based commit-trailer path; this
-   * covers the settings-based path (#1670).
+   * #1670 — opt in to writing the `attribution` block in `.claude/settings.json`
+   * (Co-Authored-By trailer + PR footer). Defaults to false: most users do not
+   * want a third-party Co-Authored-By line silently added to their commits and
+   * GitHub contributor graph. Pass `--attribution` to opt in.
    */
-  noAttribution?: boolean;
+  attribution?: boolean;
 }
 
 /**

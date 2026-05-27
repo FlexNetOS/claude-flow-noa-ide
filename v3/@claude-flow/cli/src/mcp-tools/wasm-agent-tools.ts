@@ -13,6 +13,40 @@ async function loadAgentWasm() {
   return mod;
 }
 
+/**
+ * #bug18 — when `@ruvector/rvagent-wasm` (an optionalDependency) is not
+ * installed, surface a friendly error shape instead of a raw
+ * `ERR_MODULE_NOT_FOUND` stack. Returns `null` if the error is unrelated
+ * (caller should fall through to its generic catch).
+ */
+function rvagentWasmMissingResponse(err: unknown):
+  | { content: Array<{ type: 'text'; text: string }>; isError: true }
+  | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  const code = (err as { code?: string } | null)?.code;
+  const isMissing =
+    code === 'ERR_MODULE_NOT_FOUND' ||
+    code === 'MODULE_NOT_FOUND' ||
+    /@ruvector\/rvagent-wasm not installed/.test(msg) ||
+    /Cannot find package '@ruvector\/rvagent-wasm'/.test(msg) ||
+    /Cannot find module '@ruvector\/rvagent-wasm'/.test(msg) ||
+    // Vite/Vitest resolver phrasing — different wording, same root cause.
+    /Failed to load url @ruvector\/rvagent-wasm/.test(msg);
+  if (!isMissing) return null;
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({
+          error: 'WASM agent runtime not available',
+          _hint: 'install @ruvector/rvagent-wasm to enable',
+        }),
+      },
+    ],
+    isError: true,
+  };
+}
+
 export const wasmAgentTools: MCPTool[] = [
   {
     name: 'wasm_agent_create',
@@ -21,7 +55,7 @@ export const wasmAgentTools: MCPTool[] = [
       type: 'object' as const,
       properties: {
         template: { type: 'string', description: 'Gallery template name (coder, researcher, tester, reviewer, security, swarm)' },
-        model: { type: 'string', description: 'Model identifier (default: anthropic:claude-sonnet-4-20250514)' },
+        model: { type: 'string', description: 'Model identifier (default: anthropic:claude-sonnet-4-6)' },
         instructions: { type: 'string', description: 'System instructions for the agent' },
         maxTurns: { type: 'number', description: 'Max conversation turns (default: 50)' },
       },
@@ -43,6 +77,8 @@ export const wasmAgentTools: MCPTool[] = [
         });
         return { content: [{ type: 'text', text: JSON.stringify({ success: true, agent: info }, null, 2) }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -66,6 +102,8 @@ export const wasmAgentTools: MCPTool[] = [
         const result = await wasm.promptWasmAgent(args.agentId as string, args.input as string);
         return { content: [{ type: 'text', text: result }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -95,6 +133,8 @@ export const wasmAgentTools: MCPTool[] = [
         const result = await wasm.executeWasmTool(args.agentId as string, toolCall);
         return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -109,6 +149,8 @@ export const wasmAgentTools: MCPTool[] = [
         const agents = wasm.listWasmAgents();
         return { content: [{ type: 'text', text: JSON.stringify({ agents, count: agents.length }, null, 2) }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -130,6 +172,8 @@ export const wasmAgentTools: MCPTool[] = [
         const ok = wasm.terminateWasmAgent(args.agentId as string);
         return { content: [{ type: 'text', text: JSON.stringify({ success: ok }) }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -152,6 +196,8 @@ export const wasmAgentTools: MCPTool[] = [
         const info = wasm.getWasmAgent(args.agentId as string);
         return { content: [{ type: 'text', text: JSON.stringify({ tools, fileCount: info?.fileCount ?? 0, turnCount: info?.turnCount ?? 0 }, null, 2) }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -173,6 +219,8 @@ export const wasmAgentTools: MCPTool[] = [
         const state = wasm.exportWasmState(args.agentId as string);
         return { content: [{ type: 'text', text: state }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -187,6 +235,8 @@ export const wasmAgentTools: MCPTool[] = [
         const templates = await wasm.listGalleryTemplates();
         return { content: [{ type: 'text', text: JSON.stringify({ templates, count: templates.length }, null, 2) }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -208,6 +258,8 @@ export const wasmAgentTools: MCPTool[] = [
         const results = await wasm.searchGalleryTemplates(args.query as string);
         return { content: [{ type: 'text', text: JSON.stringify({ results, count: results.length }, null, 2) }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },
@@ -229,6 +281,8 @@ export const wasmAgentTools: MCPTool[] = [
         const info = await wasm.createAgentFromTemplate(args.template as string);
         return { content: [{ type: 'text', text: JSON.stringify({ success: true, agent: info, template: args.template }, null, 2) }] };
       } catch (err) {
+        const friendly = rvagentWasmMissingResponse(err);
+        if (friendly) return friendly;
         return { content: [{ type: 'text', text: JSON.stringify({ error: String(err) }) }], isError: true };
       }
     },

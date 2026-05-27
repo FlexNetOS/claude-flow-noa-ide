@@ -539,9 +539,26 @@ function getAgentDBStats() {
   return { vectorCount, dbSizeKB: Math.floor(dbSizeKB), namespaces, hasHnsw };
 }
 
+// Bug 45: project-marker detection. The statusline mixes system-scoped
+// fields (Vectors, Size, MCP — read from ~/.claude/.claude-flow/) with
+// project-scoped fields (Tests — count files under CWD). When CWD is a
+// config dir (~/.claude), project fields show 0 and read as "broken".
+// This helper lets project-scoped renders show a dim em-dash (U+2500,
+// "not applicable") instead of a bullet+0 when CWD has no project markers.
+function hasProjectMarkers(dir) {
+  try {
+    var markers = ['package.json', '.git', 'tests', '__tests__', 'src', 'v3', 'pyproject.toml', 'Cargo.toml', 'go.mod'];
+    for (var i = 0; i < markers.length; i++) {
+      if (fs.existsSync(path.join(dir, markers[i]))) return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
 // Test stats (count files only — NO reading file contents)
 function getTestStats() {
   let testFiles = 0;
+  const inProject = hasProjectMarkers(CWD);
 
   function countTestFiles(dir, depth) {
     if (depth === undefined) depth = 0;
@@ -568,12 +585,17 @@ function getTestStats() {
     } catch { /* ignore */ }
   }
 
-  var testDirNames = ['tests', 'test', '__tests__', 'src', 'v3'];
-  for (var i = 0; i < testDirNames.length; i++) {
-    countTestFiles(path.join(CWD, testDirNames[i]));
+  // Skip the recursive walk entirely when CWD has no project markers —
+  // saves disk I/O on cold-cache config-dir invocations and the result
+  // would be 0 anyway.
+  if (inProject) {
+    var testDirNames = ['tests', 'test', '__tests__', 'src', 'v3'];
+    for (var i = 0; i < testDirNames.length; i++) {
+      countTestFiles(path.join(CWD, testDirNames[i]));
+    }
   }
 
-  return { testFiles, testCases: testFiles * 4 };
+  return { testFiles, testCases: testFiles * 4, inProject };
 }
 
 // Integration status (shared settings + file checks)
@@ -791,7 +813,14 @@ function generateStatusline() {
   const hnswInd = agentdb.hasHnsw ? c.brightGreen + '\\u26A1' + c.reset : '';
   const sizeDisp = agentdb.dbSizeKB >= 1024 ? (agentdb.dbSizeKB / 1024).toFixed(1) + 'MB' : agentdb.dbSizeKB + 'KB';
   const vectorColor = agentdb.vectorCount > 0 ? c.brightGreen : c.dim;
-  const testColor = tests.testFiles > 0 ? c.brightGreen : c.dim;
+  // Bug 45: when CWD has no project markers, render Tests as a dim
+  // em-dash (U+2500) signaling "not applicable here" instead of "(bullet)0"
+  // which reads as "broken/zero tests".
+  const testColor = tests.inProject === false ? c.dim
+                  : tests.testFiles > 0 ? c.brightGreen : c.dim;
+  const testDisplay = tests.inProject === false
+    ? c.cyan + 'Tests' + c.reset + ' ' + c.dim + '\\u2500' + c.reset
+    : c.cyan + 'Tests' + c.reset + ' ' + testColor + '\\u25CF' + tests.testFiles + c.reset + ' ' + c.dim + '(~' + tests.testCases + ' cases)' + c.reset;
 
   let integStr = '';
   if (integration.mcpServers.total > 0) {
@@ -807,7 +836,7 @@ function generateStatusline() {
     c.brightCyan + '\\uD83D\\uDCCA AgentDB' + c.reset + '    ' +
     c.cyan + 'Vectors' + c.reset + ' ' + vectorColor + '\\u25CF' + agentdb.vectorCount + hnswInd + c.reset + '  ' + c.dim + '\\u2502' + c.reset + '  ' +
     c.cyan + 'Size' + c.reset + ' ' + c.brightWhite + sizeDisp + c.reset + '  ' + c.dim + '\\u2502' + c.reset + '  ' +
-    c.cyan + 'Tests' + c.reset + ' ' + testColor + '\\u25CF' + tests.testFiles + c.reset + ' ' + c.dim + '(~' + tests.testCases + ' cases)' + c.reset + '  ' + c.dim + '\\u2502' + c.reset + '  ' +
+    testDisplay + '  ' + c.dim + '\\u2502' + c.reset + '  ' +
     integStr
   );
 

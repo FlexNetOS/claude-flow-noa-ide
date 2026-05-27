@@ -32,23 +32,6 @@ import { trackRequest } from './mcp-tools/request-tracker.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-function writeStdioProtocolMessage(message: unknown): void {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
-}
-
-function redirectConsoleStdoutForMCPStdio(): void {
-  const consoleWithFlag = console as Console & { __claudeFlowMcpStdioRedirected?: boolean };
-  if (consoleWithFlag.__claudeFlowMcpStdioRedirected) {
-    return;
-  }
-
-  const writeToStderr = (...args: unknown[]) => console.error(...args);
-  console.log = writeToStderr;
-  console.info = writeToStderr;
-  console.debug = writeToStderr;
-  consoleWithFlag.__claudeFlowMcpStdioRedirected = true;
-}
-
 /**
  * MCP Server configuration
  */
@@ -326,10 +309,12 @@ export class MCPServerManager extends EventEmitter {
    * Handles stdin/stdout directly like V2 implementation
    */
   private async startStdioServer(): Promise<void> {
-    redirectConsoleStdoutForMCPStdio();
-
-    // Import the tool registry
-    const { listMCPTools, callMCPTool, hasTool } = await import('./mcp-client.js');
+    // Import the tool registry. After Bug #49 importing mcp-client.js is
+    // cheap (no eager tool registration); the heavy tool graph is loaded by
+    // the explicit `ensureMcpToolsLoaded()` await below. We must populate
+    // the registry before the first tools/list arrives.
+    const { listMCPTools, callMCPTool, hasTool, ensureMcpToolsLoaded } = await import('./mcp-client.js');
+    await ensureMcpToolsLoaded();
 
     const VERSION = '3.0.0';
     const sessionId = `mcp-${Date.now()}-${randomUUID().slice(0, 8)}`;
@@ -383,7 +368,7 @@ export class MCPServerManager extends EventEmitter {
     }));
 
     // Send server initialization notification
-    writeStdioProtocolMessage({
+    console.log(JSON.stringify({
       jsonrpc: '2.0',
       method: 'server.initialized',
       params: {
@@ -396,7 +381,7 @@ export class MCPServerManager extends EventEmitter {
           },
         },
       },
-    });
+    }));
 
     // Handle stdin messages (S-5: bounded buffer to prevent OOM)
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB
@@ -410,10 +395,10 @@ export class MCPServerManager extends EventEmitter {
           `[${new Date().toISOString()}] ERROR [claude-flow-mcp] Buffer exceeded ${MAX_BUFFER_SIZE} bytes, rejecting`
         );
         buffer = '';
-        writeStdioProtocolMessage({
+        console.log(JSON.stringify({
           jsonrpc: '2.0',
           error: { code: -32600, message: 'Request too large' },
-        });
+        }));
         return;
       }
 
@@ -427,7 +412,7 @@ export class MCPServerManager extends EventEmitter {
             const message = JSON.parse(line);
             const response = await this.handleMCPMessage(message, sessionId);
             if (response) {
-              writeStdioProtocolMessage(response);
+              console.log(JSON.stringify(response));
             }
           } catch (error) {
             console.error(
@@ -472,7 +457,10 @@ export class MCPServerManager extends EventEmitter {
     message: { jsonrpc: string; id?: string | number; method?: string; params?: unknown },
     sessionId: string
   ): Promise<{ jsonrpc: string; id?: string | number; result?: unknown; error?: { code: number; message: string } } | null> {
-    const { listMCPTools, callMCPTool, hasTool } = await import('./mcp-client.js');
+    // Bug #49: ensure the tool registry is populated before the sync
+    // listMCPTools/hasTool calls below run. Idempotent — no-op once loaded.
+    const { listMCPTools, callMCPTool, hasTool, ensureMcpToolsLoaded } = await import('./mcp-client.js');
+    await ensureMcpToolsLoaded();
 
     if (!message.method) {
       return {

@@ -38,6 +38,8 @@
 *.log
 *.pid
 *.pid.lock
+.claude/scheduled_tasks.lock
+.claude/*.lock
 *.py[cod]
 *.seed
 *.so
@@ -157,24 +159,8 @@ hive-mind-prompt-*.txt
 .claude-flow/data/
 .claude-flow/logs/
 
-# Environment variables
+# Environment variables — block ALL .env variants except .example templates
 .env
-.env.local
-.env.*.local
-
-# build artifacts
-*.tgz
-*.bin
-*.backup
-
-# native binaries
-*.node
-*.wasm
-
-# model artifacts
-*.onnx
-*.onnx.data
-
-# generated memory dumps
-memory.json
-*.db.backup
+.env.*
+!.env.example
+!.env.*.example

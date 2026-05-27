@@ -243,14 +243,18 @@ const listCommand: Command = {
   ],
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     try {
-      // Call MCP tool to list agents
+      // Call MCP tool to list agents — note MCP returns `agentId` (not `id`).
+      // User-installed entries from ~/.claude/agents lack id/createdAt because
+      // they are filesystem-discovered templates, not running agents (#bug37).
       const result = await callMCPTool<{
         agents: Array<{
-          id: string;
+          agentId?: string;
+          id?: string;
           agentType: string;
-          status: 'active' | 'idle' | 'terminated';
-          createdAt: string;
+          status: string;
+          createdAt?: string;
           lastActivityAt?: string;
+          source?: 'built-in' | 'user';
         }>;
         total: number;
       }>('agent_list', {
@@ -273,25 +277,49 @@ const listCommand: Command = {
         return { success: true, data: result };
       }
 
-      // Format for display
+      // #bug37 — render '—' (em-dash) when createdAt is missing or unparseable.
+      // User-installed agent templates have no createdAt; raw `new Date(undefined)`
+      // formerly produced the user-visible "Invalid Date" string.
+      const formatDate = (raw?: string): string => {
+        if (!raw) return '—';
+        const d = new Date(raw);
+        if (Number.isNaN(d.getTime())) return '—';
+        return d.toLocaleTimeString();
+      };
+
+      // Format for display — also accept legacy `id` field defensively.
       const displayAgents = result.agents.map(agent => ({
-        id: agent.id,
+        id: agent.agentId ?? agent.id ?? '',
         type: agent.agentType,
         status: agent.status,
-        created: new Date(agent.createdAt).toLocaleTimeString(),
-        lastActivity: agent.lastActivityAt
-          ? new Date(agent.lastActivityAt).toLocaleTimeString()
-          : 'N/A',
+        source: agent.source ?? 'built-in',
+        created: formatDate(agent.createdAt),
+        lastActivity: formatDate(agent.lastActivityAt),
       }));
 
+      // #bug37 — drop the ID column when ALL rows have no ID (common when
+      // every entry is a user-installed template). Also auto-size the Type
+      // column to the longest agent name (capped at 40) so skill names like
+      // `huggingface-paper-publisher` are no longer truncated at 13 chars.
+      const allIdsBlank = displayAgents.every(a => !a.id);
+      const maxNameLen = displayAgents.reduce(
+        (acc, a) => Math.max(acc, a.type.length),
+        4 // header 'Type'
+      );
+      const typeWidth = Math.min(40, Math.max(15, maxNameLen));
+
+      const columns: Array<{ key: string; header: string; width: number; format?: (v: unknown) => string }> = [];
+      if (!allIdsBlank) {
+        columns.push({ key: 'id', header: 'ID', width: 20 });
+      }
+      columns.push({ key: 'type', header: 'Type', width: typeWidth });
+      columns.push({ key: 'status', header: 'Status', width: 12, format: formatStatus });
+      columns.push({ key: 'source', header: 'Source', width: 10 });
+      columns.push({ key: 'created', header: 'Created', width: 12 });
+      columns.push({ key: 'lastActivity', header: 'Last Activity', width: 14 });
+
       output.printTable({
-        columns: [
-          { key: 'id', header: 'ID', width: 20 },
-          { key: 'type', header: 'Type', width: 15 },
-          { key: 'status', header: 'Status', width: 12, format: formatStatus },
-          { key: 'created', header: 'Created', width: 12 },
-          { key: 'lastActivity', header: 'Last Activity', width: 12 }
-        ],
+        columns,
         data: displayAgents
       });
 

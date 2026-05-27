@@ -1,6 +1,6 @@
 {
   "name": "ruflo",
-  "version": "3.6.12",
+  "version": "3.7.0-alpha.11",
   "description": "Ruflo - Enterprise AI agent orchestration platform. Deploy 60+ specialized agents in coordinated swarms with self-learning, fault-tolerant consensus, vector memory, and MCP integration",
   "main": "bin/ruflo.js",
   "type": "module",
@@ -24,6 +24,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "prepublishOnly": "cp ../README.md ./README.md",
     "dev": "node src/mcp-bridge/index.js",
     "dev:bridge": "node --watch src/mcp-bridge/index.js",
     "dev:test": "node src/mcp-bridge/test-harness.js",
@@ -39,7 +40,23 @@
     "package:rvf": "bash src/scripts/package-rvf.sh"
   },
   "dependencies": {
-    "@claude-flow/cli": ">=3.0.0-alpha.1"
+    "@claude-flow/cli": "^3.7.0-alpha.11"
+  },
+  "overrides": {
+    "@ruvector/rvf-wasm": "0.1.5",
+    "@hono/node-server": ">=1.19.10",
+    "flatted": ">=3.4.0",
+    "tar": ">=7.5.11",
+    "picomatch": ">=4.0.3",
+    "path-to-regexp": ">=8.2.1",
+    "undici": ">=7.18.0",
+    "minimatch": ">=10.0.0",
+    "@isaacs/brace-expansion": ">=5.0.1",
+    "cacache": ">=20.0.0",
+    "make-fetch-happen": ">=15.0.0",
+    "express-rate-limit": ">=8.4.1",
+    "protobufjs": ">=7.5.5",
+    "uuid": ">=14.0.0"
   },
   "engines": {
     "node": ">=20.0.0"

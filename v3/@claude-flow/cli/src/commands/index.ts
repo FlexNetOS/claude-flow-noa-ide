@@ -52,6 +52,8 @@ const commandLoaders: Record<string, CommandLoader> = {
   // P0 Commands
   completions: () => import('./completions.js'),
   doctor: () => import('./doctor.js'),
+  // Verification (ADR-095, signed witness manifest)
+  verify: () => import('./verify.js'),
   // Analysis Commands
   analyze: () => import('./analyze.js'),
   // Q-Learning Routing Commands
@@ -74,6 +76,12 @@ const commandLoaders: Record<string, CommandLoader> = {
   'transfer-store': () => import('./transfer-store.js'),
   cleanup: () => import('./cleanup.js'),
   autopilot: () => import('./autopilot.js'),
+  // Anthropic prompt-cache observability (#perf-cache-2026-05)
+  'cache-stats': () => import('./cache.js'),
+  // Replayable agent traces (Gap 1 — Tier 2 differentiation)
+  trace: () => import('./trace.js'),
+  // Per-agent cost telemetry (Gap 4 — Tier 2 differentiation)
+  cost: () => import('./cost.js'),
 };
 
 // Cache for loaded commands
@@ -182,6 +190,9 @@ export async function getGuidanceCommand() { return loadCommand('guidance'); }
 export async function getApplianceCommand() { return loadCommand('appliance'); }
 export async function getCleanupCommand() { return loadCommand('cleanup'); }
 export async function getAutopilotCommand() { return loadCommand('autopilot'); }
+export async function getCacheStatsCommand() { return loadCommand('cache-stats'); }
+export async function getTraceCommand() { return loadCommand('trace'); }
+export async function getCostCommand() { return loadCommand('cost'); }
 
 /**
  * Core commands loaded synchronously (available immediately)
@@ -236,7 +247,8 @@ export async function getCommandsByCategory(): Promise<Record<string, Command[]>
     analyzeCmd, routeCmd, progressCmd, providersCmd,
     pluginsCmd, deploymentCmd, claimsCmd, issuesCmd,
     updateCmd, processCmd, guidanceCmd, applianceCmd,
-    cleanupCmd, autopilotCmd,
+    cleanupCmd, autopilotCmd, cacheStatsCmd, traceCmd,
+    costCmd,
   ] = await Promise.all([
     loadCommand('daemon'), loadCommand('doctor'), loadCommand('embeddings'), loadCommand('neural'),
     loadCommand('performance'), loadCommand('security'), loadCommand('ruvector'), loadCommand('hive-mind'),
@@ -244,7 +256,8 @@ export async function getCommandsByCategory(): Promise<Record<string, Command[]>
     loadCommand('analyze'), loadCommand('route'), loadCommand('progress'), loadCommand('providers'),
     loadCommand('plugins'), loadCommand('deployment'), loadCommand('claims'), loadCommand('issues'),
     loadCommand('update'), loadCommand('process'), loadCommand('guidance'), loadCommand('appliance'),
-    loadCommand('cleanup'), loadCommand('autopilot'),
+    loadCommand('cleanup'), loadCommand('autopilot'), loadCommand('cache-stats'), loadCommand('trace'),
+    loadCommand('cost'),
   ]);
 
   return {
@@ -262,7 +275,7 @@ export async function getCommandsByCategory(): Promise<Record<string, Command[]>
       migrateCmd, workflowCmd,
     ].filter(Boolean) as Command[],
     analysis: [
-      analyzeCmd, routeCmd, progressCmd,
+      analyzeCmd, routeCmd, progressCmd, cacheStatsCmd, traceCmd, costCmd,
     ].filter(Boolean) as Command[],
     management: [
       providersCmd, pluginsCmd, deploymentCmd, claimsCmd,

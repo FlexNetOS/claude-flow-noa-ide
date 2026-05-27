@@ -14,9 +14,17 @@ const STORAGE_DIR = '.claude-flow';
 const HIVE_DIR = 'hive-mind';
 const HIVE_FILE = 'state.json';
 
+// ADR-093 F3: persist the consensus *strategy* alongside the existing
+// `consensus` field (which holds protocol pending/history). #1700 item 4
+// reported that init params for consensus didn't round-trip — they didn't,
+// because the schema lacked the parameter and the state had nowhere to
+// keep it. consensusStrategy fixes both.
+type ConsensusStrategyName = 'raft' | 'byzantine' | 'gossip' | 'crdt' | 'quorum';
+
 interface HiveState {
   initialized: boolean;
   topology: 'mesh' | 'hierarchical' | 'ring' | 'star';
+  consensusStrategy?: ConsensusStrategyName;
   queen?: {
     agentId: string;
     electedAt: string;
@@ -294,6 +302,14 @@ export const hiveMindTools: MCPTool[] = [
       type: 'object',
       properties: {
         topology: { type: 'string', enum: ['mesh', 'hierarchical', 'ring', 'star'], description: 'Network topology' },
+        // ADR-093 F3: schema now exposes the consensus strategy so callers
+        // can actually request raft / byzantine / quorum / etc. Default
+        // matches the documented anti-drift posture (raft).
+        consensus: {
+          type: 'string',
+          enum: ['raft', 'byzantine', 'gossip', 'crdt', 'quorum'],
+          description: 'Consensus strategy. Default: raft (anti-drift). Use byzantine for f<n/3 fault tolerance.',
+        },
         queenId: { type: 'string', description: 'Initial queen agent ID' },
       },
     },
@@ -304,8 +320,10 @@ export const hiveMindTools: MCPTool[] = [
       const hiveId = `hive-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const queenId = (input.queenId as string) || `queen-${Date.now()}`;
 
+      const requestedConsensus = (input.consensus as ConsensusStrategyName) || 'raft';
       state.initialized = true;
       state.topology = (input.topology as HiveState['topology']) || 'mesh';
+      state.consensusStrategy = requestedConsensus;
       state.createdAt = new Date().toISOString();
       state.queen = {
         agentId: queenId,
@@ -319,12 +337,12 @@ export const hiveMindTools: MCPTool[] = [
         success: true,
         hiveId,
         topology: state.topology,
-        consensus: (input.consensus as string) || 'byzantine',
+        consensus: state.consensusStrategy,
         queenId,
         status: 'initialized',
         config: {
           topology: state.topology,
-          consensus: input.consensus || 'byzantine',
+          consensus: state.consensusStrategy,
           maxAgents: input.maxAgents || 15,
           persist: input.persist !== false,
           memoryBackend: input.memoryBackend || 'hybrid',
@@ -375,7 +393,8 @@ export const hiveMindTools: MCPTool[] = [
         hiveId: `hive-${state.createdAt ? new Date(state.createdAt).getTime() : Date.now()}`,
         status: state.initialized ? 'active' : 'offline',
         topology: state.topology,
-        consensus: 'byzantine', // Default consensus type
+        // ADR-093 F3: surface the persisted strategy instead of a hardcoded "byzantine".
+        consensus: state.consensusStrategy ?? 'byzantine',
         queen: state.queen ? {
           id: state.queen.agentId,
           agentId: state.queen.agentId,

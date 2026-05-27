@@ -4,9 +4,14 @@
  * Tool definitions for session management with file persistence.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { type MCPTool, getProjectCwd } from './types.js';
+import {
+  mkdirRestricted,
+  readFileMaybeEncrypted,
+  writeFileRestricted,
+} from '../fs-secure.js';
 import { validateIdentifier, validateText } from './validate-input.js';
 
 // Storage paths
@@ -44,7 +49,7 @@ function getSessionPath(sessionId: string): string {
 function ensureSessionDir(): void {
   const dir = getSessionDir();
   if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
+    mkdirRestricted(dir);
   }
 }
 
@@ -52,7 +57,10 @@ function loadSession(sessionId: string): SessionRecord | null {
   try {
     const path = getSessionPath(sessionId);
     if (existsSync(path)) {
-      const data = readFileSync(path, 'utf-8');
+      // ADR-096 Phase 2: readFileMaybeEncrypted transparently handles both
+      // legacy plaintext sessions and post-migration encrypted ones via the
+      // RFE1 magic-byte sniff.
+      const data = readFileMaybeEncrypted(path, 'utf-8');
       return JSON.parse(data);
     }
   } catch {
@@ -63,7 +71,16 @@ function loadSession(sessionId: string): SessionRecord | null {
 
 function saveSession(session: SessionRecord): void {
   ensureSessionDir();
-  writeFileSync(getSessionPath(session.sessionId), JSON.stringify(session, null, 2), 'utf-8');
+  // audit_1776853149979: session JSON contains memory snapshots and agent
+  // prompts — restrict to owner read/write.
+  // ADR-096 Phase 2: opt-in encrypt-at-rest. The encrypt flag is honored
+  // only when CLAUDE_FLOW_ENCRYPT_AT_REST is set; otherwise the legacy
+  // plaintext path runs unchanged.
+  writeFileRestricted(
+    getSessionPath(session.sessionId),
+    JSON.stringify(session, null, 2),
+    { encrypt: true },
+  );
 }
 
 function listSessions(): SessionRecord[] {
@@ -74,7 +91,9 @@ function listSessions(): SessionRecord[] {
   const sessions: SessionRecord[] = [];
   for (const file of files) {
     try {
-      const data = readFileSync(join(dir, file), 'utf-8');
+      // ADR-096 Phase 2: same magic-byte sniff for the listing path so a
+      // mixed plaintext+encrypted dir still enumerates cleanly.
+      const data = readFileMaybeEncrypted(join(dir, file), 'utf-8');
       sessions.push(JSON.parse(data));
     } catch {
       // Skip invalid files
@@ -229,11 +248,12 @@ export const sessionTools: MCPTool[] = [
       }
 
       if (session) {
-        // Restore data to respective stores (legacy JSON for backward compat)
+        // Restore data to respective stores (legacy JSON for backward compat).
+        // audit_1776853149979: tighten perms on the restored stores too.
         if (session.data?.memory) {
           const memoryDir = join(getProjectCwd(), STORAGE_DIR, 'memory');
-          if (!existsSync(memoryDir)) mkdirSync(memoryDir, { recursive: true });
-          writeFileSync(join(memoryDir, 'store.json'), JSON.stringify(session.data.memory, null, 2), 'utf-8');
+          if (!existsSync(memoryDir)) mkdirRestricted(memoryDir);
+          writeFileRestricted(join(memoryDir, 'store.json'), JSON.stringify(session.data.memory, null, 2));
 
           // Also populate active sql.js SQLite database so memory-tools can find entries
           try {
@@ -259,13 +279,13 @@ export const sessionTools: MCPTool[] = [
         }
         if (session.data?.tasks) {
           const taskDir = join(getProjectCwd(), STORAGE_DIR, 'tasks');
-          if (!existsSync(taskDir)) mkdirSync(taskDir, { recursive: true });
-          writeFileSync(join(taskDir, 'store.json'), JSON.stringify(session.data.tasks, null, 2), 'utf-8');
+          if (!existsSync(taskDir)) mkdirRestricted(taskDir);
+          writeFileRestricted(join(taskDir, 'store.json'), JSON.stringify(session.data.tasks, null, 2));
         }
         if (session.data?.agents) {
           const agentDir = join(getProjectCwd(), STORAGE_DIR, 'agents');
-          if (!existsSync(agentDir)) mkdirSync(agentDir, { recursive: true });
-          writeFileSync(join(agentDir, 'store.json'), JSON.stringify(session.data.agents, null, 2), 'utf-8');
+          if (!existsSync(agentDir)) mkdirRestricted(agentDir);
+          writeFileRestricted(join(agentDir, 'store.json'), JSON.stringify(session.data.agents, null, 2));
         }
 
         return {
@@ -296,16 +316,36 @@ export const sessionTools: MCPTool[] = [
       },
     },
     handler: async (input) => {
-      let sessions = listSessions();
+      // ADR-093 F6: sessions on disk come from two writers with different
+      // shapes — `session_save` writes {sessionId, name, savedAt, stats},
+      // while the auto-session writer (claude-flow daemon) writes
+      // {id, startedAt, ...}. The previous projection assumed only the
+      // first shape, so the second shape collapsed to empty objects in
+      // session_list output.
+      type AnySession = Record<string, unknown> & {
+        sessionId?: string;
+        id?: string;
+        name?: string;
+        description?: string;
+        savedAt?: string;
+        startedAt?: string;
+        stats?: { totalSize?: number };
+      };
+      const raw = listSessions() as unknown as AnySession[];
+      let sessions = raw.map((s): AnySession => ({
+        ...s,
+        sessionId: (s.sessionId as string) || (s.id as string) || 'unknown',
+        savedAt: (s.savedAt as string) || (s.startedAt as string) || '',
+      }));
 
       // Sort
       const sortBy = (input.sortBy as string) || 'date';
       if (sortBy === 'date') {
-        sessions.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
+        sessions.sort((a, b) => new Date(String(b.savedAt || '')).getTime() - new Date(String(a.savedAt || '')).getTime());
       } else if (sortBy === 'name') {
-        sessions.sort((a, b) => a.name.localeCompare(b.name));
+        sessions.sort((a, b) => String(a.name || a.sessionId || '').localeCompare(String(b.name || b.sessionId || '')));
       } else if (sortBy === 'size') {
-        sessions.sort((a, b) => b.stats.totalSize - a.stats.totalSize);
+        sessions.sort((a, b) => (b.stats?.totalSize ?? 0) - (a.stats?.totalSize ?? 0));
       }
 
       // Apply limit
@@ -313,13 +353,20 @@ export const sessionTools: MCPTool[] = [
       sessions = sessions.slice(0, limit);
 
       return {
-        sessions: sessions.map(s => ({
-          sessionId: s.sessionId,
-          name: s.name,
-          description: s.description,
-          savedAt: s.savedAt,
-          stats: s.stats,
-        })),
+        sessions: sessions.map(s => {
+          // Project to a stable shape; pull through either source's metadata.
+          const projection: Record<string, unknown> = {
+            sessionId: s.sessionId,
+            name: s.name ?? s.sessionId,
+            description: s.description,
+            savedAt: s.savedAt,
+            stats: s.stats ?? null,
+          };
+          // Preserve auto-session shape fields when present
+          if ((s as Record<string, unknown>).platform) projection.platform = (s as Record<string, unknown>).platform;
+          if ((s as Record<string, unknown>).metrics) projection.metrics = (s as Record<string, unknown>).metrics;
+          return projection;
+        }),
         total: sessions.length,
         limit,
       };

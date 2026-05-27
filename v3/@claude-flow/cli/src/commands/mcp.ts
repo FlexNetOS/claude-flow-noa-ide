@@ -19,7 +19,7 @@ import {
   type MCPServerOptions,
   type MCPServerStatus,
 } from '../mcp-server.js';
-import { listMCPTools, callMCPTool, hasTool, getToolMetadata } from '../mcp-client.js';
+import { listMCPTools, callMCPTool, hasTool, getToolMetadata, ensureMcpToolsLoaded } from '../mcp-client.js';
 
 // MCP tools categories
 const TOOL_CATEGORIES = [
@@ -406,7 +406,8 @@ const toolsCommand: Command = {
     // Use local tool registry
     let tools: Array<{ name: string; category: string; description: string; enabled: boolean }>;
 
-    // Get tools from local registry
+    // Bug #49: populate the lazy registry before the sync read.
+    await ensureMcpToolsLoaded();
     const registeredTools = listMCPTools(category);
 
     if (registeredTools.length > 0) {
@@ -587,6 +588,8 @@ const execCommand: Command = {
     }
 
     try {
+      // Bug #49: populate the lazy registry before the sync hasTool check.
+      await ensureMcpToolsLoaded();
       // Execute through local MCP tool registry
       if (!hasTool(tool)) {
         output.printError(`Tool not found: ${tool}`);

@@ -6,10 +6,313 @@
 import type { Command, CommandContext, CommandResult } from '../types.js';
 import { output } from '../output.js';
 import { WorkerDaemon, getDaemon, startDaemon, stopDaemon, type WorkerType, type DaemonConfig } from '../services/worker-daemon.js';
-import { spawn, execFile } from 'child_process';
+import { spawn, execFile, execFileSync, fork } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve, isAbsolute } from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import { swallowError } from '@claude-flow/shared';
+
+// ---------------------------------------------------------------------------
+// Bug 47 — stale-daemon-path detection.
+//
+// Background: when SwarmOps was forked from claude-flow, users frequently end
+// up with a long-lived background daemon that was started from a *different*
+// installed binary than the one their shell now resolves to (e.g. an old
+// `~/.npm/_npx/<hash>/.../bin/cli.js` from before the fork). The daemon keeps
+// running 4+ days, schedules workers, and silently uses pre-fork code — none
+// of the SwarmOps fixes ever reach the background workers.
+//
+// detectDaemonPathMismatch() compares the running daemon's binary path to the
+// one we'd fork *now* (the canonical SwarmOps install). It returns null when
+// there's no mismatch (or when no daemon is running) and a structured
+// DaemonPathInfo when the paths differ — the consumer (status / doctor /
+// restart) decides how loud to be about it.
+// ---------------------------------------------------------------------------
+
+/** Information about a detected daemon-path mismatch. */
+export interface DaemonPathInfo {
+  /** Binary path the running daemon was started from (from `ps` output). */
+  runningPath: string;
+  /** Binary path the current SwarmOps install would fork. */
+  expectedPath: string;
+  /** PID of the running daemon. */
+  pid: number;
+  /** When the daemon was started (ISO-8601 string), or 'unknown' if not in state. */
+  startedAt: string;
+  /** Floor((now - startedAt) / 1 day), or 0 when startedAt is unknown. */
+  ageDays: number;
+  /**
+   * Bug 48 — which `daemon-state.json` (and adjacent `daemon.pid`) location
+   * this daemon was found via. There are two valid roots:
+   *   - `<cwd>/.claude-flow/daemon-state.json` (project-scoped install)
+   *   - `<homedir>/.claude/.claude-flow/daemon-state.json` (global install)
+   * Captured so callers (status / doctor / restart) can tell the user
+   * exactly which file points at which dead/stale daemon, and so that
+   * `restart --force-path` can clean up state files in the right places.
+   */
+  stateFilePath: string;
+}
+
+/**
+ * Optional injection points for testing. Default behaviour reads the real
+ * `daemon.pid` / `daemon-state.json` and shells out to `ps`. Tests pass
+ * stubs that simulate the various states without touching real files or
+ * processes.
+ */
+export interface DaemonPathDetectorOptions {
+  /** Project root override (defaults to `process.cwd()`). */
+  projectRoot?: string;
+  /** Override the resolved expected bin path (defaults to derive from this file's URL). */
+  expectedPath?: string;
+  /** Stub the `ps -p <pid> -o command=` lookup. Returns the binary path token (no args), or null if PID is gone. */
+  readRunningCommand?: (pid: number) => string | null;
+  /** Stub `realpath` canonicalisation. Defaults to `fs.realpathSync` with a passthrough fallback. */
+  canonicalize?: (p: string) => string;
+  /**
+   * Bug 48 — explicit override for the candidate state-file locations. When
+   * present, replaces the default `getAllDaemonStatePaths()` enumeration.
+   * Tests use this to point at a tmpdir without monkey-patching `os.homedir`.
+   * For backwards compatibility with the singular `detectDaemonPathMismatch`,
+   * if `projectRoot` is set and `stateFilePaths` is NOT, the singular helper
+   * still scans only the cwd-local location (preserves Bug 47 semantics).
+   */
+  stateFilePaths?: string[];
+  /**
+   * Bug 48 — homedir override for default candidate enumeration. Defaults to
+   * `os.homedir()`. Tests use this to deterministically locate the global
+   * `<home>/.claude/.claude-flow/daemon-state.json` candidate.
+   */
+  homedir?: string;
+}
+
+/**
+ * Compute the absolute path to `bin/cli.js` for the *currently-installed*
+ * SwarmOps. The daemon command file lives at `dist/src/commands/daemon.js`
+ * at runtime; from there, `../../../bin/cli.js` lands on the @claude-flow/cli
+ * package's bin entry — this is the same calculation `startBackgroundDaemon`
+ * already uses to fork the child, so the two will always agree.
+ */
+function deriveExpectedDaemonBin(): string {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  return resolve(join(__dirname, '..', '..', '..', 'bin', 'cli.js'));
+}
+
+/**
+ * Best-effort `realpath` — falls back to the input when the path doesn't
+ * exist (e.g. a stale daemon whose binary has been deleted). We never throw
+ * here because the whole point is to *report* the mismatch, not crash.
+ */
+function safeRealpath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch (err) {
+    swallowError('detect-daemon-path-mismatch.realpath', err, p);
+    return p;
+  }
+}
+
+/**
+ * Read the running daemon's command line via `ps -p <pid> -o command=`.
+ * Returns the first whitespace-delimited token (the binary path), stripping
+ * the `daemon start --foreground …` argv tail. Returns null if `ps` reports
+ * the PID is gone or if the call fails for any reason.
+ */
+function defaultReadRunningCommand(pid: number): string | null {
+  try {
+    const out = execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (!out) return null;
+    // ps may emit "node /path/to/cli.js daemon start --foreground …"
+    // Strip the leading interpreter token if present so we're comparing
+    // *script* paths, not "node" vs "/usr/local/bin/node".
+    const tokens = out.split(/\s+/);
+    if (tokens.length === 0) return null;
+    // If first token is something like 'node' / a node binary, take the next
+    // token as the script path. Otherwise the first token IS the script
+    // (rare on macOS but possible if ps was invoked with -o args= elsewhere).
+    const isNodeInterpreter = /(^|\/)node(\d+)?$/.test(tokens[0]);
+    const scriptToken = isNodeInterpreter && tokens.length > 1 ? tokens[1] : tokens[0];
+    return scriptToken;
+  } catch (err) {
+    // PID gone, ps unavailable, or permission denied — caller treats this
+    // as "no mismatch detectable" rather than an error condition.
+    swallowError('detect-daemon-path-mismatch.ps', err, String(pid));
+    return null;
+  }
+}
+
+/**
+ * Bug 48 — return all locations a `daemon-state.json` could legitimately
+ * live, in priority order. We enumerate BOTH (rather than picking one via
+ * `resolveInstallContext().claudeRoot`) because a daemon may be running in
+ * either location regardless of which install context the caller's cwd
+ * resolves to. Callers filter by `existsSync` to ignore empty slots.
+ *
+ * Order:
+ *   1. `<cwd>/.claude-flow/daemon-state.json` — project-scoped install
+ *   2. `<homedir>/.claude/.claude-flow/daemon-state.json` — global install
+ *
+ * The PID file lives next to the state file; callers derive
+ * `dirname(stateFilePath) + '/daemon.pid'` rather than enumerating both.
+ */
+function getAllDaemonStatePaths(cwd: string = process.cwd(), home: string = os.homedir()): string[] {
+  const paths = [
+    join(cwd, '.claude-flow', 'daemon-state.json'),
+    join(home, '.claude', '.claude-flow', 'daemon-state.json'),
+  ];
+  // Deduplicate in the rare case where cwd is exactly `<home>/.claude` and
+  // both candidates would resolve to the same file. We compare strings only
+  // (no realpath) — symlink resolution happens later in `safeRealpath`.
+  return Array.from(new Set(paths));
+}
+
+/**
+ * Bug 48 — internal helper that probes ONE state-file location for a
+ * mismatched daemon. Returns null when:
+ *   - the adjacent `daemon.pid` doesn't exist or is malformed,
+ *   - `ps` reports the PID gone,
+ *   - the canonicalized running path matches expected.
+ *
+ * The state file itself is OPTIONAL — we read `startedAt` from it when
+ * present, but the canonical "is this daemon mismatched?" signal comes
+ * from `daemon.pid` + `ps`. This matches Bug 47's original semantics.
+ */
+function detectMismatchAtLocation(
+  stateFilePath: string,
+  expectedPathRaw: string,
+  readRunningCommand: (pid: number) => string | null,
+  canonicalize: (p: string) => string,
+): DaemonPathInfo | null {
+  const stateDir = dirname(stateFilePath);
+  const pidFile = join(stateDir, 'daemon.pid');
+
+  if (!fs.existsSync(pidFile)) return null;
+
+  let pid: number;
+  try {
+    pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+  } catch (err) {
+    swallowError('detect-daemon-path-mismatch.read-pid', err, pidFile);
+    return null;
+  }
+  if (!pid || isNaN(pid) || pid <= 0) return null;
+
+  const runningPathRaw = readRunningCommand(pid);
+  if (!runningPathRaw) {
+    // PID gone or not readable — caller treats as "no mismatch detectable".
+    return null;
+  }
+
+  const runningPath = canonicalize(runningPathRaw);
+  const expectedPath = canonicalize(expectedPathRaw);
+
+  if (runningPath === expectedPath) return null;
+
+  // Pull startedAt + age from daemon-state.json if available. Missing or
+  // malformed state file → 'unknown' / 0 (graceful: we still report the
+  // mismatch even if state metadata is gone).
+  let startedAt = 'unknown';
+  let ageDays = 0;
+  if (fs.existsSync(stateFilePath)) {
+    try {
+      const state = JSON.parse(fs.readFileSync(stateFilePath, 'utf-8')) as { startedAt?: string };
+      if (state.startedAt) {
+        startedAt = state.startedAt;
+        const startMs = Date.parse(state.startedAt);
+        if (!isNaN(startMs)) {
+          ageDays = Math.floor((Date.now() - startMs) / 86_400_000);
+        }
+      }
+    } catch (err) {
+      swallowError('detect-daemon-path-mismatch.read-state', err, stateFilePath);
+    }
+  }
+
+  return {
+    runningPath: runningPathRaw,
+    expectedPath: expectedPathRaw,
+    pid,
+    startedAt,
+    ageDays,
+    stateFilePath,
+  };
+}
+
+/**
+ * Bug 48 — detect ALL running daemons whose binary path doesn't match the
+ * current install. Returns an array (may be empty).
+ *
+ * Why plural: Bug 47's `detectDaemonPathMismatch()` only checked the
+ * cwd-local `.claude-flow/daemon-state.json`. During smoke testing the
+ * lead found a real failure: when a daemon was running from
+ * `~/.claude/.claude-flow/daemon-state.json` but the user invoked
+ * `daemon restart --force-path` from a different cwd, the singular helper
+ * returned null and the restart said "No running daemon to stop" — leaving
+ * the stale daemon alive and forking a SECOND one. The plural variant
+ * scans BOTH possible state-file locations.
+ *
+ * Same null-cases as the singular: missing/malformed pid file, dead PID,
+ * matching canonical paths. PID files at locations that don't exist or
+ * don't match are silently skipped.
+ */
+export async function detectDaemonPathMismatches(
+  opts: DaemonPathDetectorOptions = {},
+): Promise<DaemonPathInfo[]> {
+  const cwd = opts.projectRoot ?? process.cwd();
+  const home = opts.homedir ?? os.homedir();
+  const stateFilePaths = opts.stateFilePaths ?? getAllDaemonStatePaths(cwd, home);
+  const expectedPathRaw = opts.expectedPath ?? deriveExpectedDaemonBin();
+  const readRunningCommand = opts.readRunningCommand ?? defaultReadRunningCommand;
+  const canonicalize = opts.canonicalize ?? safeRealpath;
+
+  // De-duplicate by PID — if both state-file candidates point at the same
+  // running daemon (shouldn't happen in practice, but cheap to guard), we
+  // only report it once.
+  const results: DaemonPathInfo[] = [];
+  const seenPids = new Set<number>();
+  for (const stateFilePath of stateFilePaths) {
+    const info = detectMismatchAtLocation(stateFilePath, expectedPathRaw, readRunningCommand, canonicalize);
+    if (info && !seenPids.has(info.pid)) {
+      seenPids.add(info.pid);
+      results.push(info);
+    }
+  }
+  return results;
+}
+
+/**
+ * Bug 47 backwards-compatibility alias — returns the FIRST mismatched
+ * daemon (or null if there are none). Existing callers (`daemon status`
+ * and `doctor`) and the original Bug 47 tests rely on this signature, so
+ * we keep it as a thin wrapper around `detectDaemonPathMismatches()`.
+ *
+ * Behaviour preserved when `opts.stateFilePaths` is NOT explicitly set
+ * AND `opts.projectRoot` IS set: we scan ONLY the cwd-local location, the
+ * same as the original implementation. This keeps Bug 47's tests (which
+ * write a single tmpdir and never expected to enumerate $HOME) passing.
+ * When neither is overridden, both default locations are scanned.
+ */
+export async function detectDaemonPathMismatch(
+  opts: DaemonPathDetectorOptions = {},
+): Promise<DaemonPathInfo | null> {
+  // Bug 47 compat: if the caller pinned a projectRoot but didn't supply
+  // explicit candidate paths, scan ONLY the cwd-local location. This
+  // preserves the original tmpdir-based test semantics.
+  let resolvedOpts = opts;
+  if (opts.projectRoot && !opts.stateFilePaths) {
+    resolvedOpts = {
+      ...opts,
+      stateFilePaths: [join(opts.projectRoot, '.claude-flow', 'daemon-state.json')],
+    };
+  }
+  const results = await detectDaemonPathMismatches(resolvedOpts);
+  return results.length > 0 ? results[0] : null;
+}
 
 // Start daemon subcommand
 const startCommand: Command = {
@@ -24,26 +327,12 @@ const startCommand: Command = {
     { name: 'sandbox', type: 'string', description: 'Default sandbox mode for headless workers', choices: ['strict', 'permissive', 'disabled'] },
     { name: 'max-cpu-load', type: 'string', description: 'Override maxCpuLoad resource threshold (e.g. 4.0)' },
     { name: 'min-free-memory', type: 'string', description: 'Override minFreeMemoryPercent resource threshold (e.g. 15)' },
-    // ADR-072 / #1916: queen-dispatcher opt-in via CLI flags. Mirrors
-    // the config.{yaml,json} `daemon.queenDispatcher.*` keys for
-    // operators who'd rather flip behaviour at start time than edit a
-    // config file. Either source works; CLI wins.
-    { name: 'queen-dispatcher', type: 'boolean', description: 'Enable the queen-dispatcher loop that drives assigned swarm tasks through HeadlessWorkerExecutor (ADR-072 / #1916)' },
-    { name: 'queen-poll-ms', type: 'string', description: 'Queen-dispatcher poll interval in ms (default 5000)' },
-    { name: 'queen-max-concurrent', type: 'string', description: 'Queen-dispatcher global max concurrent task executions (default 2)' },
-    { name: 'queen-sandbox', type: 'string', description: 'Queen-dispatcher sandbox mode for spawned claude sessions', choices: ['strict', 'permissive', 'disabled'] },
-    // #1914: workspace root for this daemon. Set automatically when the
-    // background launcher forks the foreground child so the daemon process
-    // carries its workspace path in argv — `killStaleDaemons` then only
-    // reaps daemons belonging to the current workspace (ADR-014 scope).
-    { name: 'workspace', type: 'string', description: 'Workspace root for this daemon (internal — set automatically when forking)' },
   ],
   examples: [
     { command: 'claude-flow daemon start', description: 'Start daemon in background (default)' },
     { command: 'claude-flow daemon start --foreground', description: 'Start in foreground (blocks terminal)' },
     { command: 'claude-flow daemon start -w map,audit,optimize', description: 'Start with specific workers' },
     { command: 'claude-flow daemon start --headless --sandbox strict', description: 'Start with headless workers in strict sandbox' },
-    { command: 'claude-flow daemon start --queen-dispatcher', description: 'Start with the ADR-072 queen-dispatcher (drives assigned swarm tasks)' },
   ],
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     const quiet = ctx.flags.quiet as boolean;
@@ -83,40 +372,6 @@ const startCommand: Command = {
       }
     }
 
-    // ADR-072 / #1916: parse queen-dispatcher flags. Re-uses the same
-    // strict numeric pattern as the resource thresholds to prevent
-    // command injection when forwarding to the forked background
-    // subprocess.
-    const queenEnabled = ctx.flags['queen-dispatcher'] as boolean | undefined;
-    const rawQueenPoll = ctx.flags['queen-poll-ms'] as string | undefined;
-    const rawQueenMax = ctx.flags['queen-max-concurrent'] as string | undefined;
-    const rawQueenSandbox = ctx.flags['queen-sandbox'] as string | undefined;
-    if (queenEnabled || rawQueenPoll || rawQueenMax || rawQueenSandbox) {
-      const qd: DaemonConfig['queenDispatcher'] = { enabled: queenEnabled === true };
-      if (rawQueenPoll) {
-        const v = parseFloat(rawQueenPoll);
-        if (NUMERIC_RE.test(rawQueenPoll) && isFinite(v) && v >= 100 && v <= 600_000) {
-          qd.pollIntervalMs = v;
-        } else if (!quiet) {
-          output.printWarning(`Ignoring invalid --queen-poll-ms value: ${sanitize(rawQueenPoll)}`);
-        }
-      }
-      if (rawQueenMax) {
-        const v = parseFloat(rawQueenMax);
-        if (NUMERIC_RE.test(rawQueenMax) && isFinite(v) && v >= 1 && v <= 50) {
-          qd.maxConcurrent = v;
-        } else if (!quiet) {
-          output.printWarning(`Ignoring invalid --queen-max-concurrent value: ${sanitize(rawQueenMax)}`);
-        }
-      }
-      if (rawQueenSandbox && ['strict', 'permissive', 'disabled'].includes(rawQueenSandbox)) {
-        qd.sandbox = rawQueenSandbox as 'strict' | 'permissive' | 'disabled';
-      } else if (rawQueenSandbox && !quiet) {
-        output.printWarning(`Ignoring invalid --queen-sandbox value: ${sanitize(rawQueenSandbox)}`);
-      }
-      config.queenDispatcher = qd;
-    }
-
     // Check if background daemon already running (skip if we ARE the daemon process)
     if (!isDaemonProcess) {
       const bgPid = getBackgroundDaemonPid(projectRoot);
@@ -132,18 +387,7 @@ const startCommand: Command = {
 
     // Background mode (default): fork a detached process
     if (!foreground) {
-      return startBackgroundDaemon(projectRoot, quiet, {
-        maxCpuLoad: rawMaxCpu,
-        minFreeMemory: rawMinMem,
-        workers: ctx.flags.workers as string | undefined,
-        headless: ctx.flags.headless as boolean | undefined,
-        sandbox: ctx.flags.sandbox as string | undefined,
-        // ADR-072 / #1916: forward queen-dispatcher flags.
-        queenDispatcher: ctx.flags['queen-dispatcher'] as boolean | undefined,
-        queenPollMs: ctx.flags['queen-poll-ms'] as string | undefined,
-        queenMaxConcurrent: ctx.flags['queen-max-concurrent'] as string | undefined,
-        queenSandbox: ctx.flags['queen-sandbox'] as string | undefined,
-      });
+      return startBackgroundDaemon(projectRoot, quiet, rawMaxCpu, rawMinMem);
     }
 
     // Foreground mode: run in current process (blocks terminal)
@@ -283,23 +527,7 @@ function validatePath(path: string, label: string): void {
 /**
  * Start daemon as a detached background process
  */
-interface ForwardedDaemonFlags {
-  maxCpuLoad?: string;
-  minFreeMemory?: string;
-  workers?: string;
-  headless?: boolean;
-  sandbox?: string;
-  // ADR-072 / #1916 — queen-dispatcher opt-in. The launcher forwards
-  // these to the foreground child so `daemon start --queen-dispatcher`
-  // works without `--foreground`.
-  queenDispatcher?: boolean;
-  queenPollMs?: string;
-  queenMaxConcurrent?: string;
-  queenSandbox?: string;
-}
-
-async function startBackgroundDaemon(projectRoot: string, quiet: boolean, forwarded: ForwardedDaemonFlags = {}): Promise<CommandResult> {
-  const { maxCpuLoad, minFreeMemory, workers, headless, sandbox, queenDispatcher, queenPollMs, queenMaxConcurrent, queenSandbox } = forwarded;
+async function startBackgroundDaemon(projectRoot: string, quiet: boolean, maxCpuLoad?: string, minFreeMemory?: string): Promise<CommandResult> {
   // Validate and resolve project root
   const resolvedRoot = resolve(projectRoot);
   validatePath(resolvedRoot, 'Project root');
@@ -331,63 +559,49 @@ async function startBackgroundDaemon(projectRoot: string, quiet: boolean, forwar
     return { success: false, exitCode: 1 };
   }
 
-  // Platform-aware spawn flags
+  // Platform-aware spawn flags. We use child_process.fork() because the daemon
+  // child is itself a Node script — fork() spawns Node directly and skips the
+  // cmd.exe interpretation pass that broke Windows + Node 25 when
+  // process.execPath contained a space (#1691). It also avoids the [DEP0190]
+  // shell:true security warning.
   const isWin = process.platform === 'win32';
-  const spawnOpts: Record<string, unknown> = {
+  const forkOpts: Record<string, unknown> = {
     cwd: resolvedRoot,
-    detached: !isWin,  // detached is POSIX-only; Windows uses windowsHide
-    // Use 'ignore' for all stdio — passing fs.openSync() FDs causes the child to
-    // die on Windows when the parent exits and closes the FDs (#1478 Bug 3).
-    // The daemon writes its own logs via appendFileSync to .claude-flow/logs/.
-    stdio: ['ignore', 'ignore', 'ignore'],
+    // detached: true on every platform (#1766). On Windows, leaving detached:false
+    // kept the child in the parent's process group AND the IPC pipe held the
+    // child to npx — when npx exited, the IPC pipe tore down and the daemon
+    // died within ~1s. detached:true + child.disconnect() (below) gives the
+    // child its own session/pgid and breaks the IPC pipe so the daemon
+    // genuinely survives parent exit. On POSIX, detached:true was already the
+    // path; this just makes Windows match.
+    detached: true,
+    // Use 'ignore' for all stdio + 'ignore' for the IPC channel via silent:true off.
+    // fork() defaults to creating an IPC channel; we don't need it here, so we
+    // pass stdio explicitly. Passing fs.openSync() FDs causes the child to die
+    // on Windows when the parent exits and closes the FDs (#1478 Bug 3) — the
+    // daemon writes its own logs via appendFileSync to .claude-flow/logs/.
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+    windowsHide: true,
     env: {
       ...process.env,
       CLAUDE_FLOW_DAEMON: '1',
       // Prevent macOS SIGHUP kill when terminal closes
       ...(process.platform === 'darwin' ? { NOHUP: '1' } : {}),
     },
-    // Avoid shell-mode spawn on Windows. Shell parsing can break quoted
-    // executable paths like "C:\Program Files\..." and cause stale PID files.
-    ...(isWin ? { windowsHide: true } : {}),
   };
 
-  // Use spawn with explicit arguments instead of shell string interpolation
-  // This prevents command injection via paths
-  const spawnArgs = [
-    cliPath,
-    'daemon', 'start', '--foreground', '--quiet',
-  ];
-  // Forward resource threshold flags to the foreground child process
-  // Validate with strict numeric pattern to prevent shell injection on Windows (S1)
+  // Forward args to the foreground child. fork() resolves the script path
+  // via Node's normal module resolution, so cliPath does not need to be
+  // shell-quoted even when it contains spaces.
+  const forkArgs = ['daemon', 'start', '--foreground', '--quiet'];
+  // Validate with strict numeric pattern to prevent injection via crafted flags.
   const SPAWN_NUMERIC_RE = /^\d+(\.\d+)?$/;
   if (maxCpuLoad && SPAWN_NUMERIC_RE.test(maxCpuLoad)) {
-    spawnArgs.push('--max-cpu-load', maxCpuLoad);
+    forkArgs.push('--max-cpu-load', maxCpuLoad);
   }
   if (minFreeMemory && SPAWN_NUMERIC_RE.test(minFreeMemory)) {
-    spawnArgs.push('--min-free-memory', minFreeMemory);
+    forkArgs.push('--min-free-memory', minFreeMemory);
   }
-  if (typeof sandbox === 'string' && (sandbox === 'strict' || sandbox === 'permissive' || sandbox === 'disabled')) {
-    forkArgs.push('--sandbox', sandbox);
-  }
-  // ADR-072 / #1916 — forward queen-dispatcher flags. Same numeric /
-  // enum validation as the resource flags above so a crafted CLI
-  // string can't smuggle anything into the forked child's argv.
-  if (queenDispatcher === true) {
-    forkArgs.push('--queen-dispatcher');
-  }
-  if (typeof queenPollMs === 'string' && SPAWN_NUMERIC_RE.test(queenPollMs)) {
-    forkArgs.push('--queen-poll-ms', queenPollMs);
-  }
-  if (typeof queenMaxConcurrent === 'string' && SPAWN_NUMERIC_RE.test(queenMaxConcurrent)) {
-    forkArgs.push('--queen-max-concurrent', queenMaxConcurrent);
-  }
-  if (typeof queenSandbox === 'string' && (queenSandbox === 'strict' || queenSandbox === 'permissive' || queenSandbox === 'disabled')) {
-    forkArgs.push('--queen-sandbox', queenSandbox);
-  }
-  // #1914: stamp the workspace into argv (kept LAST) so the foreground daemon
-  // process is self-identifying and `killStaleDaemons` only reaps daemons
-  // belonging to this workspace. resolvedRoot was validatePath()'d above.
-  forkArgs.push('--workspace', resolvedRoot);
   const child = fork(cliPath, forkArgs, forkOpts);
 
   // Get PID from spawned process directly (no shell echo needed)
@@ -398,8 +612,16 @@ async function startBackgroundDaemon(projectRoot: string, quiet: boolean, forwar
     return { success: false, exitCode: 1 };
   }
 
-  // Unref immediately so parent can exit while child keeps running.
+  // Unref BEFORE writing PID file — prevents race where parent exits
+  // but child hasn't fully detached yet (fixes macOS daemon death #1283).
   child.unref();
+  // #1766: also break the IPC pipe explicitly. unref() releases the libuv
+  // handle but does NOT close the IPC channel; on Windows the open IPC
+  // pipe keeps the daemon tied to its parent npx, and when npx exits the
+  // pipe is torn down and the daemon exits with it. disconnect() severs
+  // the IPC pipe so the daemon truly stands on its own. Wrapped in try
+  // because disconnect() throws if the IPC channel is already gone.
+  try { child.disconnect(); } catch { /* IPC channel already closed */ }
 
   // Longer delay to let the child process start and write its own PID file.
   // 100ms was too short on Windows; the child's checkExistingDaemon() would
@@ -466,6 +688,205 @@ const stopCommand: Command = {
 };
 
 /**
+ * Process killer abstraction — allows tests to assert SIGTERM/SIGKILL flow
+ * without actually shooting at real PIDs. Defaults to `process.kill`.
+ */
+export type ProcessKiller = (pid: number, signal: NodeJS.Signals | number) => boolean;
+const defaultKiller: ProcessKiller = (pid, signal) => {
+  process.kill(pid, signal);
+  return true;
+};
+
+/**
+ * Bug 47 — public restart helper. Sends SIGTERM, waits up to `graceMs`, then
+ * SIGKILL if still alive. Cleans up PID/state files when `clearState` is set.
+ * Returns true when something was killed (or a stale state file was wiped),
+ * false when there was no daemon to deal with.
+ *
+ * Exposed for testing — the daemon `restart` subcommand calls this with
+ * `killer = process.kill` and `sleep = setTimeout` defaults.
+ *
+ * Bug 48 — accepts an optional explicit `stateFilePath` so the caller can
+ * target a daemon at either of the two valid locations (cwd-local or the
+ * global `<homedir>/.claude/.claude-flow/`). When unset, defaults to the
+ * cwd-local location, preserving Bug 47 behaviour.
+ */
+export async function restartBackgroundDaemon(opts: {
+  projectRoot: string;
+  clearState: boolean;
+  graceMs?: number;
+  killer?: ProcessKiller;
+  sleep?: (ms: number) => Promise<void>;
+  /**
+   * Bug 48 — explicit state-file path override. When set, the PID file is
+   * derived as `dirname(stateFilePath) + '/daemon.pid'`. Otherwise we use
+   * `<projectRoot>/.claude-flow/daemon-state.json` (Bug 47 default).
+   */
+  stateFilePath?: string;
+}): Promise<{ killed: boolean; pid: number | null }> {
+  const projectRoot = opts.projectRoot;
+  const graceMs = opts.graceMs ?? 5000;
+  const killer = opts.killer ?? defaultKiller;
+  const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const stateFile = opts.stateFilePath ?? join(projectRoot, '.claude-flow', 'daemon-state.json');
+  const pidFile = join(dirname(stateFile), 'daemon.pid');
+
+  let pid: number | null = null;
+  if (fs.existsSync(pidFile)) {
+    try {
+      const raw = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+      if (!isNaN(raw) && raw > 0) pid = raw;
+    } catch (err) {
+      swallowError('restart-background-daemon.read-pid', err, pidFile);
+    }
+  }
+
+  let killed = false;
+  if (pid !== null) {
+    // Check if alive — ENOENT/ESRCH means already dead.
+    let alive = true;
+    try {
+      killer(pid, 0);
+    } catch {
+      alive = false;
+    }
+
+    if (alive) {
+      try {
+        killer(pid, 'SIGTERM');
+        killed = true;
+      } catch (err) {
+        swallowError('restart-background-daemon.sigterm', err, String(pid));
+      }
+      // Poll up to graceMs for graceful shutdown.
+      const pollMs = Math.max(50, Math.min(500, Math.floor(graceMs / 10)));
+      const start = Date.now();
+      while (Date.now() - start < graceMs) {
+        try {
+          killer(pid, 0);
+        } catch {
+          alive = false;
+          break;
+        }
+        await sleep(pollMs);
+      }
+      if (alive) {
+        try {
+          killer(pid, 'SIGKILL');
+        } catch (err) {
+          swallowError('restart-background-daemon.sigkill', err, String(pid));
+        }
+      }
+    }
+  }
+
+  // Clean up PID file unconditionally (covers both real-kill and
+  // already-dead-but-stale cases).
+  if (fs.existsSync(pidFile)) {
+    try { fs.unlinkSync(pidFile); } catch (err) { swallowError('restart-background-daemon.unlink-pid', err, pidFile); }
+    if (pid === null) killed = true; // we did clear *something*
+  }
+
+  // --force-path also wipes daemon-state.json so the new daemon starts fresh
+  // rather than restoring stale worker-config from disk.
+  if (opts.clearState && fs.existsSync(stateFile)) {
+    try { fs.unlinkSync(stateFile); } catch (err) { swallowError('restart-background-daemon.unlink-state', err, stateFile); }
+  }
+
+  return { killed, pid };
+}
+
+// Restart daemon subcommand — Bug 47.
+const restartCommand: Command = {
+  name: 'restart',
+  description: 'Restart the worker daemon (graceful SIGTERM, then SIGKILL after 5s)',
+  options: [
+    { name: 'force-path', type: 'boolean', description: 'Override path-mismatch refusal and wipe daemon-state.json' },
+    { name: 'quiet', short: 'Q', type: 'boolean', description: 'Suppress non-error output' },
+  ],
+  examples: [
+    { command: 'claude-flow daemon restart', description: 'Restart daemon (refuses if running binary differs from install)' },
+    { command: 'claude-flow daemon restart --force-path', description: 'Kill stale-path daemon and start fresh' },
+  ],
+  action: async (ctx: CommandContext): Promise<CommandResult> => {
+    const quiet = ctx.flags.quiet as boolean;
+    const forcePath = ctx.flags['force-path'] as boolean;
+    const projectRoot = process.cwd();
+
+    // Bug 48 — scan ALL valid state-file locations (cwd-local + global).
+    // The Bug 47 implementation only checked the cwd-local one and missed
+    // daemons running from `~/.claude/.claude-flow/daemon-state.json`.
+    const mismatches = await detectDaemonPathMismatches();
+    if (mismatches.length > 0 && !forcePath) {
+      const noun = mismatches.length === 1 ? 'daemon' : 'daemons';
+      output.printError(
+        `Existing ${noun} (${mismatches.length}) don't match SwarmOps install.`
+      );
+      for (const m of mismatches) {
+        const ageLabel = m.ageDays > 0
+          ? `${m.ageDays} day${m.ageDays === 1 ? '' : 's'}`
+          : 'recently';
+        output.writeln(output.dim(`  - PID ${m.pid} (started ${ageLabel} ago)`));
+        output.writeln(output.dim(`      running:  ${m.runningPath}`));
+        output.writeln(output.dim(`      expected: ${m.expectedPath}`));
+        output.writeln(output.dim(`      tracked at: ${m.stateFilePath}`));
+      }
+      output.writeln(output.dim(`  Use --force-path to override. This will kill ${mismatches.length === 1 ? 'this PID' : 'these PIDs'} and clean up state.`));
+      return { success: false, exitCode: 1 };
+    }
+
+    try {
+      // Bug 48 — when --force-path is set with mismatches, kill EACH one
+      // (was only killing the cwd-local PID before, leaving the global
+      // one alive). Also targets the matching state-file path so we wipe
+      // the right daemon-state.json per location.
+      let totalKilled = 0;
+      const killedPids: number[] = [];
+      if (forcePath && mismatches.length > 0) {
+        for (const m of mismatches) {
+          const result = await restartBackgroundDaemon({
+            projectRoot,
+            clearState: true,
+            stateFilePath: m.stateFilePath,
+          });
+          if (result.killed) {
+            totalKilled++;
+            if (result.pid !== null) killedPids.push(result.pid);
+          }
+        }
+      } else {
+        // No mismatches OR --force-path without mismatches: fall back to the
+        // cwd-local restart path (Bug 47 behaviour for the no-mismatch case).
+        const result = await restartBackgroundDaemon({
+          projectRoot,
+          clearState: !!forcePath,
+        });
+        if (result.killed) {
+          totalKilled++;
+          if (result.pid !== null) killedPids.push(result.pid);
+        }
+      }
+
+      if (!quiet) {
+        if (totalKilled > 0 && killedPids.length > 0) {
+          output.printInfo(`Stopped existing daemon${killedPids.length === 1 ? '' : 's'} (PID${killedPids.length === 1 ? '' : 's'} ${killedPids.join(', ')})`);
+        } else if (totalKilled > 0) {
+          output.printInfo('Cleaned up stale daemon state');
+        } else {
+          output.printInfo('No running daemon to stop');
+        }
+      }
+
+      // Hand off to the existing background-start path.
+      return await startBackgroundDaemon(projectRoot, !!quiet);
+    } catch (error) {
+      output.printError(`Failed to restart daemon: ${error instanceof Error ? error.message : String(error)}`);
+      return { success: false, exitCode: 1 };
+    }
+  },
+};
+
+/**
  * Kill background daemon process using PID file
  */
 async function killBackgroundDaemon(projectRoot: string): Promise<boolean> {
@@ -523,44 +944,23 @@ async function killBackgroundDaemon(projectRoot: string): Promise<boolean> {
 
 /**
  * Kill stale daemon processes not tracked by the PID file (#1551).
- * Uses platform-appropriate commands to find all daemon processes for this project.
+ * Uses `ps` to find all daemon processes for this project and kills them.
  */
 async function killStaleDaemons(projectRoot: string, quiet: boolean): Promise<void> {
   try {
     const { execFileSync } = await import('child_process');
-    const isWindows = process.platform === 'win32';
-    
-    let psOutput: string;
-    if (isWindows) {
-      psOutput = execFileSync('tasklist', ['/FI', 'IMAGENAME node.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf-8', timeout: 5000 });
-    } else {
-      psOutput = execFileSync('ps', ['-eo', 'pid,command'], { encoding: 'utf-8', timeout: 5000 });
-    }
-    
+    const psOutput = execFileSync('ps', ['-eo', 'pid,command'], { encoding: 'utf-8', timeout: 5000 });
     const lines = psOutput.split('\n');
     const currentPid = process.pid;
     const trackedPid = getBackgroundDaemonPid(projectRoot);
     let killed = 0;
 
     for (const line of lines) {
-      if (!line.trim()) continue;
-      
-      let pid: number;
-      try {
-        if (isWindows) {
-          const parts = line.split(',');
-          if (parts.length < 2) continue;
-          pid = parseInt(parts[1].replace(/[^0-9]/g, ''), 10);
-        } else {
-          const pidStr = line.trim().split(/\t/)[0];
-          pid = parseInt(pidStr, 10);
-        }
-      } catch {
-        continue;
-      }
-      
+      if (!line.includes('daemon start --foreground')) continue;
+      if (!line.includes('claude-flow') && !line.includes('@claude-flow/cli')) continue;
+      const pidStr = line.trim().split(/\s+/)[0];
+      const pid = parseInt(pidStr, 10);
       if (isNaN(pid) || pid === currentPid || pid === trackedPid) continue;
-      if (!line.includes('daemon') && !line.includes('claude-flow') && !line.includes('claude-flow')) continue;
       if (!isProcessRunning(pid)) continue;
       try {
         process.kill(pid, 'SIGTERM');
@@ -575,7 +975,7 @@ async function killStaleDaemons(projectRoot: string, quiet: boolean): Promise<vo
       output.printInfo(`Cleaned up ${killed} stale daemon process(es)`);
     }
   } catch {
-    // Process listing not available or failed — skip stale cleanup
+    // ps not available or failed — skip stale cleanup
   }
 }
 
@@ -725,6 +1125,30 @@ const statusCommand: Command = {
         });
       }
 
+      // Bug 47 + Bug 48 — surface stale-daemon-path mismatch(es).
+      //
+      // Bug 48 widens the scan from just the cwd-local state file to BOTH
+      // candidate locations (cwd-local + global `~/.claude/.claude-flow/`).
+      // We always check (not gated on `isRunning`) because the local
+      // `getDaemon(projectRoot)` may not see a daemon that's actually live
+      // in the OTHER location. One warning block per detected stale daemon.
+      const mismatches = await detectDaemonPathMismatches();
+      for (const mismatch of mismatches) {
+        output.writeln();
+        output.printWarning('STALE DAEMON DETECTED');
+        const ageLabel = mismatch.ageDays > 0
+          ? `${mismatch.ageDays} day${mismatch.ageDays === 1 ? '' : 's'} ago`
+          : 'recently';
+        output.writeln(output.dim(`  Running daemon (PID ${mismatch.pid}, started ${ageLabel}) is from:`));
+        output.writeln(output.dim(`    ${mismatch.runningPath}`));
+        output.writeln(output.dim(`  But your current SwarmOps install is at:`));
+        output.writeln(output.dim(`    ${mismatch.expectedPath}`));
+        output.writeln(output.dim(`  Tracked in state file:`));
+        output.writeln(output.dim(`    ${mismatch.stateFilePath}`));
+        output.writeln(output.dim(`  Background workers are NOT running SwarmOps code.`));
+        output.writeln(output.dim(`  Run \`swarmops daemon restart --force-path\` to fix.`));
+      }
+
       return { success: true, data: status };
     } catch (error) {
       // Daemon not initialized
@@ -856,6 +1280,7 @@ export const daemonCommand: Command = {
   subcommands: [
     startCommand,
     stopCommand,
+    restartCommand,
     statusCommand,
     triggerCommand,
     enableCommand,
@@ -866,6 +1291,7 @@ export const daemonCommand: Command = {
     { command: 'claude-flow daemon start --headless', description: 'Start with headless workers (E2B sandbox)' },
     { command: 'claude-flow daemon status', description: 'Check daemon status' },
     { command: 'claude-flow daemon stop', description: 'Stop the daemon' },
+    { command: 'claude-flow daemon restart --force-path', description: 'Restart daemon, overriding stale-path lock (Bug 47)' },
     { command: 'claude-flow daemon trigger -w audit', description: 'Run security audit' },
   ],
   action: async (): Promise<CommandResult> => {
@@ -901,6 +1327,7 @@ export const daemonCommand: Command = {
     output.printList([
       `${output.highlight('start')}   - Start the daemon`,
       `${output.highlight('stop')}    - Stop the daemon`,
+      `${output.highlight('restart')} - Restart the daemon (use --force-path for stale-path)`,
       `${output.highlight('status')}  - Show daemon status`,
       `${output.highlight('trigger')} - Manually run a worker`,
       `${output.highlight('enable')}  - Enable/disable a worker`,

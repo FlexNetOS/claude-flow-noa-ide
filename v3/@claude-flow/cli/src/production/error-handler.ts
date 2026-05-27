@@ -139,6 +139,23 @@ const SENSITIVE_KEYS = [
   'private',
 ];
 
+/**
+ * Pre-compiled redaction regexes — one per sensitive key, built once at module
+ * load. Hot path: `sanitizeMessage` runs on every emitted log line, so building
+ * a fresh `RegExp` per key per call (SENSITIVE_KEYS.length × log_lines re-parses)
+ * is wasteful. Cached as `Map<key, RegExp>` to preserve correctness while
+ * eliminating the per-call construction cost.
+ *
+ * Pattern preserved verbatim from the previous inline construction:
+ *   new RegExp(`${key}[=:]?\\s*["']?[^\\s"']+["']?`, 'gi')
+ */
+const SENSITIVE_KEY_REGEX_CACHE: Map<string, RegExp> = new Map(
+  SENSITIVE_KEYS.map(key => [
+    key,
+    new RegExp(`${key}[=:]?\\s*["']?[^\\s"']+["']?`, 'gi'),
+  ])
+);
+
 // ============================================================================
 // Error Handler
 // ============================================================================
@@ -348,10 +365,14 @@ export class ErrorHandler {
   private sanitizeMessage(message: string): string {
     if (!this.config.sanitize) return message;
 
-    // Remove potential sensitive data from message
+    // Remove potential sensitive data from message — uses module-level
+    // regex cache (see SENSITIVE_KEY_REGEX_CACHE) to avoid re-parsing each
+    // pattern on every log line. `String.prototype.replace` with a global
+    // regex resets `lastIndex` internally, so reusing the cached RegExp
+    // across calls is safe.
     let sanitized = message;
     for (const key of SENSITIVE_KEYS) {
-      const pattern = new RegExp(`${key}[=:]?\\s*["']?[^\\s"']+["']?`, 'gi');
+      const pattern = SENSITIVE_KEY_REGEX_CACHE.get(key)!;
       sanitized = sanitized.replace(pattern, `${key}=[REDACTED]`);
     }
     return sanitized;

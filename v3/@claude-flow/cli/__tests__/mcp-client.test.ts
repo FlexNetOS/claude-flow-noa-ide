@@ -3,9 +3,10 @@
  * Tests for MCP tool invocation with proper mocking
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import {
   callMCPTool,
+  ensureMcpToolsLoaded,
   getToolMetadata,
   listMCPTools,
   hasTool,
@@ -150,6 +151,14 @@ vi.mock('../src/mcp-tools/config-tools.js', () => ({
 }));
 
 describe('MCP Client', () => {
+  // Bug #49: tools are loaded lazily; awaiting once at suite start so the
+  // sync getters (listMCPTools, hasTool, getToolMetadata, getToolCategories,
+  // validateToolInput) can read from a populated registry. callMCPTool
+  // auto-loads, but we want a deterministic ordering for the sync tests.
+  beforeAll(async () => {
+    await ensureMcpToolsLoaded();
+  });
+
   describe('callMCPTool', () => {
     it('should call agent/spawn tool successfully', async () => {
       const result = await callMCPTool('agent/spawn', {
