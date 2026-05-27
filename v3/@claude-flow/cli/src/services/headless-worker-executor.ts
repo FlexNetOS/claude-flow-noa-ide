@@ -1,15 +1,17 @@
 /**
  * Headless Worker Executor
- * Enables workers to invoke Claude Code in headless mode with configurable sandbox profiles.
+ * Enables workers to invoke AI coding agents (Claude Code or OpenCode) in headless mode.
  *
  * ADR-020: Headless Worker Integration Architecture
  * - Integrates with CLAUDE_CODE_HEADLESS and CLAUDE_CODE_SANDBOX_MODE environment variables
+ * - Supports multiple backends: Claude Code (default) and OpenCode
  * - Provides process pool for concurrent execution
  * - Builds context from file glob patterns
  * - Supports prompt templates and output parsing
  * - Implements timeout and graceful error handling
  *
  * Key Features:
+ * - Multi-backend support (Claude Code / OpenCode)
  * - Process pool with configurable maxConcurrent
  * - Context building from file glob patterns with caching
  * - Prompt template system with context injection
@@ -24,6 +26,7 @@ import { EventEmitter } from 'events';
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'fs';
 import { join, relative } from 'path';
 import type { WorkerType } from './worker-daemon.js';
+import { normalizeOutput } from './executor-output.js';
 
 // ============================================
 // Type Definitions
@@ -41,6 +44,14 @@ export type HeadlessWorkerType =
   | 'refactor'
   | 'deepdive'
   | 'predict';
+
+/**
+ * Label used in the process pool / status / events. Includes the
+ * dispatch-driven 'arbitrary' kind that the queen-dispatcher uses
+ * to run a free-form (systemPrompt, prompt) pair through Claude Code
+ * without going through the fixed HEADLESS_WORKER_CONFIGS templates.
+ */
+export type ExecutorWorkerLabel = HeadlessWorkerType | 'arbitrary';
 
 /**
  * Local worker types - workers that run locally without AI
@@ -66,6 +77,11 @@ export type OutputFormat = 'text' | 'json' | 'markdown';
  * Execution mode for workers
  */
 export type ExecutionMode = 'local' | 'headless';
+
+/**
+ * Coding agent backend for headless execution
+ */
+export type BackendType = 'claude' | 'opencode';
 
 /**
  * Worker priority levels
@@ -128,6 +144,9 @@ export interface HeadlessWorkerConfig extends WorkerConfig {
  * Executor configuration options
  */
 export interface HeadlessExecutorConfig {
+  /** Coding agent backend: claude (default) or opencode */
+  backend?: BackendType;
+
   /** Maximum concurrent headless processes */
   maxConcurrent?: number;
 
@@ -157,7 +176,7 @@ export interface HeadlessExecutionResult {
   /** Whether execution completed successfully */
   success: boolean;
 
-  /** Raw output from Claude Code */
+  /** Raw output from the coding agent */
   output: string;
 
   /** Parsed output (if outputFormat is json or markdown) */
@@ -186,6 +205,9 @@ export interface HeadlessExecutionResult {
 
   /** Execution ID for tracking */
   executionId: string;
+
+  /** Coding agent backend used */
+  backend: BackendType;
 }
 
 /**
@@ -194,20 +216,90 @@ export interface HeadlessExecutionResult {
 interface PoolEntry {
   process: ChildProcess;
   executionId: string;
-  workerType: HeadlessWorkerType;
+  workerType: ExecutorWorkerLabel;
   startTime: Date;
   timeout: NodeJS.Timeout;
 }
 
 /**
- * Pending queue entry
+ * Pending queue entry. Discriminated union so the queue can hold
+ * both fixed-template worker requests AND queen-dispatched arbitrary
+ * executions while preserving FIFO across both.
  */
-interface QueueEntry {
-  workerType: HeadlessWorkerType;
-  config?: Partial<HeadlessOptions>;
-  resolve: (result: HeadlessExecutionResult) => void;
-  reject: (error: Error) => void;
-  queuedAt: Date;
+type QueueEntry =
+  | {
+      kind: 'worker';
+      workerType: HeadlessWorkerType;
+      config?: Partial<HeadlessOptions>;
+      resolve: (result: HeadlessExecutionResult) => void;
+      reject: (error: Error) => void;
+      queuedAt: Date;
+    }
+  | {
+      kind: 'arbitrary';
+      input: ArbitraryExecutionInput;
+      resolve: (result: ArbitraryExecutionResult) => void;
+      reject: (error: Error) => void;
+      queuedAt: Date;
+    };
+
+/**
+ * Input for executeArbitrary — the queen-dispatcher path. Decoupled
+ * from HEADLESS_WORKER_CONFIGS so callers can hand in a free-form
+ * (systemPrompt, prompt) pair plus per-execution sandbox / model /
+ * timeout overrides.
+ */
+export interface ArbitraryExecutionInput {
+  /** User-message body sent to claude --print via stdin. Required. */
+  prompt: string;
+  /**
+   * Optional system prompt. When provided, prepended to the user
+   * prompt with a SYSTEM/TASK separator (claude --print does not
+   * accept a system flag in all supported versions, so we concatenate
+   * to stay version-portable).
+   */
+  systemPrompt?: string;
+  /** Sandbox mode. Defaults to 'permissive' so workers can edit files. */
+  sandbox?: SandboxMode;
+  /** Logical model alias (haiku / sonnet / opus). Defaults to 'sonnet'. */
+  model?: ModelType;
+  /**
+   * Execution timeout in ms. Defaults to the executor's defaultTimeoutMs
+   * (5 min). Caller should pick a budget appropriate for the work.
+   */
+  timeoutMs?: number;
+  /** Override cwd for the spawned claude process. Defaults to projectRoot. */
+  cwd?: string;
+  /**
+   * Caller-supplied label for telemetry / status. Defaults to 'arbitrary'.
+   * E.g. queen-dispatcher uses 'queen:<taskId>'.
+   */
+  label?: string;
+}
+
+/**
+ * Result of an arbitrary execution. Mirrors HeadlessExecutionResult
+ * but without the worker-template fields (workerType, parsedOutput).
+ */
+export interface ArbitraryExecutionResult {
+  /** Whether the spawned claude session exited 0. */
+  success: boolean;
+  /** Raw stdout (stderr on failure). */
+  output: string;
+  /** Duration in ms. */
+  durationMs: number;
+  /** Model id used. */
+  model: string;
+  /** Sandbox mode used. */
+  sandboxMode: SandboxMode;
+  /** When the execution finished. */
+  timestamp: Date;
+  /** Generated execution id (for tracking via getPoolStatus / cancel). */
+  executionId: string;
+  /** Caller-supplied label echoed back. */
+  label: string;
+  /** Error message when success is false. */
+  error?: string;
 }
 
 /**
@@ -228,12 +320,12 @@ export interface PoolStatus {
   maxConcurrent: number;
   activeWorkers: Array<{
     executionId: string;
-    workerType: HeadlessWorkerType;
+    workerType: ExecutorWorkerLabel;
     startTime: Date;
     elapsedMs: number;
   }>;
   queuedWorkers: Array<{
-    workerType: HeadlessWorkerType;
+    workerType: ExecutorWorkerLabel;
     queuedAt: Date;
     waitingMs: number;
   }>;
@@ -586,9 +678,10 @@ export function getWorkerConfig(type: WorkerType): HeadlessWorkerConfig | undefi
 // ============================================
 
 /**
- * HeadlessWorkerExecutor - Executes workers using Claude Code in headless mode
+ * HeadlessWorkerExecutor - Executes workers using AI coding agents in headless mode
  *
  * Features:
+ * - Multi-backend support (Claude Code / OpenCode)
  * - Process pool with configurable concurrency limit
  * - Pending queue for overflow requests
  * - Context caching with configurable TTL
@@ -599,11 +692,14 @@ export function getWorkerConfig(type: WorkerType): HeadlessWorkerConfig | undefi
 export class HeadlessWorkerExecutor extends EventEmitter {
   private projectRoot: string;
   private config: Required<HeadlessExecutorConfig>;
+  private backend: BackendType;
   private processPool: Map<string, PoolEntry> = new Map();
   private pendingQueue: QueueEntry[] = [];
   private contextCache: Map<string, CacheEntry> = new Map();
   private claudeCodeAvailable: boolean | null = null;
   private claudeCodeVersion: string | null = null;
+  private openCodeAvailable: boolean | null = null;
+  private openCodeVersion: string | null = null;
 
   constructor(projectRoot: string, options?: HeadlessExecutorConfig) {
     super();
@@ -611,6 +707,7 @@ export class HeadlessWorkerExecutor extends EventEmitter {
 
     // Merge with defaults
     this.config = {
+      backend: options?.backend ?? 'claude',
       maxConcurrent: options?.maxConcurrent ?? 2,
       defaultTimeoutMs: options?.defaultTimeoutMs ?? 5 * 60 * 1000,
       maxContextFiles: options?.maxContextFiles ?? 20,
@@ -619,6 +716,8 @@ export class HeadlessWorkerExecutor extends EventEmitter {
       cacheContext: options?.cacheContext ?? true,
       cacheTtlMs: options?.cacheTtlMs ?? 60000, // 1 minute default
     };
+
+    this.backend = this.config.backend;
 
     // Ensure log directory exists
     this.ensureLogDir();
@@ -629,15 +728,36 @@ export class HeadlessWorkerExecutor extends EventEmitter {
   // ============================================
 
   /**
-   * Check if Claude Code CLI is available
+   * Get the current backend
+   */
+  getBackend(): BackendType {
+    return this.backend;
+  }
+
+  /**
+   * Set the backend dynamically
+   */
+  setBackend(backend: BackendType): void {
+    this.backend = backend;
+    this.emit('backendChange', { backend });
+  }
+
+  /**
+   * Check if the configured backend is available
    */
   async isAvailable(): Promise<boolean> {
-    // Only short-circuit on a positive cached result. Caching `false` would lock the
-    // daemon to local-fallback mode for its entire lifetime after a single transient
-    // miss (e.g. WSL2 cold start, AV scanner racing with execSync). Always re-probe
-    // when the previous answer was false or unknown.
-    if (this.claudeCodeAvailable === true) {
-      return true;
+    if (this.backend === 'opencode') {
+      return this.isOpenCodeAvailable();
+    }
+    return this.isClaudeCodeAvailable();
+  }
+
+  /**
+   * Check if Claude Code CLI is available
+   */
+  async isClaudeCodeAvailable(): Promise<boolean> {
+    if (this.claudeCodeAvailable !== null) {
+      return this.claudeCodeAvailable;
     }
 
     try {
@@ -645,26 +765,54 @@ export class HeadlessWorkerExecutor extends EventEmitter {
       const output = execSync('claude --version', {
         encoding: 'utf-8',
         stdio: 'pipe',
-        timeout: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 30000,
-        windowsHide: true, // Prevent phantom console windows on Windows
+        timeout: 5000,
+        windowsHide: true,
       });
       this.claudeCodeAvailable = true;
       this.claudeCodeVersion = output.trim();
-      this.emit('status', { available: true, version: this.claudeCodeVersion });
+      this.emit('status', { backend: 'claude', available: true, version: this.claudeCodeVersion });
       return true;
     } catch (error) {
       this.claudeCodeAvailable = false;
-      const reason = error instanceof Error ? error.message : String(error);
-      this.emit('status', { available: false, reason });
+      this.emit('status', { backend: 'claude', available: false });
       return false;
     }
   }
 
   /**
-   * Get Claude Code version
+   * Check if OpenCode CLI is available
+   */
+  async isOpenCodeAvailable(): Promise<boolean> {
+    if (this.openCodeAvailable !== null) {
+      return this.openCodeAvailable;
+    }
+
+    try {
+      const output = execSync('opencode --version', {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        timeout: 5000,
+        windowsHide: true,
+      });
+      this.openCodeAvailable = true;
+      this.openCodeVersion = output.trim();
+      this.emit('status', { backend: 'opencode', available: true, version: this.openCodeVersion });
+      return true;
+    } catch {
+      this.openCodeAvailable = false;
+      this.emit('status', { backend: 'opencode', available: false });
+      return false;
+    }
+  }
+
+  /**
+   * Get the version of the configured backend
    */
   async getVersion(): Promise<string | null> {
     await this.isAvailable();
+    if (this.backend === 'opencode') {
+      return this.openCodeVersion;
+    }
     return this.claudeCodeVersion;
   }
 
@@ -683,9 +831,15 @@ export class HeadlessWorkerExecutor extends EventEmitter {
     // Check availability
     const available = await this.isAvailable();
     if (!available) {
+      const message = this.backend === 'opencode'
+        ? 'OpenCode backend selected but opencode binary not found on PATH.\n' +
+          'Install it with: npm install -g opencode-ai\n' +
+          'Or switch to the Claude backend: ruflo agent --backend claude'
+        : 'Claude Code CLI not available. Install with: npm install -g @anthropic-ai/claude-code\n' +
+          'Or switch to the OpenCode backend: ruflo agent --backend opencode';
       const result = this.createErrorResult(
         workerType,
-        'Claude Code CLI not available. Install with: npm install -g @anthropic-ai/claude-code'
+        message
       );
       this.emit('error', result);
       return result;
@@ -696,6 +850,7 @@ export class HeadlessWorkerExecutor extends EventEmitter {
       // Queue the request
       return new Promise((resolve, reject) => {
         const entry: QueueEntry = {
+          kind: 'worker',
           workerType,
           config: configOverrides,
           resolve,
@@ -715,6 +870,61 @@ export class HeadlessWorkerExecutor extends EventEmitter {
   }
 
   /**
+   * Execute an arbitrary (systemPrompt, prompt) pair via Claude Code
+   * headless mode. This is the queen-dispatcher path — it bypasses the
+   * fixed HEADLESS_WORKER_CONFIGS lookup so the WorkerDaemon dispatcher
+   * (ADR-072 follow-up) can hand workers their assigned task as
+   * free-form text.
+   *
+   * Honors the same process-pool + queue + cancellation semantics as
+   * `execute()`. Use `cancel(executionId)` with the result's
+   * `executionId` to abort mid-flight.
+   *
+   * Distinct from `mcp-tools/agent-execute-core.ts:executeAgentTask`
+   * (single-shot chat completion via Anthropic Messages API): this one
+   * spawns a real Claude Code session with the full tool surface
+   * (Read/Write/Edit/Bash) and multi-turn agentic loop. Use this for
+   * coding work; use agent_execute for short chat-only jobs.
+   */
+  async executeArbitrary(input: ArbitraryExecutionInput): Promise<ArbitraryExecutionResult> {
+    if (!input || typeof input.prompt !== 'string' || input.prompt.length === 0) {
+      throw new Error('executeArbitrary: input.prompt is required and must be non-empty');
+    }
+
+    // Check availability
+    const available = await this.isAvailable();
+    if (!available) {
+      const result = this.createArbitraryErrorResult(
+        input,
+        'Claude Code CLI not available. Install with: npm install -g @anthropic-ai/claude-code',
+      );
+      this.emit('error', result);
+      return result;
+    }
+
+    // Check concurrent limit; queue if full.
+    if (this.processPool.size >= this.config.maxConcurrent) {
+      return new Promise((resolve, reject) => {
+        const entry: QueueEntry = {
+          kind: 'arbitrary',
+          input,
+          resolve,
+          reject,
+          queuedAt: new Date(),
+        };
+        this.pendingQueue.push(entry);
+        this.emit('queued', {
+          workerType: 'arbitrary',
+          label: input.label ?? 'arbitrary',
+          queuePosition: this.pendingQueue.length,
+        });
+      });
+    }
+
+    return this.executeArbitraryInternal(input);
+  }
+
+  /**
    * Get pool status
    */
   getPoolStatus(): PoolStatus {
@@ -730,7 +940,10 @@ export class HeadlessWorkerExecutor extends EventEmitter {
         elapsedMs: now - entry.startTime.getTime(),
       })),
       queuedWorkers: this.pendingQueue.map((entry) => ({
-        workerType: entry.workerType,
+        workerType:
+          entry.kind === 'worker'
+            ? (entry.workerType as ExecutorWorkerLabel)
+            : ('arbitrary' as ExecutorWorkerLabel),
         queuedAt: entry.queuedAt,
         waitingMs: now - entry.queuedAt.getTime(),
       })),
@@ -853,7 +1066,7 @@ export class HeadlessWorkerExecutor extends EventEmitter {
     const startTime = Date.now();
     const executionId = `${workerType}_${startTime}_${Math.random().toString(36).slice(2, 8)}`;
 
-    this.emit('start', { executionId, workerType, config: headless });
+    this.emit('start', { executionId, workerType, config: headless, backend: this.backend });
 
     try {
       // Build context from file patterns
@@ -865,14 +1078,24 @@ export class HeadlessWorkerExecutor extends EventEmitter {
       // Log prompt for debugging
       this.logExecution(executionId, 'prompt', fullPrompt);
 
-      // Execute Claude Code headlessly
-      const result = await this.executeClaudeCode(fullPrompt, {
-        sandbox: headless.sandbox,
-        model: headless.model || 'sonnet',
-        timeoutMs: headless.timeoutMs || this.config.defaultTimeoutMs,
-        executionId,
-        workerType,
-      });
+      // Route to the correct backend
+      let result: { success: boolean; output: string; tokensUsed?: number; error?: string };
+      if (this.backend === 'opencode') {
+        result = await this.executeOpenCode(fullPrompt, {
+          model: headless.model || 'sonnet',
+          timeoutMs: headless.timeoutMs || this.config.defaultTimeoutMs,
+          executionId,
+          workerType,
+        });
+      } else {
+        result = await this.executeClaudeCode(fullPrompt, {
+          sandbox: headless.sandbox,
+          model: headless.model || 'sonnet',
+          timeoutMs: headless.timeoutMs || this.config.defaultTimeoutMs,
+          executionId,
+          workerType,
+        });
+      }
 
       // Parse output based on format
       let parsedOutput: unknown;
@@ -882,9 +1105,12 @@ export class HeadlessWorkerExecutor extends EventEmitter {
         parsedOutput = this.parseMarkdownOutput(result.output);
       }
 
+      // Normalize output for consistent downstream consumption
+      const normalized = normalizeOutput(result.output, result.success ? 0 : 1, this.backend);
+
       const executionResult: HeadlessExecutionResult = {
         success: result.success,
-        output: result.output,
+        output: normalized.text,
         parsedOutput,
         durationMs: Date.now() - startTime,
         tokensUsed: result.tokensUsed,
@@ -893,7 +1119,8 @@ export class HeadlessWorkerExecutor extends EventEmitter {
         workerType,
         timestamp: new Date(),
         executionId,
-        error: result.error,
+        error: result.error || normalized.error,
+        backend: this.backend,
       };
 
       // Log result
@@ -928,10 +1155,122 @@ export class HeadlessWorkerExecutor extends EventEmitter {
       const next = this.pendingQueue.shift();
       if (!next) break;
 
-      this.executeInternal(next.workerType, next.config)
-        .then(next.resolve)
-        .catch(next.reject);
+      if (next.kind === 'worker') {
+        this.executeInternal(next.workerType, next.config)
+          .then(next.resolve)
+          .catch(next.reject);
+      } else {
+        this.executeArbitraryInternal(next.input)
+          .then(next.resolve)
+          .catch(next.reject);
+      }
     }
+  }
+
+  /**
+   * Internal execution for the queen-dispatcher path. Mirrors
+   * executeInternal() but skips the HEADLESS_WORKER_CONFIGS template
+   * lookup, context-file building, and output parsing — the caller
+   * has already assembled (systemPrompt, prompt) and just wants Claude
+   * Code spawned with them.
+   */
+  private async executeArbitraryInternal(
+    input: ArbitraryExecutionInput,
+  ): Promise<ArbitraryExecutionResult> {
+    const startTime = Date.now();
+    const label = input.label ?? 'arbitrary';
+    const sandbox: SandboxMode = input.sandbox ?? 'permissive';
+    const model: ModelType = input.model ?? 'sonnet';
+    const timeoutMs = input.timeoutMs ?? this.config.defaultTimeoutMs;
+    const executionId = `arbitrary_${startTime}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // Concatenate systemPrompt + prompt because `claude --print` doesn't
+    // accept a `--system-prompt` flag across all supported versions.
+    // The SYSTEM/TASK separator matches the pattern executeAgentTask
+    // uses for its default agent system-prompt.
+    const fullPrompt = input.systemPrompt
+      ? `[SYSTEM]\n${input.systemPrompt}\n\n[TASK]\n${input.prompt}`
+      : input.prompt;
+
+    this.emit('start', { executionId, workerType: 'arbitrary', label, sandbox, model });
+
+    // Save & restore projectRoot if a cwd override was supplied. The
+    // private executeClaudeCode uses this.projectRoot as cwd; this is
+    // the smallest patch that lets arbitrary callers retarget without
+    // refactoring executeClaudeCode's signature.
+    const previousRoot = this.projectRoot;
+    if (input.cwd) this.projectRoot = input.cwd;
+
+    try {
+      this.logExecution(executionId, 'prompt', fullPrompt);
+
+      const result = await this.executeClaudeCode(fullPrompt, {
+        sandbox,
+        model,
+        timeoutMs,
+        executionId,
+        // workerType is used purely as a telemetry label inside
+        // executeClaudeCode; cast through ExecutorWorkerLabel.
+        workerType: 'arbitrary' as unknown as HeadlessWorkerType,
+      });
+
+      const executionResult: ArbitraryExecutionResult = {
+        success: result.success,
+        output: result.output,
+        durationMs: Date.now() - startTime,
+        model,
+        sandboxMode: sandbox,
+        timestamp: new Date(),
+        executionId,
+        label,
+        error: result.error,
+      };
+
+      this.logExecution(executionId, 'result', JSON.stringify(executionResult, null, 2));
+      this.emit('complete', executionResult);
+      return executionResult;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorResult: ArbitraryExecutionResult = {
+        success: false,
+        output: '',
+        durationMs: Date.now() - startTime,
+        model,
+        sandboxMode: sandbox,
+        timestamp: new Date(),
+        executionId,
+        label,
+        error: errorMessage,
+      };
+      this.logExecution(executionId, 'error', errorMessage);
+      this.emit('error', errorResult);
+      return errorResult;
+    } finally {
+      this.projectRoot = previousRoot;
+      // Process next queued entry (parity with executeInternal's finally).
+      this.processQueue();
+    }
+  }
+
+  /**
+   * Build a populated ArbitraryExecutionResult representing a failure
+   * that happened before the spawn (e.g. claude CLI unavailable).
+   */
+  private createArbitraryErrorResult(
+    input: ArbitraryExecutionInput,
+    error: string,
+  ): ArbitraryExecutionResult {
+    return {
+      success: false,
+      output: '',
+      durationMs: 0,
+      model: input.model ?? 'sonnet',
+      sandboxMode: input.sandbox ?? 'permissive',
+      timestamp: new Date(),
+      executionId: `error_${Date.now()}`,
+      label: input.label ?? 'arbitrary',
+      error,
+    };
   }
 
   /**
@@ -1251,6 +1590,153 @@ Analyze the above codebase context and provide your response following the forma
   }
 
   /**
+   * Execute OpenCode in headless mode via CLI
+   *
+   * Uses `opencode run` for one-shot non-interactive execution,
+   * similar to `claude --print`. Supports streaming output and timeout.
+   */
+  private executeOpenCode(
+    prompt: string,
+    options: {
+      model: ModelType;
+      timeoutMs: number;
+      executionId: string;
+      workerType: HeadlessWorkerType;
+    }
+  ): Promise<{ success: boolean; output: string; tokensUsed?: number; error?: string }> {
+    return new Promise((resolve) => {
+      const env: Record<string, string> = {
+        ...(process.env as Record<string, string>),
+      };
+      delete env.CLAUDE_SESSION_ID;
+      delete env.CLAUDE_PARENT_SESSION_ID;
+
+      // OpenCode needs provider-specific API keys in the environment.
+      // Pass through all known provider keys so the configured model can authenticate.
+      if (process.env.ANTHROPIC_API_KEY) env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      if (process.env.OPENAI_API_KEY) env.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+      if (process.env.GOOGLE_API_KEY) env.GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+      if (process.env.OPENROUTER_API_KEY) env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+      if (process.env.GROQ_API_KEY) env.GROQ_API_KEY = process.env.GROQ_API_KEY;
+      if (process.env.MISTRAL_API_KEY) env.MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
+      if (process.env.DEEPSEEK_API_KEY) env.DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+
+      // OpenCode uses 'run' with --dangerously-skip-permissions
+      // for fully headless operation (no interactive permission prompts).
+      const args = [
+        'run',
+        '--dangerously-skip-permissions',
+        prompt,
+      ];
+
+      // If a specific model is configured, pass it (opencode uses provider/model format).
+      // Priority: OPENCODE_MODEL env var > opencode.json config file > default (opencode auto-detects)
+      const model = this.resolveOpenCodeModel();
+      if (model) {
+        args.unshift('--model', model);
+      }
+
+      const child = spawn('opencode', args, {
+        cwd: this.projectRoot,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      // Setup timeout
+      const timeoutHandle = setTimeout(() => {
+        if (this.processPool.has(options.executionId)) {
+          child.kill('SIGTERM');
+          setTimeout(() => {
+            if (!child.killed) {
+              child.kill('SIGKILL');
+            }
+          }, 5000);
+        }
+      }, options.timeoutMs);
+
+      // Track in process pool
+      const poolEntry: PoolEntry = {
+        process: child,
+        executionId: options.executionId,
+        workerType: options.workerType,
+        startTime: new Date(),
+        timeout: timeoutHandle,
+      };
+      this.processPool.set(options.executionId, poolEntry);
+
+      let stdout = '';
+      let stderr = '';
+      let resolved = false;
+
+      const cleanup = () => {
+        clearTimeout(timeoutHandle);
+        this.processPool.delete(options.executionId);
+      };
+
+      child.stdout?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        stdout += chunk;
+        this.emit('output', {
+          executionId: options.executionId,
+          type: 'stdout',
+          data: chunk,
+        });
+      });
+
+      child.stderr?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        stderr += chunk;
+        this.emit('output', {
+          executionId: options.executionId,
+          type: 'stderr',
+          data: chunk,
+        });
+      });
+
+      child.on('close', (code: number | null) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+
+        resolve({
+          success: code === 0,
+          output: stdout || stderr,
+          error: code !== 0 ? stderr || `Process exited with code ${code}` : undefined,
+        });
+      });
+
+      child.on('error', (error: Error) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+
+        resolve({
+          success: false,
+          output: '',
+          error: error.message,
+        });
+      });
+
+      // Handle timeout
+      setTimeout(() => {
+        if (resolved) return;
+        if (!this.processPool.has(options.executionId)) return;
+
+        resolved = true;
+        child.kill('SIGTERM');
+        cleanup();
+
+        resolve({
+          success: false,
+          output: stdout || stderr,
+          error: `Execution timed out after ${options.timeoutMs}ms`,
+        });
+      }, options.timeoutMs + 100);
+    });
+  }
+
+  /**
    * Parse JSON output from Claude Code
    */
   private parseJsonOutput(output: string): unknown {
@@ -1326,6 +1812,45 @@ Analyze the above codebase context and provide your response following the forma
   }
 
   /**
+   * Resolve the OpenCode model to use.
+   *
+   * Priority:
+   *   1. OPENCODE_MODEL env var (explicit override)
+   *   2. opencode.json / .opencode/opencode.jsonc config file (project-level)
+   *   3. undefined (let opencode auto-detect from its own config)
+   */
+  private resolveOpenCodeModel(): string | undefined {
+    // 1. Explicit env var override
+    if (process.env.OPENCODE_MODEL) {
+      return process.env.OPENCODE_MODEL;
+    }
+
+    // 2. Try to read from opencode config file
+    try {
+      const configPaths = [
+        join(this.projectRoot, 'opencode.json'),
+        join(this.projectRoot, '.opencode', 'opencode.jsonc'),
+        join(this.projectRoot, '.opencode', 'opencode.json'),
+      ];
+      for (const configPath of configPaths) {
+        if (existsSync(configPath)) {
+          const raw = readFileSync(configPath, 'utf-8');
+          // jsonc may have comments — strip single-line // comments
+          const cleaned = raw.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+          const config = JSON.parse(cleaned);
+          if (config.model && typeof config.model === 'string') {
+            return config.model;
+          }
+        }
+      }
+    } catch {
+      // Config file missing or invalid — fall through to auto-detect
+    }
+
+    return undefined;
+  }
+
+  /**
    * Create an error result
    */
   private createErrorResult(
@@ -1342,6 +1867,7 @@ Analyze the above codebase context and provide your response following the forma
       timestamp: new Date(),
       executionId: `error_${Date.now()}`,
       error,
+      backend: this.backend,
     };
   }
 

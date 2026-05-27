@@ -260,8 +260,8 @@
   "hotPaths": [
     {
       "path": "",
-      "accessCount": 21,
-      "lastAccessed": 1779910951451,
+      "accessCount": 24,
+      "lastAccessed": 1779910966404,
       "type": "directory"
     },
     {
@@ -329,6 +329,30 @@
       "accessCount": 2,
       "lastAccessed": 1779910955218,
       "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/database.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779910971393,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/conversation.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779910971888,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/database/rvf.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779910980584,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server",
+      "accessCount": 2,
+      "lastAccessed": 1779911002067,
+      "type": "directory"
     },
     {
       "path": "v3/@claude-flow/cli/src/memory/memory-initializer.ts",
@@ -403,24 +427,6 @@
       "type": "file"
     },
     {
-      "path": "ruflo/src/ruvocal/src/lib/server/database.ts",
-      "accessCount": 1,
-      "lastAccessed": 1779909901615,
-      "type": "file"
-    },
-    {
-      "path": "ruflo/src/ruvocal/src/lib/server/conversation.ts",
-      "accessCount": 1,
-      "lastAccessed": 1779909902165,
-      "type": "file"
-    },
-    {
-      "path": "ruflo/src/ruvocal/src/lib/server/database/rvf.ts",
-      "accessCount": 1,
-      "lastAccessed": 1779909910819,
-      "type": "file"
-    },
-    {
       "path": "v3/@claude-flow/shared/src/resilience/circuit-breaker.ts",
       "accessCount": 1,
       "lastAccessed": 1779910843369,
@@ -430,6 +436,96 @@
       "path": "v3/@claude-flow/memory/src/json-security.ts",
       "accessCount": 1,
       "lastAccessed": 1779910843822,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/mcp/clientPool.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910973076,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/mcp/registry.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910975657,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/textGeneration/index.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910981422,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/mcp/tools.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910982230,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/models.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910982471,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/migrations/migrations.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910989289,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/jobs/refresh-conversation-stats.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910990285,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/hooks/handle.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910990785,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/textGeneration/mcp/runMcpFlow.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910991795,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/components/chat",
+      "accessCount": 1,
+      "lastAccessed": 1779910998730,
+      "type": "directory"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/abortedGenerations.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779911006555,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/api/utils/resolveConversation.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779911007561,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/routes",
+      "accessCount": 1,
+      "lastAccessed": 1779911009577,
+      "type": "directory"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/routes/conversation/[id]/+server.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779911015715,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/routes/api/v2/conversations/+server.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779911016067,
       "type": "file"
     }
   ],

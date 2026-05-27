@@ -19,6 +19,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { DomainEvent } from './domain-events.js';
+import { safeJsonParse } from '../utils/safe-json.js';
 
 // Re-export shared interfaces so consumers do not need to import event-store.ts
 import type { EventFilter, EventSnapshot, EventStoreStats } from './event-store.js';
@@ -370,7 +371,7 @@ export class RvfEventLog extends EventEmitter {
       offset += payloadLength;
 
       try {
-        const record = JSON.parse(json);
+        const record = safeJsonParse(json);
         handler(record);
       } catch {
         if (this.config.verbose) {

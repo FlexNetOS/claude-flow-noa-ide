@@ -19,6 +19,7 @@ import type {
   ILogger,
   AuthConfig,
 } from '../types.js';
+import { safeJsonParse } from '../utils/safe-json.js';
 
 export interface WebSocketTransportConfig {
   host: string;
@@ -30,6 +31,8 @@ export interface WebSocketTransportConfig {
   maxMessageSize?: number;
   auth?: AuthConfig;
   enableBinaryMode?: boolean;
+  /** When true, clients are allowed to skip authentication. Only use for local/stdio transports. */
+  allowUnauthenticated?: boolean;
 }
 
 interface ClientConnection {
@@ -233,7 +236,7 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
         lastActivity: new Date(),
         messageCount: 0,
         isAlive: true,
-        isAuthenticated: !this.config.auth?.enabled,
+        isAuthenticated: false,
       };
 
       this.clients.set(clientId, client);
@@ -281,7 +284,7 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
     try {
       const message = this.parseMessage(data);
 
-      if (!client.isAuthenticated && this.config.auth?.enabled) {
+      if (!client.isAuthenticated && !this.config.allowUnauthenticated) {
         if (message.method !== 'authenticate') {
           client.ws.send(this.serializeMessage({
             jsonrpc: '2.0',
@@ -346,9 +349,9 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
 
   private parseMessage(data: RawData): any {
     if (this.config.enableBinaryMode && Buffer.isBuffer(data)) {
-      return JSON.parse(data.toString());
+      return safeJsonParse(data.toString());
     }
-    return JSON.parse(data.toString());
+    return safeJsonParse(data.toString());
   }
 
   private serializeMessage(message: MCPResponse | MCPNotification): string | Buffer {

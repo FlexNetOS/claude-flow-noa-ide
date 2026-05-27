@@ -200,6 +200,9 @@ export interface MemoryQuery {
   /** Include expired entries */
   includeExpired?: boolean;
 
+  /** Explicitly opt-in to querying across all owners (admin/coordinator use) */
+  includeAllOwners?: boolean;
+
   /** Distance metric for semantic search */
   distanceMetric?: DistanceMetric;
 }

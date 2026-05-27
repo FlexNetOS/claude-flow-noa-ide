@@ -70,8 +70,6 @@ cd ruflo
 <details>
 <summary><strong>All 32 plugins</strong></summary>
 
-Ruflo is CLI-agnostic and works with any compatible agent CLI, including Claude Code, OpenAI CLI, Gemini CLI, and Google CLI.
-
 ## Status Bar on Narrow Terminals
 
 On narrow terminal windows, the status bar can take up significant screen space and reduce visible log output.
@@ -213,6 +211,13 @@ AgentDB stores:
 </details>
 
 ### CLI Install
+
+## Windows Installation
+
+Use Git Bash or WSL for best compatibility.
+
+```bash
+curl -fsSL <install-url> | bash
 
 ```bash
 # One-line install

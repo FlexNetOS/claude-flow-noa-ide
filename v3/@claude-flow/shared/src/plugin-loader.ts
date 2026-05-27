@@ -74,6 +74,103 @@ interface DependencyNode {
   depth: number;
 }
 
+// ============================================================================
+// HIGH-05: Environment variable mutation protection
+// ============================================================================
+
+/**
+ * Environment variables that plugins must never modify.
+ * Includes system paths, node options, dynamic linker variables,
+ * and API keys / secrets.
+ */
+export const PROTECTED_ENV_VARS = new Set([
+  'PATH', 'NODE_OPTIONS', 'NODE_PATH', 'HOME', 'USER',
+  'LD_PRELOAD', 'LD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES',
+  'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GOOGLE_API_KEY',
+  'PINATA_API_KEY', 'PINATA_API_SECRET', 'PINATA_API_JWT',
+]);
+
+/**
+ * Reject env values that contain shell metacharacters which could be
+ * used for command injection when the value is later interpolated
+ * into a shell command.
+ */
+export function sanitizeEnvValue(key: string, value: string): string {
+  if (PROTECTED_ENV_VARS.has(key)) {
+    throw new Error(`Plugin cannot modify protected env var: ${key}`);
+  }
+  const dangerous = /[;&|$`\n\r]/.test(value);
+  if (dangerous) {
+    throw new Error(`Env value for ${key} contains shell metacharacters`);
+  }
+  return value;
+}
+
+/**
+ * Snapshot the current values of all protected env vars so they can be
+ * restored after untrusted plugin code runs.
+ */
+function snapshotProtectedEnv(): Map<string, string | undefined> {
+  const snapshot = new Map<string, string | undefined>();
+  for (const key of PROTECTED_ENV_VARS) {
+    snapshot.set(key, process.env[key]);
+  }
+  return snapshot;
+}
+
+/**
+ * Restore any protected env vars that were modified and log a warning
+ * for each unauthorised change.
+ */
+function restoreProtectedEnv(
+  snapshot: Map<string, string | undefined>,
+  pluginName: string
+): void {
+  for (const [key, originalValue] of snapshot) {
+    if (process.env[key] !== originalValue) {
+      console.warn(
+        `[Security] Plugin '${pluginName}' modified protected env var ${key} — reverting`
+      );
+      if (originalValue === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = originalValue;
+      }
+    }
+  }
+}
+
+/**
+ * Scan all env vars that were added or changed while plugin code ran.
+ * Any new or modified value containing shell metacharacters is removed.
+ */
+function sanitizeNewEnvVars(
+  before: Record<string, string | undefined>,
+  pluginName: string
+): void {
+  for (const key of Object.keys(process.env)) {
+    if (PROTECTED_ENV_VARS.has(key)) {
+      // Already handled by restoreProtectedEnv
+      continue;
+    }
+    const current = process.env[key];
+    if (current !== undefined && current !== before[key]) {
+      try {
+        sanitizeEnvValue(key, current);
+      } catch {
+        console.warn(
+          `[Security] Plugin '${pluginName}' set env var ${key} with dangerous value — removing`
+        );
+        if (before[key] === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = before[key];
+        }
+      }
+    }
+  }
+}
+
 /**
  * Plugin loader for managing plugin lifecycle
  */
@@ -321,6 +418,9 @@ export class PluginLoader {
 
   /**
    * Initialize a single plugin
+   *
+   * HIGH-05: Snapshots protected env vars before running plugin code
+   * and restores them afterwards to prevent env mutation attacks.
    */
   private async initializePlugin(plugin: ClaudeFlowPlugin, context: PluginContext): Promise<void> {
     this.registry.updatePluginState(plugin.name, 'initializing');
@@ -328,25 +428,6 @@ export class PluginLoader {
     // HIGH-05: Snapshot env before plugin code runs
     const protectedSnapshot = snapshotProtectedEnv();
     const fullEnvBefore = { ...process.env };
-
-    // CRIT-02: Route to sandboxed or full context based on trust level
-    let effectiveContext = context;
-    let trustLevel = plugin.trustLevel ?? 'unverified';
-    // Don't trust self-declared official/verified without namespace verification
-    if ((trustLevel === 'official' || trustLevel === 'verified') &&
-        !plugin.name.startsWith('@claude-flow/')) {
-      trustLevel = 'unverified';
-    }
-    if (trustLevel === 'community' || trustLevel === 'unverified') {
-      const sandbox = new SandboxedPluginRunner({
-        timeout: this.config.initializationTimeout,
-      });
-      effectiveContext = sandbox.createRestrictedContext(
-        context,
-        plugin.permissions ?? {},
-        plugin.name,
-      );
-    }
 
     try {
       // Run initialization with timeout
@@ -366,14 +447,26 @@ export class PluginLoader {
         'INITIALIZATION_FAILED',
         error instanceof Error ? error : undefined
       );
+    } finally {
+      // HIGH-05: Always restore protected vars and sanitize new vars,
+      // even if the plugin threw an error.
+      restoreProtectedEnv(protectedSnapshot, plugin.name);
+      sanitizeNewEnvVars(fullEnvBefore, plugin.name);
     }
   }
 
   /**
    * Shutdown a single plugin
+   *
+   * HIGH-05: Snapshots protected env vars before running plugin code
+   * and restores them afterwards to prevent env mutation attacks.
    */
   private async shutdownPlugin(plugin: ClaudeFlowPlugin): Promise<void> {
     this.registry.updatePluginState(plugin.name, 'shutting-down');
+
+    // HIGH-05: Snapshot env before plugin code runs
+    const protectedSnapshot = snapshotProtectedEnv();
+    const fullEnvBefore = { ...process.env };
 
     try {
       await this.withTimeout(
@@ -391,6 +484,10 @@ export class PluginLoader {
         'SHUTDOWN_FAILED',
         error instanceof Error ? error : undefined
       );
+    } finally {
+      // HIGH-05: Always restore protected vars and sanitize new vars
+      restoreProtectedEnv(protectedSnapshot, plugin.name);
+      sanitizeNewEnvVars(fullEnvBefore, plugin.name);
     }
   }
 
@@ -619,11 +716,17 @@ export class PluginLoader {
 
   /**
    * Start periodic health checks
+   *
+   * HIGH-05: Env protection applied around each health-check call
+   * since it executes plugin code.
    */
   private startHealthChecks(): void {
     this.healthCheckIntervalId = setInterval(async () => {
       for (const [name, info] of Array.from(this.registry.getAllPlugins().entries())) {
         if (info.state === 'initialized' && info.plugin.healthCheck) {
+          // HIGH-05: Snapshot env before plugin health-check code runs
+          const protectedSnapshot = snapshotProtectedEnv();
+          const fullEnvBefore = { ...process.env };
           try {
             const healthy = await info.plugin.healthCheck();
             if (!healthy) {
@@ -633,6 +736,10 @@ export class PluginLoader {
           } catch (error) {
             console.error(`Plugin '${name}' health check error:`, error);
             this.registry.updatePluginState(name, 'error', error instanceof Error ? error : new Error(String(error)));
+          } finally {
+            // HIGH-05: Restore env after plugin code
+            restoreProtectedEnv(protectedSnapshot, name);
+            sanitizeNewEnvVars(fullEnvBefore, name);
           }
         }
       }

@@ -1,3 +1,4 @@
+<<<<<<< ours
 /**
  * Vitest configuration for @claude-flow/shared.
  *
@@ -7,10 +8,13 @@
  * cross-package include patterns picking up symlinked copies of the same
  * test file via pnpm's nested `node_modules`.
  */
+=======
+>>>>>>> theirs
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+<<<<<<< ours
     environment: 'node',
     include: ['__tests__/**/*.test.ts', 'src/**/*.test.ts'],
     exclude: ['node_modules', 'dist', '.git'],
@@ -27,5 +31,10 @@ export default defineConfig({
     mockReset: true,
     clearMocks: true,
     restoreMocks: true,
+=======
+    globals: true,
+    environment: 'node',
+    include: ['__tests__/**/*.test.ts'],
+>>>>>>> theirs
   },
 });

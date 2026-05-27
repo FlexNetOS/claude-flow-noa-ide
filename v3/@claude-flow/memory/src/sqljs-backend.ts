@@ -129,6 +129,21 @@ export class SqlJsBackend extends EventEmitter implements IMemoryBackend {
       }
     }
 
+    // Configure database limits
+    // Note: sql.js runs SQLite entirely in WASM memory and persists via export()/writeFileSync().
+    // WAL mode is not applicable — sql.js does not use file-based journaling, so no
+    // wal_checkpoint is needed. We set max_page_count to cap unbounded database growth.
+    this.db!.run('PRAGMA page_size = 4096');
+    this.db!.run('PRAGMA max_page_count = 262144'); // ~1GB with 4096 page_size
+
+    if (this.config.verbose) {
+      const pageSizeResult = this.db!.exec('PRAGMA page_size');
+      const maxPageResult = this.db!.exec('PRAGMA max_page_count');
+      const pageSize = pageSizeResult[0]?.values[0]?.[0] ?? 'unknown';
+      const maxPages = maxPageResult[0]?.values[0]?.[0] ?? 'unknown';
+      console.log(`[SqlJsBackend] Database limits: page_size=${pageSize}, max_page_count=${maxPages} (~${Number(pageSize) * Number(maxPages) / (1024 * 1024)}MB max)`);
+    }
+
     // Create schema
     this.createSchema();
 
@@ -218,6 +233,14 @@ export class SqlJsBackend extends EventEmitter implements IMemoryBackend {
   async store(entry: MemoryEntry): Promise<void> {
     this.ensureInitialized();
     const startTime = performance.now();
+
+    // BS-02/AC-01: Enforce identity on store — entries without ownerId default to public
+    if (!entry.ownerId && entry.accessLevel !== 'public') {
+      console.warn(
+        `[AgentDB] Storing entry "${entry.key}" without ownerId — defaults to public access`
+      );
+      entry.accessLevel = 'public';
+    }
 
     const stmt = `
       INSERT OR REPLACE INTO memory_entries (
@@ -319,13 +342,30 @@ export class SqlJsBackend extends EventEmitter implements IMemoryBackend {
   /**
    * Update a memory entry
    */
-  async update(id: string, updateData: MemoryEntryUpdate): Promise<MemoryEntry | null> {
+  async update(
+    id: string,
+    updateData: MemoryEntryUpdate,
+    callerId?: string
+  ): Promise<MemoryEntry | null> {
     this.ensureInitialized();
     const startTime = performance.now();
 
     // Get existing entry
     const existing = await this.get(id);
     if (!existing) return null;
+
+    // BS-03/AC-01: Enforce ownership — only the owner (or public entries) may be updated
+    if (
+      callerId &&
+      existing.ownerId &&
+      existing.ownerId !== callerId &&
+      existing.accessLevel !== 'public'
+    ) {
+      console.warn(
+        `[AgentDB] Denied update of entry "${id}" — caller "${callerId}" is not owner "${existing.ownerId}"`
+      );
+      return null;
+    }
 
     // Merge updates
     const updated: MemoryEntry = {
@@ -347,9 +387,25 @@ export class SqlJsBackend extends EventEmitter implements IMemoryBackend {
   /**
    * Delete a memory entry
    */
-  async delete(id: string): Promise<boolean> {
+  async delete(id: string, callerId?: string): Promise<boolean> {
     this.ensureInitialized();
     const startTime = performance.now();
+
+    // BS-03/AC-01: Enforce ownership — only the owner (or public entries) may be deleted
+    if (callerId) {
+      const existing = await this.get(id);
+      if (
+        existing &&
+        existing.ownerId &&
+        existing.ownerId !== callerId &&
+        existing.accessLevel !== 'public'
+      ) {
+        console.warn(
+          `[AgentDB] Denied delete of entry "${id}" — caller "${callerId}" is not owner "${existing.ownerId}"`
+        );
+        return false;
+      }
+    }
 
     this.db!.run('DELETE FROM memory_entries WHERE id = ?', [id]);
 
@@ -383,10 +439,15 @@ export class SqlJsBackend extends EventEmitter implements IMemoryBackend {
       params.push(query.memoryType);
     }
 
-    // Owner filter
+    // Owner filter — enforce identity scoping (BS-02/BS-03/AC-01)
     if (query.ownerId) {
       sql += ' AND owner_id = ?';
       params.push(query.ownerId);
+    } else if (!query.includeAllOwners) {
+      // No ownerId specified and not explicitly opting in to all owners:
+      // restrict to public entries only to prevent cross-agent memory leakage
+      sql += ' AND (access_level = ? OR access_level IS NULL)';
+      params.push('public');
     }
 
     // Access level filter

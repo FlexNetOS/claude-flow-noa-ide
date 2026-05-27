@@ -13,6 +13,7 @@
  */
 
 import { promises as fs, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'fs';
+import { safeJsonParse } from '../utils/safe-json.js';
 import { join, basename, dirname } from 'path';
 import { EventEmitter } from 'events';
 
@@ -203,7 +204,7 @@ export class V3ProgressService extends EventEmitter {
     try {
       if (existsSync(this.metricsPath)) {
         const content = readFileSync(this.metricsPath, 'utf-8');
-        return JSON.parse(content);
+        return safeJsonParse(content);
       }
     } catch {
       // Ignore read errors

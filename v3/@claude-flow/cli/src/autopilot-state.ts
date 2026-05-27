@@ -235,24 +235,55 @@ export function discoverTasks(sources: string[]): TaskInfo[] {
     }
 
     if (source === 'swarm-tasks') {
-      const swarmFile = resolve('.claude-flow/swarm-tasks.json');
-      try {
-        if (existsSync(swarmFile)) {
-          const data = safeJsonParse<Record<string, unknown> | unknown[]>(readFileSync(swarmFile, 'utf-8'));
-          const swarmTasks = Array.isArray(data) ? data : ((data as Record<string, unknown>).tasks as unknown[] || []);
-          for (const t of swarmTasks) {
+      // The canonical swarm task store written by `task_create` / `task_assign`
+      // in mcp-tools/task-tools.ts is `.claude-flow/tasks/store.json`, shaped
+      // as `{ tasks: { <taskId>: TaskRecord }, version }`. Previously this
+      // branch looked at `.claude-flow/swarm-tasks.json` (a file no MCP tool
+      // ever writes) — so `autopilot_progress.bySource` always reported
+      // 0 swarm tasks even when `task_list` had dozens, and autopilot's
+      // termination loop never saw the work it was supposed to drive.
+      const swarmFile = resolve('.claude-flow/tasks/store.json');
+      // Back-compat: also accept the legacy path if a downstream tool ever
+      // writes there, so we don't silently drop tasks during a migration.
+      const legacyFile = resolve('.claude-flow/swarm-tasks.json');
+
+      const readFrom = (file: string): void => {
+        try {
+          if (!existsSync(file)) return;
+          const data = safeJsonParse<Record<string, unknown> | unknown[]>(readFileSync(file, 'utf-8'));
+          // Three accepted shapes:
+          //  1. canonical store: { tasks: { <id>: TaskRecord } }
+          //  2. legacy array:    [ TaskRecord, ... ]
+          //  3. legacy object:   { tasks: [ TaskRecord, ... ] }
+          let entries: unknown[];
+          if (Array.isArray(data)) {
+            entries = data;
+          } else {
+            const tasksField = (data as Record<string, unknown>).tasks;
+            if (tasksField && typeof tasksField === 'object' && !Array.isArray(tasksField)) {
+              entries = Object.values(tasksField as Record<string, unknown>);
+            } else if (Array.isArray(tasksField)) {
+              entries = tasksField as unknown[];
+            } else {
+              entries = [];
+            }
+          }
+          for (const t of entries) {
             if (t && typeof t === 'object') {
               const task = t as Record<string, unknown>;
               tasks.push({
-                id: String(task.id || task.taskId || `swarm-${tasks.length}`),
-                subject: String(task.subject || task.description || task.name || 'Unnamed task'),
+                id: String(task.taskId || task.id || `swarm-${tasks.length}`),
+                subject: String(task.description || task.subject || task.name || 'Unnamed task'),
                 status: String(task.status || 'unknown'),
                 source: 'swarm-tasks',
               });
             }
           }
-        }
-      } catch { /* skip source */ }
+        } catch { /* skip file */ }
+      };
+
+      readFrom(swarmFile);
+      readFrom(legacyFile);
     }
 
     if (source === 'file-checklist') {

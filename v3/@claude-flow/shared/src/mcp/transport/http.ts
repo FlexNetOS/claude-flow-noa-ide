@@ -30,6 +30,7 @@ import {
   ILogger,
   AuthConfig,
 } from '../types.js';
+import { safeJsonParse } from '../../utils/safe-json.js';
 
 /**
  * HTTP Transport Configuration
@@ -45,6 +46,8 @@ export interface HttpTransportConfig {
   auth?: AuthConfig;
   maxRequestSize?: string;
   requestTimeout?: number;
+  /** When true, clients are allowed to skip authentication. Only use for local/stdio transports. */
+  allowUnauthenticated?: boolean;
 }
 
 /**
@@ -378,28 +381,31 @@ export class HttpTransport extends EventEmitter implements ITransport {
     this.httpRequests++;
     this.messagesReceived++;
 
-    // Validate authentication (ALWAYS check, not just when explicitly enabled)
-    // SECURITY: Auth should be opt-out, not opt-in
-    const requiresAuth = this.config.auth?.enabled !== false; // Default to requiring auth
-
-    if (requiresAuth && this.config.auth) {
-      const authResult = this.validateAuth(req);
-      if (!authResult.valid) {
-        this.logger.warn('Authentication failed', {
-          ip: req.ip,
-          path: req.path,
-          error: authResult.error,
-        });
+    if (!this.config.allowUnauthenticated) {
+      if (this.config.auth) {
+        const authResult = this.validateAuth(req);
+        if (!authResult.valid) {
+          this.logger.warn('Authentication failed', {
+            ip: req.ip,
+            path: req.path,
+            error: authResult.error,
+          });
+          res.status(401).json({
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32001, message: 'Unauthorized' },
+          });
+          return;
+        }
+      } else {
+        this.logger.warn('No authentication configured — rejecting request. Set allowUnauthenticated for local-only use.');
         res.status(401).json({
           jsonrpc: '2.0',
           id: null,
-          error: { code: -32001, message: 'Unauthorized' },
+          error: { code: -32001, message: 'Unauthorized: no authentication configured' },
         });
         return;
       }
-    } else if (requiresAuth && !this.config.auth) {
-      // No auth configured but auth is required - warn and continue (development mode)
-      this.logger.warn('No authentication configured - running in development mode');
     }
 
     const message = req.body;
@@ -467,7 +473,7 @@ export class HttpTransport extends EventEmitter implements ITransport {
     this.messagesReceived++;
 
     try {
-      const message = JSON.parse(data);
+      const message = safeJsonParse<any>(data);
 
       if (message.jsonrpc !== '2.0') {
         ws.send(JSON.stringify({
@@ -503,7 +509,7 @@ export class HttpTransport extends EventEmitter implements ITransport {
       this.logger.error('WebSocket message error', { error });
 
       try {
-        const parsed = JSON.parse(data);
+        const parsed = safeJsonParse<any>(data);
         ws.send(JSON.stringify({
           jsonrpc: '2.0',
           id: parsed.id || null,

@@ -227,6 +227,12 @@ declare module '@ruvector/rvagent-wasm' {
   }
 }
 
+declare module '@ruvector/sona' {
+  const sona: any;
+  export default sona;
+  export const SonaEngine: any;
+}
+
 declare module '@ruvector/ruvllm-wasm' {
   export default function init(): Promise<void>;
 

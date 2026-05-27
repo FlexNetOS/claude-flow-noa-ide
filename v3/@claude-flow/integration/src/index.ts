@@ -274,6 +274,21 @@ export {
   IntegrationError,
 } from './types.js';
 
+// ===== OpenCode Adapter =====
+export {
+  OpenCodeAdapter,
+  OPENCODE_MODEL_MAP,
+  OPENCODE_AGENT_MAP,
+  resolveOpenCodeModel,
+  resolveOpenCodeAgent,
+} from './opencode-adapter.js';
+
+export type {
+  BackendType as OpenCodeBackendType,
+  OpenCodeAgentConfig,
+  OpenCodeAdapterConfig,
+} from './opencode-adapter.js';
+
 // ===== Multi-Model Router (Cost Optimization) =====
 export {
   MultiModelRouter,
@@ -449,6 +464,7 @@ export const METADATA = {
     'Worker Pool (intelligent routing)',
     'Provider Adapter (multi-model support)',
     'Multi-Model Router (cost optimization)',
+    'OpenCode Adapter (multi-agent coding backend)',
   ],
   performance: {
     flashAttentionSpeedup: '2.49x-7.47x',

@@ -284,12 +284,21 @@ const initCommand: Command = {
       description: 'Enable V3 15-agent hierarchical mesh mode',
       type: 'boolean',
       default: false
+    },
+    {
+      name: 'backend',
+      short: 'b',
+      description: 'Coding agent backend: claude (default) or opencode',
+      type: 'string',
+      choices: ['claude', 'opencode'],
+      default: 'claude'
     }
   ],
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     let topology = ctx.flags.topology as string;
     const maxAgents = ctx.flags.maxAgents as number || 15;
     const v3Mode = ctx.flags.v3Mode as boolean;
+    const backend = ctx.flags.backend as string || 'claude';
 
     // V3 mode enables hierarchical-mesh hybrid
     if (v3Mode) {
@@ -331,10 +340,12 @@ const initCommand: Command = {
           failureHandling: 'retry',
           loadBalancing: true,
           autoScaling: ctx.flags.autoScale ?? true,
+          backend,
         },
         metadata: {
           v3Mode,
           strategy: ctx.flags.strategy || 'development',
+          backend,
         },
       });
 
@@ -381,6 +392,7 @@ const initCommand: Command = {
           maxAgents: result.config.maxAgents,
           strategy: ctx.flags.strategy || 'development',
           v3Mode,
+          backend,
           initializedAt: result.initializedAt,
           status: 'ready'
         }, null, 2));

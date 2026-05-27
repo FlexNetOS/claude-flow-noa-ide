@@ -432,6 +432,43 @@ async function installClaudeCode(): Promise<boolean> {
   }
 }
 
+// Check OpenCode CLI
+async function checkOpenCode(): Promise<HealthCheck> {
+  try {
+    const version = await runCommand('opencode --version');
+    const versionMatch = version.match(/v?(\d+\.\d+\.\d+)/);
+    const versionStr = versionMatch ? `v${versionMatch[1]}` : version;
+    return { name: 'OpenCode CLI', status: 'pass', message: versionStr };
+  } catch {
+    return {
+      name: 'OpenCode CLI',
+      status: 'warn',
+      message: 'Not installed (optional — multi-model coding agent)',
+      fix: 'npm install -g opencode-ai'
+    };
+  }
+}
+
+// Install OpenCode CLI
+async function installOpenCode(): Promise<boolean> {
+  try {
+    output.writeln();
+    output.writeln(output.bold('Installing OpenCode CLI...'));
+    execSync('npm install -g opencode-ai', {
+      encoding: 'utf8',
+      stdio: 'inherit'
+    });
+    output.writeln(output.success('OpenCode CLI installed successfully!'));
+    return true;
+  } catch (error) {
+    output.writeln(output.error('Failed to install OpenCode CLI'));
+    if (error instanceof Error) {
+      output.writeln(output.dim(error.message));
+    }
+    return false;
+  }
+}
+
 // Check agentic-flow v3 integration (filesystem-based to avoid slow WASM/DB init)
 async function checkAgenticFlow(): Promise<HealthCheck> {
   try {
@@ -535,6 +572,7 @@ export const doctorCommand: Command = {
       checkNodeVersion,
       checkNpmVersion,
       checkClaudeCode,
+      checkOpenCode,
       checkGit,
       checkGitRepo,
       checkConfigFile,
@@ -553,6 +591,7 @@ export const doctorCommand: Command = {
       'node': checkNodeVersion,
       'npm': checkNpmVersion,
       'claude': checkClaudeCode,
+      'opencode': checkOpenCode,
       'config': checkConfigFile,
       'daemon': checkDaemonStatus,
       'memory': checkMemoryDatabase,
@@ -619,6 +658,23 @@ export const doctorCommand: Command = {
             results[idx] = newCheck;
             // Update fixes list
             const fixIdx = fixes.findIndex(f => f.startsWith('Claude Code CLI:'));
+            if (fixIdx !== -1 && newCheck.status === 'pass') {
+              fixes.splice(fixIdx, 1);
+            }
+          }
+          output.writeln(formatCheck(newCheck));
+        }
+      }
+
+      const openCodeResult = results.find(r => r.name === 'OpenCode CLI');
+      if (openCodeResult && openCodeResult.status !== 'pass') {
+        const installed = await installOpenCode();
+        if (installed) {
+          const newCheck = await checkOpenCode();
+          const idx = results.findIndex(r => r.name === 'OpenCode CLI');
+          if (idx !== -1) {
+            results[idx] = newCheck;
+            const fixIdx = fixes.findIndex(f => f.startsWith('OpenCode CLI:'));
             if (fixIdx !== -1 && newCheck.status === 'pass') {
               fixes.splice(fixIdx, 1);
             }

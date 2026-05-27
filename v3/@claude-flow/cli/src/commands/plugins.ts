@@ -289,6 +289,11 @@ const installCommand: Command = {
           plugin = registryResult.registry.plugins.find(p => p.name === name || p.id === name);
         }
 
+        if (registryResult.success && registryResult.registry && !plugin) {
+          spinner.fail(`Plugin ${name} not found in verified registry. Installation blocked for security.`);
+          return { success: false, exitCode: 1 };
+        }
+
         if (plugin) {
           spinner.setText(`Found ${plugin.displayName} v${plugin.version}`);
 

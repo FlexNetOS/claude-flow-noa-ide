@@ -22,6 +22,7 @@ import {
   type HeadlessWorkerType,
   type HeadlessExecutionResult,
 } from './headless-worker-executor.js';
+import { QueenDispatcher, type QueenDispatcherConfig } from './queen-dispatcher.js';
 
 // Worker types matching hooks-tools.ts
 export type WorkerType =
@@ -85,6 +86,21 @@ export interface DaemonConfig {
     minFreeMemoryPercent: number;
   };
   workers: WorkerConfig[];
+  /**
+   * Queen-dispatcher config. When `enabled`, the daemon starts a
+   * QueenDispatcher loop alongside the maintenance workers — it polls
+   * `.claude-flow/tasks/store.json` and routes assigned swarm tasks to
+   * HeadlessWorkerExecutor.executeArbitrary. Disabled by default so
+   * existing daemon behaviour is unchanged for users who haven't
+   * opted in. See ADR-072 / #1916.
+   */
+  queenDispatcher?: {
+    enabled: boolean;
+    pollIntervalMs?: number;
+    maxConcurrent?: number;
+    sandbox?: QueenDispatcherConfig['sandbox'];
+    timeoutMs?: number;
+  };
 }
 
 // Worker configuration with staggered offsets to prevent overlap
@@ -124,6 +140,11 @@ export class WorkerDaemon extends EventEmitter {
   private headlessExecutor: HeadlessWorkerExecutor | null = null;
   private headlessAvailable: boolean = false;
 
+  // Queen-dispatcher (opt-in via config.queenDispatcher.enabled).
+  // When set, polls the swarm task store and dispatches assigned
+  // tasks through the headlessExecutor's executeArbitrary path.
+  private queenDispatcher: QueenDispatcher | null = null;
+
   // Preserve the original constructor config so we can detect explicit overrides
   // during state restoration (R1: constructor config takes priority over stale state)
   private originalConfig?: Partial<DaemonConfig>;
@@ -161,6 +182,16 @@ export class WorkerDaemon extends EventEmitter {
         minFreeMemoryPercent: config?.resourceThresholds?.minFreeMemoryPercent ?? fileConfig.minFreeMemoryPercent ?? defaultMinFreeMemory,
       },
       workers: config?.workers ?? DEFAULT_WORKERS,
+      // Constructor config wins over file (parity with other fields).
+      // Either source can flip the gate; default `enabled: false` so
+      // the merged block always has a concrete boolean — the type on
+      // DaemonConfig requires it, and `enabled === false` means "block
+      // present but opted out" which is a valid configured state.
+      queenDispatcher: (() => {
+        const src = config?.queenDispatcher ?? fileConfig.queenDispatcher;
+        if (!src) return undefined;
+        return { enabled: src.enabled === true, ...src };
+      })(),
     };
 
     // Setup graceful shutdown handlers
@@ -277,6 +308,13 @@ export class WorkerDaemon extends EventEmitter {
     workerTimeoutMs?: number;
     maxCpuLoad?: number;
     minFreeMemoryPercent?: number;
+    queenDispatcher?: {
+      enabled?: boolean;
+      pollIntervalMs?: number;
+      maxConcurrent?: number;
+      sandbox?: 'strict' | 'permissive' | 'disabled';
+      timeoutMs?: number;
+    };
   } {
     const configPath = join(claudeFlowDir, 'config.json');
     if (!existsSync(configPath)) {
@@ -304,12 +342,57 @@ export class WorkerDaemon extends EventEmitter {
       const rawMinMem = cfg['daemon.resourceThresholds.minFreeMemoryPercent'] ?? raw['daemon.resourceThresholds.minFreeMemoryPercent'];
       const rawMaxConcurrent = cfg['daemon.maxConcurrent'] ?? raw['daemon.maxConcurrent'];
       const rawTimeout = cfg['daemon.workerTimeoutMs'] ?? raw['daemon.workerTimeoutMs'];
+
+      // ADR-072 / #1916: queen-dispatcher block. Supports both nested
+      // (daemon: { queenDispatcher: { enabled: true, ... } }) and the
+      // dot-keyed style used elsewhere in this reader. Dot-keys win
+      // when both forms exist so an operator who already has e.g.
+      // `daemon.queenDispatcher.enabled: true` at the top of the file
+      // gets predictable behaviour.
+      const nestedQd = (cfg?.daemon?.queenDispatcher as Record<string, unknown> | undefined)
+        ?? (raw?.daemon?.queenDispatcher as Record<string, unknown> | undefined)
+        ?? undefined;
+      const flatEnabled = cfg['daemon.queenDispatcher.enabled'] ?? raw['daemon.queenDispatcher.enabled'];
+      const flatPoll = cfg['daemon.queenDispatcher.pollIntervalMs'] ?? raw['daemon.queenDispatcher.pollIntervalMs'];
+      const flatMaxConc = cfg['daemon.queenDispatcher.maxConcurrent'] ?? raw['daemon.queenDispatcher.maxConcurrent'];
+      const flatSandbox = cfg['daemon.queenDispatcher.sandbox'] ?? raw['daemon.queenDispatcher.sandbox'];
+      const flatTimeout = cfg['daemon.queenDispatcher.timeoutMs'] ?? raw['daemon.queenDispatcher.timeoutMs'];
+
+      const qdEnabled = typeof flatEnabled === 'boolean'
+        ? flatEnabled
+        : (typeof nestedQd?.enabled === 'boolean' ? nestedQd.enabled : undefined);
+      const qdPoll = typeof flatPoll === 'number'
+        ? flatPoll
+        : (typeof nestedQd?.pollIntervalMs === 'number' ? nestedQd.pollIntervalMs : undefined);
+      const qdMaxConc = typeof flatMaxConc === 'number'
+        ? flatMaxConc
+        : (typeof nestedQd?.maxConcurrent === 'number' ? nestedQd.maxConcurrent : undefined);
+      const qdSandbox = (typeof flatSandbox === 'string' && ['strict', 'permissive', 'disabled'].includes(flatSandbox))
+        ? (flatSandbox as 'strict' | 'permissive' | 'disabled')
+        : ((typeof nestedQd?.sandbox === 'string' && ['strict', 'permissive', 'disabled'].includes(nestedQd.sandbox as string))
+          ? (nestedQd.sandbox as 'strict' | 'permissive' | 'disabled')
+          : undefined);
+      const qdTimeout = typeof flatTimeout === 'number'
+        ? flatTimeout
+        : (typeof nestedQd?.timeoutMs === 'number' ? nestedQd.timeoutMs : undefined);
+
+      const queenDispatcher = (qdEnabled !== undefined || qdPoll !== undefined || qdMaxConc !== undefined || qdSandbox !== undefined || qdTimeout !== undefined)
+        ? {
+            ...(qdEnabled !== undefined ? { enabled: qdEnabled } : {}),
+            ...(qdPoll !== undefined && qdPoll > 0 ? { pollIntervalMs: qdPoll } : {}),
+            ...(qdMaxConc !== undefined && qdMaxConc > 0 ? { maxConcurrent: qdMaxConc } : {}),
+            ...(qdSandbox !== undefined ? { sandbox: qdSandbox } : {}),
+            ...(qdTimeout !== undefined && qdTimeout > 0 ? { timeoutMs: qdTimeout } : {}),
+          }
+        : undefined;
+
       return {
         autoStart: typeof raw['daemon.autoStart'] === 'boolean' ? raw['daemon.autoStart'] : undefined,
         maxConcurrent: (typeof rawMaxConcurrent === 'number' && rawMaxConcurrent > 0) ? rawMaxConcurrent : undefined,
         workerTimeoutMs: (typeof rawTimeout === 'number' && rawTimeout > 0) ? rawTimeout : undefined,
         maxCpuLoad: (typeof rawCpuLoad === 'number' && rawCpuLoad > 0 && rawCpuLoad < 1000) ? rawCpuLoad : undefined,
         minFreeMemoryPercent: (typeof rawMinMem === 'number' && rawMinMem >= 0 && rawMinMem <= 100) ? rawMinMem : undefined,
+        ...(queenDispatcher ? { queenDispatcher } : {}),
       };
     } catch {
       return {};
@@ -541,6 +624,46 @@ export class WorkerDaemon extends EventEmitter {
       }
     }
 
+    // #1845: poll the MCP-dispatch queue directory so workers requested
+    // via mcp__hooks_worker-dispatch (in a separate process) actually
+    // execute here. Previously the dispatch wrote to a process-local Map
+    // that the daemon could never see.
+    this.queuePollTimer = setInterval(() => {
+      void this.processDispatchQueue();
+    }, 5_000);
+    if (typeof this.queuePollTimer.unref === 'function') {
+      this.queuePollTimer.unref();
+    }
+
+    // ADR-072 / #1916: start the queen-dispatcher when opted in. The
+    // dispatcher polls the canonical swarm task store and routes
+    // assigned tasks through the headlessExecutor's executeArbitrary
+    // path. Opt-in only — existing deployments are unchanged.
+    if (this.config.queenDispatcher?.enabled && this.headlessExecutor) {
+      try {
+        this.queenDispatcher = new QueenDispatcher({
+          projectRoot: this.projectRoot,
+          executor: this.headlessExecutor,
+          pollIntervalMs: this.config.queenDispatcher.pollIntervalMs,
+          maxConcurrent: this.config.queenDispatcher.maxConcurrent,
+          sandbox: this.config.queenDispatcher.sandbox,
+          timeoutMs: this.config.queenDispatcher.timeoutMs,
+        });
+        // Forward the dispatcher's events through the daemon's event
+        // bus so operators / dashboards have one stream to watch.
+        this.queenDispatcher.on('dispatched', (d) => this.emit('queen:dispatched', d));
+        this.queenDispatcher.on('completed', (d) => this.emit('queen:completed', d));
+        this.queenDispatcher.on('failed', (d) => this.emit('queen:failed', d));
+        this.queenDispatcher.on('error', (err) => this.log('warn', `QueenDispatcher error: ${err}`));
+        this.queenDispatcher.start();
+        this.log('info', `QueenDispatcher started (poll: ${this.config.queenDispatcher.pollIntervalMs ?? 5000}ms, maxConcurrent: ${this.config.queenDispatcher.maxConcurrent ?? 2})`);
+      } catch (err) {
+        this.log('warn', `QueenDispatcher failed to start: ${(err as Error).message}`);
+      }
+    } else if (this.config.queenDispatcher?.enabled && !this.headlessExecutor) {
+      this.log('warn', 'QueenDispatcher requested but headlessExecutor unavailable (claude CLI not installed?) — skipped.');
+    }
+
     // Save state
     this.saveState();
 
@@ -563,6 +686,20 @@ export class WorkerDaemon extends EventEmitter {
       this.log('info', `Stopped worker: ${type}`);
     }
     this.timers.clear();
+
+    // #1845: stop the MCP-dispatch queue poller too.
+    if (this.queuePollTimer) {
+      clearInterval(this.queuePollTimer);
+      this.queuePollTimer = undefined;
+    }
+
+    // Stop the queen-dispatcher (does NOT cancel in-flight executions;
+    // those finish on their own timeline and write their final result
+    // through the dispatcher's completion callback).
+    if (this.queenDispatcher) {
+      this.queenDispatcher.stop();
+      this.queenDispatcher = null;
+    }
 
     this.running = false;
     this.removePidFile();

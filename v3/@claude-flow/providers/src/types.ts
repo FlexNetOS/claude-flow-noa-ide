@@ -20,6 +20,7 @@ export type LLMProvider =
   | 'ruvector'
   | 'openrouter'
   | 'litellm'
+  | 'opencode'
   | 'custom';
 
 export type LLMModel =

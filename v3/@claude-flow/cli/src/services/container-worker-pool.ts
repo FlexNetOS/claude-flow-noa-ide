@@ -21,7 +21,7 @@ import { spawn, exec, type ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import type { HeadlessWorkerType, HeadlessExecutionResult, SandboxMode } from './headless-worker-executor.js';
+import type { HeadlessWorkerType, HeadlessExecutionResult, SandboxMode, BackendType } from './headless-worker-executor.js';
 
 const execAsync = promisify(exec);
 
@@ -543,6 +543,7 @@ export class ContainerWorkerPool extends EventEmitter {
         workerType: options.workerType,
         timestamp: new Date(),
         executionId,
+        backend: 'claude',
       };
 
       this.emit('executionComplete', result);
@@ -776,6 +777,7 @@ export class ContainerWorkerPool extends EventEmitter {
       timestamp: new Date(),
       executionId: `error_${Date.now()}`,
       error,
+      backend: 'claude',
     };
   }
 }

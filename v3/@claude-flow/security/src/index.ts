@@ -109,6 +109,19 @@ export {
   type VerificationCode,
 } from './token-generator.js';
 
+// Tool-Output Guardrail (ADR-131 — closes OWASP ASI01 gap; ruvnet/ruflo#2149)
+export {
+  ToolOutputGuardrail,
+  createToolOutputGuardrail,
+  isToolOutputSafe,
+  type GuardrailConfig,
+  type GuardrailResult,
+  type GuardrailAction,
+  type InjectionFinding,
+  type InjectionSeverity,
+  type InjectionCategory,
+} from './tool-output-guardrail.js';
+
 // ============================================================================
 // Convenience Factory Functions
 // ============================================================================

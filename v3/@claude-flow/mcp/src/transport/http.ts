@@ -22,6 +22,7 @@ import type {
   ILogger,
   AuthConfig,
 } from '../types.js';
+import { safeJsonParse } from '../utils/safe-json.js';
 
 export interface HttpTransportConfig {
   host: string;
@@ -34,6 +35,8 @@ export interface HttpTransportConfig {
   auth?: AuthConfig;
   maxRequestSize?: string;
   requestTimeout?: number;
+  /** When true, clients are allowed to skip authentication. Only use for local/stdio transports. */
+  allowUnauthenticated?: boolean;
 }
 
 export class HttpTransport extends EventEmitter implements ITransport {
@@ -285,8 +288,8 @@ export class HttpTransport extends EventEmitter implements ITransport {
 
     // SECURITY: Handle WebSocket authentication via upgrade request
     this.wss.on('connection', (ws, req) => {
-      // Validate authentication if enabled
-      if (this.config.auth?.enabled) {
+      // Validate authentication unless explicitly allowed to skip
+      if (!this.config.allowUnauthenticated) {
         const url = new URL(req.url || '', `http://${req.headers.host}`);
         const token = url.searchParams.get('token') || req.headers['authorization']?.replace(/^Bearer\s+/i, '');
 
@@ -298,7 +301,7 @@ export class HttpTransport extends EventEmitter implements ITransport {
 
         // SECURITY: Timing-safe token validation
         let valid = false;
-        if (this.config.auth.tokens?.length) {
+        if (this.config.auth?.tokens?.length) {
           for (const validToken of this.config.auth.tokens) {
             if (this.timingSafeCompare(token, validToken)) {
               valid = true;
@@ -317,7 +320,7 @@ export class HttpTransport extends EventEmitter implements ITransport {
       this.activeConnections.add(ws);
       this.logger.info('WebSocket client connected', {
         total: this.activeConnections.size,
-        authenticated: !!this.config.auth?.enabled,
+        authenticated: !this.config.allowUnauthenticated,
       });
 
       ws.on('message', async (data) => {
@@ -343,25 +346,32 @@ export class HttpTransport extends EventEmitter implements ITransport {
     this.httpRequests++;
     this.messagesReceived++;
 
-    const requiresAuth = this.config.auth?.enabled !== false;
-
-    if (requiresAuth && this.config.auth) {
-      const authResult = this.validateAuth(req);
-      if (!authResult.valid) {
-        this.logger.warn('Authentication failed', {
-          ip: req.ip,
-          path: req.path,
-          error: authResult.error,
-        });
+    if (!this.config.allowUnauthenticated) {
+      if (this.config.auth) {
+        const authResult = this.validateAuth(req);
+        if (!authResult.valid) {
+          this.logger.warn('Authentication failed', {
+            ip: req.ip,
+            path: req.path,
+            error: authResult.error,
+          });
+          res.status(401).json({
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32001, message: 'Unauthorized' },
+          });
+          return;
+        }
+      } else {
+        // No auth configured and allowUnauthenticated is not set — reject
+        this.logger.warn('No authentication configured — rejecting request. Set allowUnauthenticated for local-only use.');
         res.status(401).json({
           jsonrpc: '2.0',
           id: null,
-          error: { code: -32001, message: 'Unauthorized' },
+          error: { code: -32001, message: 'Unauthorized: no authentication configured' },
         });
         return;
       }
-    } else if (requiresAuth && !this.config.auth) {
-      this.logger.warn('No authentication configured - running in development mode');
     }
 
     const message = req.body;
@@ -422,7 +432,7 @@ export class HttpTransport extends EventEmitter implements ITransport {
     this.messagesReceived++;
 
     try {
-      const message = JSON.parse(data);
+      const message = safeJsonParse<any>(data);
 
       if (message.jsonrpc !== '2.0') {
         ws.send(JSON.stringify({
@@ -456,7 +466,7 @@ export class HttpTransport extends EventEmitter implements ITransport {
       this.logger.error('WebSocket message error', { error });
 
       try {
-        const parsed = JSON.parse(data);
+        const parsed = safeJsonParse<any>(data);
         ws.send(JSON.stringify({
           jsonrpc: '2.0',
           id: parsed.id || null,

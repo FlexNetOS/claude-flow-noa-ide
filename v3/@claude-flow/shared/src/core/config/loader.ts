@@ -9,6 +9,7 @@ import { existsSync } from 'fs';
 import type { SystemConfig } from './schema.js';
 import { validateSystemConfig, type ValidationResult } from './validator.js';
 import { defaultSystemConfig, mergeWithDefaults } from './defaults.js';
+import { safeJsonParse, isDangerousKey } from '../../utils/safe-json.js';
 
 /**
  * Configuration source type
@@ -53,7 +54,7 @@ async function findConfigFile(directory: string): Promise<string | null> {
  */
 async function loadJsonConfig(path: string): Promise<unknown> {
   const content = await readFile(path, 'utf8');
-  return JSON.parse(content);
+  return safeJsonParse(content);
 }
 
 /**
@@ -249,6 +250,9 @@ export class ConfigLoader {
     const result = { ...target };
 
     for (const key of Object.keys(source)) {
+      // Prevent prototype pollution via crafted config keys
+      if (isDangerousKey(key)) continue;
+
       const sourceValue = source[key];
       const targetValue = target[key];
 

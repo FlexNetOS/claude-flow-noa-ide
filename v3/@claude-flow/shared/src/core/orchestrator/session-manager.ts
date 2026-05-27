@@ -11,6 +11,7 @@ import type { AgentProfile } from '../../types/agent.types.js';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { randomBytes } from 'crypto';
+import { safeJsonParse } from '../../utils/safe-json.js';
 
 // Secure session ID generation
 function generateSecureSessionId(): string {
@@ -212,7 +213,7 @@ export class SessionManager implements ISessionManager {
 
     try {
       const data = await readFile(this.persistencePath, 'utf8');
-      const persistence: SessionPersistence = JSON.parse(data);
+      const persistence: SessionPersistence = safeJsonParse<SessionPersistence>(data);
 
       // Filter to only active/idle sessions
       const sessionsToRestore = persistence.sessions.filter(

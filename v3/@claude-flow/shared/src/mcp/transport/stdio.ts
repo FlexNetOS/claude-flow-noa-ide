@@ -24,6 +24,7 @@ import {
   TransportHealthStatus,
   ILogger,
 } from '../types.js';
+import { safeJsonParse } from '../../utils/safe-json.js';
 
 /**
  * Stdio Transport Configuration
@@ -168,7 +169,7 @@ export class StdioTransport extends EventEmitter implements ITransport {
     }
 
     try {
-      const message = JSON.parse(line);
+      const message = safeJsonParse<any>(line);
       this.messagesReceived++;
 
       // Validate JSON-RPC format

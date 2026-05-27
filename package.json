@@ -131,5 +131,18 @@
   "publishConfig": {
     "access": "public",
     "tag": "latest"
+  },
+  "pnpm": {
+    "//": "Cross-platform install reliability. The runtime ALREADY falls back gracefully on Windows (memory/src/database-provider.ts:102 picks sql.js when better-sqlite3 isn't available), but pnpm 8+ would fail the whole install if better-sqlite3's postinstall script exits non-zero — which it does on Windows without Visual Studio Build Tools, and on bleeding-edge Node versions without prebuilds (e.g. Node 25.x + better-sqlite3 11.x). neverBuiltDependencies tells pnpm to install the JS but skip the native-build script; the consuming code handles the missing binding at runtime. Tracked in ruvnet/ruflo#2126.",
+    "neverBuiltDependencies": [
+      "better-sqlite3"
+    ],
+    "//peerDependencyRules": "Suppress noisy peer-dep warnings for known-good combinations.",
+    "peerDependencyRules": {
+      "allowAny": [
+        "agentdb",
+        "@modelcontextprotocol/sdk"
+      ]
+    }
   }
 }

@@ -24,12 +24,26 @@ const startCommand: Command = {
     { name: 'sandbox', type: 'string', description: 'Default sandbox mode for headless workers', choices: ['strict', 'permissive', 'disabled'] },
     { name: 'max-cpu-load', type: 'string', description: 'Override maxCpuLoad resource threshold (e.g. 4.0)' },
     { name: 'min-free-memory', type: 'string', description: 'Override minFreeMemoryPercent resource threshold (e.g. 15)' },
+    // ADR-072 / #1916: queen-dispatcher opt-in via CLI flags. Mirrors
+    // the config.{yaml,json} `daemon.queenDispatcher.*` keys for
+    // operators who'd rather flip behaviour at start time than edit a
+    // config file. Either source works; CLI wins.
+    { name: 'queen-dispatcher', type: 'boolean', description: 'Enable the queen-dispatcher loop that drives assigned swarm tasks through HeadlessWorkerExecutor (ADR-072 / #1916)' },
+    { name: 'queen-poll-ms', type: 'string', description: 'Queen-dispatcher poll interval in ms (default 5000)' },
+    { name: 'queen-max-concurrent', type: 'string', description: 'Queen-dispatcher global max concurrent task executions (default 2)' },
+    { name: 'queen-sandbox', type: 'string', description: 'Queen-dispatcher sandbox mode for spawned claude sessions', choices: ['strict', 'permissive', 'disabled'] },
+    // #1914: workspace root for this daemon. Set automatically when the
+    // background launcher forks the foreground child so the daemon process
+    // carries its workspace path in argv — `killStaleDaemons` then only
+    // reaps daemons belonging to the current workspace (ADR-014 scope).
+    { name: 'workspace', type: 'string', description: 'Workspace root for this daemon (internal — set automatically when forking)' },
   ],
   examples: [
     { command: 'claude-flow daemon start', description: 'Start daemon in background (default)' },
     { command: 'claude-flow daemon start --foreground', description: 'Start in foreground (blocks terminal)' },
     { command: 'claude-flow daemon start -w map,audit,optimize', description: 'Start with specific workers' },
     { command: 'claude-flow daemon start --headless --sandbox strict', description: 'Start with headless workers in strict sandbox' },
+    { command: 'claude-flow daemon start --queen-dispatcher', description: 'Start with the ADR-072 queen-dispatcher (drives assigned swarm tasks)' },
   ],
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     const quiet = ctx.flags.quiet as boolean;
@@ -69,6 +83,40 @@ const startCommand: Command = {
       }
     }
 
+    // ADR-072 / #1916: parse queen-dispatcher flags. Re-uses the same
+    // strict numeric pattern as the resource thresholds to prevent
+    // command injection when forwarding to the forked background
+    // subprocess.
+    const queenEnabled = ctx.flags['queen-dispatcher'] as boolean | undefined;
+    const rawQueenPoll = ctx.flags['queen-poll-ms'] as string | undefined;
+    const rawQueenMax = ctx.flags['queen-max-concurrent'] as string | undefined;
+    const rawQueenSandbox = ctx.flags['queen-sandbox'] as string | undefined;
+    if (queenEnabled || rawQueenPoll || rawQueenMax || rawQueenSandbox) {
+      const qd: DaemonConfig['queenDispatcher'] = { enabled: queenEnabled === true };
+      if (rawQueenPoll) {
+        const v = parseFloat(rawQueenPoll);
+        if (NUMERIC_RE.test(rawQueenPoll) && isFinite(v) && v >= 100 && v <= 600_000) {
+          qd.pollIntervalMs = v;
+        } else if (!quiet) {
+          output.printWarning(`Ignoring invalid --queen-poll-ms value: ${sanitize(rawQueenPoll)}`);
+        }
+      }
+      if (rawQueenMax) {
+        const v = parseFloat(rawQueenMax);
+        if (NUMERIC_RE.test(rawQueenMax) && isFinite(v) && v >= 1 && v <= 50) {
+          qd.maxConcurrent = v;
+        } else if (!quiet) {
+          output.printWarning(`Ignoring invalid --queen-max-concurrent value: ${sanitize(rawQueenMax)}`);
+        }
+      }
+      if (rawQueenSandbox && ['strict', 'permissive', 'disabled'].includes(rawQueenSandbox)) {
+        qd.sandbox = rawQueenSandbox as 'strict' | 'permissive' | 'disabled';
+      } else if (rawQueenSandbox && !quiet) {
+        output.printWarning(`Ignoring invalid --queen-sandbox value: ${sanitize(rawQueenSandbox)}`);
+      }
+      config.queenDispatcher = qd;
+    }
+
     // Check if background daemon already running (skip if we ARE the daemon process)
     if (!isDaemonProcess) {
       const bgPid = getBackgroundDaemonPid(projectRoot);
@@ -84,7 +132,18 @@ const startCommand: Command = {
 
     // Background mode (default): fork a detached process
     if (!foreground) {
-      return startBackgroundDaemon(projectRoot, quiet, rawMaxCpu, rawMinMem);
+      return startBackgroundDaemon(projectRoot, quiet, {
+        maxCpuLoad: rawMaxCpu,
+        minFreeMemory: rawMinMem,
+        workers: ctx.flags.workers as string | undefined,
+        headless: ctx.flags.headless as boolean | undefined,
+        sandbox: ctx.flags.sandbox as string | undefined,
+        // ADR-072 / #1916: forward queen-dispatcher flags.
+        queenDispatcher: ctx.flags['queen-dispatcher'] as boolean | undefined,
+        queenPollMs: ctx.flags['queen-poll-ms'] as string | undefined,
+        queenMaxConcurrent: ctx.flags['queen-max-concurrent'] as string | undefined,
+        queenSandbox: ctx.flags['queen-sandbox'] as string | undefined,
+      });
     }
 
     // Foreground mode: run in current process (blocks terminal)
@@ -224,7 +283,23 @@ function validatePath(path: string, label: string): void {
 /**
  * Start daemon as a detached background process
  */
-async function startBackgroundDaemon(projectRoot: string, quiet: boolean, maxCpuLoad?: string, minFreeMemory?: string): Promise<CommandResult> {
+interface ForwardedDaemonFlags {
+  maxCpuLoad?: string;
+  minFreeMemory?: string;
+  workers?: string;
+  headless?: boolean;
+  sandbox?: string;
+  // ADR-072 / #1916 — queen-dispatcher opt-in. The launcher forwards
+  // these to the foreground child so `daemon start --queen-dispatcher`
+  // works without `--foreground`.
+  queenDispatcher?: boolean;
+  queenPollMs?: string;
+  queenMaxConcurrent?: string;
+  queenSandbox?: string;
+}
+
+async function startBackgroundDaemon(projectRoot: string, quiet: boolean, forwarded: ForwardedDaemonFlags = {}): Promise<CommandResult> {
+  const { maxCpuLoad, minFreeMemory, workers, headless, sandbox, queenDispatcher, queenPollMs, queenMaxConcurrent, queenSandbox } = forwarded;
   // Validate and resolve project root
   const resolvedRoot = resolve(projectRoot);
   validatePath(resolvedRoot, 'Project root');
@@ -291,7 +366,29 @@ async function startBackgroundDaemon(projectRoot: string, quiet: boolean, maxCpu
   if (minFreeMemory && SPAWN_NUMERIC_RE.test(minFreeMemory)) {
     spawnArgs.push('--min-free-memory', minFreeMemory);
   }
-  const child = spawn(process.execPath, spawnArgs, spawnOpts);
+  if (typeof sandbox === 'string' && (sandbox === 'strict' || sandbox === 'permissive' || sandbox === 'disabled')) {
+    forkArgs.push('--sandbox', sandbox);
+  }
+  // ADR-072 / #1916 — forward queen-dispatcher flags. Same numeric /
+  // enum validation as the resource flags above so a crafted CLI
+  // string can't smuggle anything into the forked child's argv.
+  if (queenDispatcher === true) {
+    forkArgs.push('--queen-dispatcher');
+  }
+  if (typeof queenPollMs === 'string' && SPAWN_NUMERIC_RE.test(queenPollMs)) {
+    forkArgs.push('--queen-poll-ms', queenPollMs);
+  }
+  if (typeof queenMaxConcurrent === 'string' && SPAWN_NUMERIC_RE.test(queenMaxConcurrent)) {
+    forkArgs.push('--queen-max-concurrent', queenMaxConcurrent);
+  }
+  if (typeof queenSandbox === 'string' && (queenSandbox === 'strict' || queenSandbox === 'permissive' || queenSandbox === 'disabled')) {
+    forkArgs.push('--queen-sandbox', queenSandbox);
+  }
+  // #1914: stamp the workspace into argv (kept LAST) so the foreground daemon
+  // process is self-identifying and `killStaleDaemons` only reaps daemons
+  // belonging to this workspace. resolvedRoot was validatePath()'d above.
+  forkArgs.push('--workspace', resolvedRoot);
+  const child = fork(cliPath, forkArgs, forkOpts);
 
   // Get PID from spawned process directly (no shell echo needed)
   const pid = child.pid;

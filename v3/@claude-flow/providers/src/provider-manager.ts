@@ -127,6 +127,16 @@ export class ProviderManager extends EventEmitter {
         return new OllamaProvider(options);
       case 'ruvector':
         return new RuVectorProvider(options);
+      case 'opencode':
+        // OpenCode is a coding agent backend, not a direct LLM provider.
+        // It delegates to underlying providers (Anthropic, OpenAI, Google, etc.)
+        // via its own provider system. Use the OpenCodeAdapter for agent-level
+        // integration instead.
+        throw new Error(
+          'OpenCode is a coding agent backend, not a direct LLM provider. ' +
+          'Use the HeadlessWorkerExecutor with backend="opencode" or the OpenCodeAdapter ' +
+          'from @claude-flow/integration for agent-level integration.'
+        );
       default:
         throw new Error(`Unknown provider: ${config.provider}`);
     }

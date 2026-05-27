@@ -29,7 +29,7 @@ All ADRs are located in [`/v3/implementation/adrs/`](../../implementation/adrs/)
 | [ADR-046](../../implementation/adrs/ADR-046-ruflo-rebrand.md) | Dual Umbrella: claude-flow + ruflo | Accepted |
 | [ADR-047](../../implementation/adrs/ADR-047-fast-mode-integration.md) | Fast Mode Integration | Proposed |
 | [ADR-131](ADR-131-tool-output-guardrail.md) | Tool Output Guardrail (OWASP ASI01 indirect-injection defense) | Accepted |
-| [ADR-132](ADR-132-simulative-planning-router.md) | Simulative Planning Router | Proposed |
+| [ADR-133](ADR-133-real-gaia-capability-benchmark.md) | Real GAIA Capability Benchmark Architecture | Proposed |
 
 ## Summary Documents
 

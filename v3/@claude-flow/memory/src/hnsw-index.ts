@@ -535,7 +535,7 @@ export class HNSWIndex extends EventEmitter {
       dimensions: config.dimensions || 1536, // OpenAI embedding size
       M: config.M || 16,
       efConstruction: config.efConstruction || 200,
-      maxElements: config.maxElements || 1000000,
+      maxElements: config.maxElements || 100000,
       metric: config.metric || 'cosine',
       quantization: config.quantization,
     };

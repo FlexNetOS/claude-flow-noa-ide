@@ -92,6 +92,14 @@ const spawnCommand: Command = {
       default: 'anthropic'
     },
     {
+      name: 'backend',
+      short: 'b',
+      description: 'Coding agent backend: claude (default) or opencode',
+      type: 'string',
+      choices: ['claude', 'opencode'],
+      default: 'claude'
+    },
+    {
       name: 'model',
       short: 'm',
       description: 'Model to use',
@@ -155,6 +163,7 @@ const spawnCommand: Command = {
         id: agentName,
         config: {
           provider: ctx.flags.provider || 'anthropic',
+          backend: ctx.flags.backend || 'claude',
           model: ctx.flags.model,
           task: ctx.flags.task,
           timeout: ctx.flags.timeout,
@@ -164,6 +173,7 @@ const spawnCommand: Command = {
         metadata: {
           name: agentName,
           capabilities: getAgentCapabilities(agentType),
+          backend: ctx.flags.backend || 'claude',
         },
       });
 
