@@ -192,6 +192,8 @@ The difference: some channels are trusted, some aren't. [`@claude-flow/plugin-ag
 
 You don't configure handshakes or manage certificates. You `federation init`, `federation join`, and your agents start talking. The protocol handles identity, the PII pipeline handles data safety, and the audit trail handles compliance.
 
+> **📘 Full user guide:** [`docs/federation/`](./docs/federation/) — setup, MCP tools, trust levels, circuit breaker, and the (opt-in) WireGuard mesh layer that ties packet-layer reachability to federation trust. Phase 7 mesh bring-up deep-dive at [`docs/federation/phase7-mesh-bringup.md`](./docs/federation/phase7-mesh-bringup.md).
+
 <details>
 <summary><strong>Federation capabilities</strong></summary>
 
