@@ -123,6 +123,10 @@ const createCommand: Command = {
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     let taskType = ctx.flags.type as string;
     let description = ctx.flags.description as string;
+    // Fix: when --description is set but extra positional args exist, join them
+    if (ctx.flags.description && ctx.args.length > 0) {
+      description = [ctx.flags.description as string, ...ctx.args].join(' ');
+    }
     let priority = ctx.flags.priority as string;
 
     // Interactive mode

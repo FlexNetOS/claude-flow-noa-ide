@@ -73,6 +73,10 @@ const storeCommand: Command = {
   action: async (ctx: CommandContext): Promise<CommandResult> => {
     const key = ctx.flags.key as string;
     let value = ctx.flags.value as string || ctx.args[0];
+    // Fix: when --value is set but extra positional args exist, join them
+    if (ctx.flags.value && ctx.args.length > 0) {
+      value = [ctx.flags.value as string, ...ctx.args].join(' ');
+    }
     const namespace = ctx.flags.namespace as string;
     const ttl = ctx.flags.ttl as number;
     const tags = ctx.flags.tags ? (ctx.flags.tags as string).split(',') : [];
