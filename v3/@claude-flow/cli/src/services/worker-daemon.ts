@@ -333,7 +333,21 @@ export class WorkerDaemon extends EventEmitter {
     const freeMem = os.freemem();
     const freePercent = (freeMem / totalMem) * 100;
 
-    if (cpuLoad > this.config.resourceThresholds.maxCpuLoad) {
+    // WSL2 reports inflated load averages (200-400 on 4-CPU systems) because Windows-side
+    // process counting is mapped into /proc/loadavg. Skip the CPU gate when running on WSL2
+    // to avoid permanently deferring every worker; honour the gate on native Linux / macOS.
+    const isWsl2 = (() => {
+      if (process.env.WSL_DISTRO_NAME) return true;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fs = require('fs');
+        const release = fs.readFileSync('/proc/sys/kernel/osrelease', 'utf-8');
+        return /microsoft/i.test(release);
+      } catch {
+        return false;
+      }
+    })();
+    if (!isWsl2 && cpuLoad > this.config.resourceThresholds.maxCpuLoad) {
       return { allowed: false, reason: `CPU load too high: ${cpuLoad.toFixed(2)}` };
     }
     if (freePercent < this.config.resourceThresholds.minFreeMemoryPercent) {
@@ -753,6 +767,14 @@ export class WorkerDaemon extends EventEmitter {
       try {
         this.log('info', `Running ${workerConfig.type} in headless mode (Claude Code AI)`);
         const result = await this.headlessExecutor.execute(workerConfig.type as HeadlessWorkerType);
+        // HeadlessWorkerExecutor.execute() returns createErrorResult({success:false}) when its
+        // own isAvailable() check fails, instead of throwing. Without this guard, that error
+        // result is persisted as a successful headless run and downstream consumers cannot
+        // tell a real AI run apart from a silent fallback.
+        if (!result || (result as { success?: boolean }).success !== true) {
+          const errMsg = (result as { error?: string } | undefined)?.error;
+          throw new Error(errMsg ? String(errMsg) : 'headless executor returned success=false');
+        }
         const headlessOutput = {
           mode: 'headless' as const,
           timestamp: new Date().toISOString(),
