@@ -511,7 +511,7 @@ const startCommand: Command = {
     } catch (err) {
       spinner.fail('MCP swarm_init failed — swarm metadata saved locally only');
       output.writeln(output.dim(`  Error: ${err instanceof Error ? err.message : String(err)}`));
-      output.writeln(output.dim('  The MCP server may not be running. Start it with: claude mcp add claude-flow npx claude-flow@v3alpha mcp start'));
+      output.writeln(output.dim('  The MCP server may not be running. Start it with: claude mcp add ruflo -- npx -y ruflo@latest mcp start'));
     }
 
     // Persist swarm state to disk so `swarm status` can read it
