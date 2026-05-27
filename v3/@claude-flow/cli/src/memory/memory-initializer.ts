@@ -11,6 +11,65 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createRequire } from 'node:module';
+import { readFileMaybeEncrypted, writeFileRestricted } from '../fs-secure.js';
+
+/**
+ * #1854: previously every site that needed the memory directory hardcoded
+ * `getMemoryRoot()`, so the documented config entry
+ * points (`memory.persistPath` config field, `memory configure --path`,
+ * `CLAUDE_FLOW_MEMORY_PATH` env var) all silently no-op'd. This helper
+ * is the single source of truth — every `.swarm/memory.db` resolution in
+ * this file flows through it.
+ *
+ * Precedence (highest → lowest):
+ *   1. CLAUDE_FLOW_MEMORY_PATH env var
+ *   2. memory.persistPath / memory.path in claude-flow.config.json (cwd or
+ *      the directory the CLI was invoked from)
+ *   3. Default: cwd/.swarm
+ *
+ * Cached per-process so repeated lookups are cheap; reset only by spawning
+ * a fresh process (which is how config changes already propagate).
+ */
+let _memoryRootCache: string | undefined;
+export function getMemoryRoot(): string {
+  if (_memoryRootCache !== undefined) return _memoryRootCache;
+
+  // 1. Env var
+  const envPath = process.env.CLAUDE_FLOW_MEMORY_PATH;
+  if (envPath && envPath.trim().length > 0) {
+    _memoryRootCache = path.resolve(envPath);
+    return _memoryRootCache;
+  }
+
+  // 2. Config file (claude-flow.config.json)
+  const configCandidates = [
+    path.resolve(process.cwd(), 'claude-flow.config.json'),
+    path.resolve(process.cwd(), '.claude-flow', 'config.json'),
+  ];
+  for (const configPath of configCandidates) {
+    if (!fs.existsSync(configPath)) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const fromConfig: unknown = raw?.memory?.persistPath ?? raw?.memory?.path;
+      if (typeof fromConfig === 'string' && fromConfig.trim().length > 0) {
+        _memoryRootCache = path.resolve(fromConfig);
+        return _memoryRootCache;
+      }
+    } catch {
+      /* malformed config — fall through to default */
+    }
+  }
+
+  // 3. Default
+  _memoryRootCache = path.resolve(process.cwd(), '.swarm');
+  return _memoryRootCache;
+}
+
+/** For tests + the `memory configure` flow that mutates the config at runtime. */
+export function _resetMemoryRootCache(): void {
+  _memoryRootCache = undefined;
+}
 
 // ADR-053: Lazy import of AgentDB v3 bridge
 let _bridge: typeof import('./memory-bridge.js') | null | undefined;
@@ -23,6 +82,161 @@ async function getBridge(): Promise<typeof import('./memory-bridge.js') | null> 
   } catch {
     _bridge = null;
     return null;
+  }
+}
+
+async function rawMemoryEntryExists(options: {
+  key: string;
+  namespace?: string;
+  dbPath?: string;
+}): Promise<boolean> {
+  const { key, namespace = 'default', dbPath: customPath } = options;
+  const swarmDir = getMemoryRoot();
+  const dbPath = customPath ? path.resolve(customPath) : path.join(swarmDir, 'memory.db');
+
+  try {
+    if (!fs.existsSync(dbPath)) return false;
+
+    const initSqlJs = (await import('sql.js')).default;
+    const SQL = await initSqlJs();
+    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
+    const db = new SQL.Database(fileBuffer);
+    const stmt = db.prepare(`
+      SELECT 1
+      FROM memory_entries
+      WHERE status = 'active'
+        AND key = ?
+        AND namespace = ?
+      LIMIT 1
+    `);
+    stmt.bind([key, namespace]);
+    const found = stmt.step();
+    stmt.free();
+    db.close();
+    return found;
+  } catch {
+    return false;
+  }
+}
+
+async function storeEntryWithBetterSqlite(options: {
+  key: string;
+  value: string;
+  namespace?: string;
+  generateEmbeddingFlag?: boolean;
+  tags?: string[];
+  ttl?: number;
+  dbPath?: string;
+  upsert?: boolean;
+}): Promise<{
+  success: boolean;
+  id: string;
+  embedding?: { dimensions: number; model: string };
+  error?: string;
+}> {
+  const {
+    key,
+    value,
+    namespace = 'default',
+    generateEmbeddingFlag = true,
+    tags = [],
+    ttl,
+    dbPath: customPath,
+    upsert = false
+  } = options;
+  const swarmDir = getMemoryRoot();
+  const dbPath = customPath ? path.resolve(customPath) : path.join(swarmDir, 'memory.db');
+
+  try {
+    if (!fs.existsSync(dbPath)) {
+      return { success: false, id: '', error: 'Database not initialized. Run: claude-flow memory init' };
+    }
+
+    await ensureSchemaColumns(dbPath);
+
+    const require = createRequire(import.meta.url);
+    const Database = require('better-sqlite3');
+    const db = new Database(dbPath);
+    const id = `entry_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const now = Date.now();
+
+    let embeddingJson: string | null = null;
+    let embeddingDimensions: number | null = null;
+    let embeddingModel: string | null = null;
+
+    if (generateEmbeddingFlag && value.length > 0) {
+      const embResult = await generateEmbedding(value);
+      embeddingJson = JSON.stringify(embResult.embedding);
+      embeddingDimensions = embResult.dimensions;
+      embeddingModel = embResult.model;
+    }
+
+    const insertSql = upsert
+      ? `INSERT OR REPLACE INTO memory_entries (
+          id, key, namespace, content, type,
+          embedding, embedding_dimensions, embedding_model,
+          tags, metadata, created_at, updated_at, expires_at, status
+        ) VALUES (?, ?, ?, ?, 'semantic', ?, ?, ?, ?, ?, ?, ?, ?, 'active')`
+      : `INSERT INTO memory_entries (
+          id, key, namespace, content, type,
+          embedding, embedding_dimensions, embedding_model,
+          tags, metadata, created_at, updated_at, expires_at, status
+        ) VALUES (?, ?, ?, ?, 'semantic', ?, ?, ?, ?, ?, ?, ?, ?, 'active')`;
+
+    const write = db.transaction(() => {
+      try {
+        db.prepare(
+          `INSERT OR IGNORE INTO vector_indexes (id, name, dimensions) VALUES (?, ?, ?)`
+        ).run(namespace, namespace, embeddingDimensions ?? 384);
+      } catch {
+        /* vector_indexes may not exist on legacy DBs — fall through */
+      }
+
+      db.prepare(insertSql).run(
+        id,
+        key,
+        namespace,
+        value,
+        embeddingJson,
+        embeddingDimensions,
+        embeddingModel,
+        tags.length > 0 ? JSON.stringify(tags) : null,
+        '{}',
+        now,
+        now,
+        ttl ? now + (ttl * 1000) : null
+      );
+    });
+
+    write();
+    try {
+      db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch {
+      /* checkpoint is best-effort */
+    }
+    db.close();
+
+    if (embeddingJson) {
+      const embResult = JSON.parse(embeddingJson) as number[];
+      await addToHNSWIndex(id, embResult, {
+        id,
+        key,
+        namespace,
+        content: value
+      });
+    }
+
+    return {
+      success: true,
+      id,
+      embedding: embeddingJson ? { dimensions: embeddingDimensions!, model: embeddingModel! } : undefined
+    };
+  } catch (error) {
+    return {
+      success: false,
+      id: '',
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
 }
 
@@ -606,6 +820,12 @@ export async function searchHNSWIndex(
 
 /**
  * Get HNSW index status
+ *
+ * #1987: `entryCount` here reflects ONLY the in-process `hnswIndex` singleton.
+ * A fresh CLI invocation never hydrates that singleton (it loads lazily on
+ * search), so this count is always 0 for `memory stats`. Callers that want
+ * the durable count of embedded rows should use `countVectorEntries()` and
+ * keep this function for the in-process index status alone.
  */
 export function getHNSWStatus(): {
   available: boolean;
@@ -630,6 +850,36 @@ export function getHNSWStatus(): {
     entryCount: hnswIndex?.entries.size ?? 0,
     dimensions: hnswIndex?.dimensions ?? 384
   };
+}
+
+/**
+ * #1987: Count persisted `memory_entries` rows that have an embedding,
+ * independent of the in-process HNSW singleton. Used by `memory stats` so a
+ * fresh CLI process reports the durable count, not the empty in-process
+ * cache. Returns 0 if the DB does not exist yet or the query fails — same
+ * shape as a never-populated index, which is the correct fallback for stats.
+ */
+export async function countVectorEntries(dbPath?: string): Promise<number> {
+  const path_ = dbPath || path.join(getMemoryRoot(), 'memory.db');
+  if (!fs.existsSync(path_)) return 0;
+
+  try {
+    const initSqlJs = (await import('sql.js')).default;
+    const SQL = await initSqlJs();
+    const fileBuffer = fs.readFileSync(path_);
+    const db = new SQL.Database(fileBuffer);
+    try {
+      const result = db.exec(
+        "SELECT COUNT(*) FROM memory_entries WHERE embedding IS NOT NULL AND embedding != ''"
+      );
+      const count = (result[0]?.values[0]?.[0] as number) ?? 0;
+      return typeof count === 'number' ? count : 0;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -2054,8 +2304,31 @@ export async function storeEntry(options: {
           content: options.value,
         }).catch(() => {});
       }
-      return bridgeResult;
+      if (!bridgeResult.success) {
+        return bridgeResult;
+      }
+      if (await rawMemoryEntryExists(options)) {
+        return bridgeResult;
+      }
+
+      // The AgentDB bridge can report success after writing only to an
+      // in-process/cache-backed controller. Verify the configured SQLite store
+      // before accepting success; otherwise write through to the durable DB.
+      const durableResult = await storeEntryWithBetterSqlite(options);
+      if (durableResult.success) {
+        return durableResult;
+      }
+      return {
+        success: false,
+        id: bridgeResult.id || '',
+        error: `Bridge reported success but durable SQLite verification failed: ${durableResult.error || 'unknown error'}`
+      };
     }
+  }
+
+  const betterSqliteResult = await storeEntryWithBetterSqlite(options);
+  if (betterSqliteResult.success) {
+    return betterSqliteResult;
   }
 
   // Fallback: raw sql.js

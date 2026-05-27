@@ -92,8 +92,11 @@ export async function buildRabitqIndex(options?: {
     }
 
     const dimensions = options?.dimensions ?? 384;
-    const swarmDir = path.resolve(process.cwd(), '.swarm');
-    const dbPath = options?.dbPath ? path.resolve(options.dbPath) : path.join(swarmDir, 'memory.db');
+    // #1987: route through getMemoryRoot() so CLAUDE_FLOW_MEMORY_PATH and
+    // claude-flow.config.json#memory.persistPath are honored here too. Same
+    // pattern #1945 applied to the bridge.
+    const { getMemoryRoot } = await import('./memory-initializer.js');
+    const dbPath = options?.dbPath ? path.resolve(options.dbPath) : path.join(getMemoryRoot(), 'memory.db');
 
     const entries: RabitqEntry[] = [];
     const vectors: number[] = [];
@@ -175,7 +178,7 @@ export async function buildRabitqIndex(options?: {
 
     // Persist metadata for fast reload hint
     try {
-      const metaPath = path.join(swarmDir, 'rabitq.meta.json');
+      const metaPath = path.join(path.dirname(dbPath), 'rabitq.meta.json');
       fs.writeFileSync(metaPath, JSON.stringify({
         vectorCount: entries.length,
         dimensions,
