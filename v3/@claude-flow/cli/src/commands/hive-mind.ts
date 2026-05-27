@@ -282,6 +282,15 @@ async function spawnClaudeCodeInstance(
         shell: false,
       });
 
+      // Verify the process actually started — childSpawn() returns synchronously
+      // and exitCode is non-null immediately if the binary was not found or
+      // could not be exec'd (ENOENT, EACCES, etc.).
+      if (!claudeProcess || claudeProcess.killed || claudeProcess.exitCode !== null) {
+        output.writeln();
+        output.printError('Failed to launch Claude Code');
+        return { success: false, promptFile };
+      }
+
       // Set up SIGINT handler for session management
       let isExiting = false;
       const sigintHandler = () => {
