@@ -1,4 +1,4 @@
-import type { ClaudeFlowPlugin, PluginContext } from '../../shared/src/plugin-interface.js';
+import type { ClaudeFlowPlugin, PluginContext } from '@claude-flow/shared/src/plugin-interface.js';
 import { createBrowserService, type BrowserService, type BrowserServiceConfig } from './index.js';
 
 export class BrowserDomainPlugin implements ClaudeFlowPlugin {

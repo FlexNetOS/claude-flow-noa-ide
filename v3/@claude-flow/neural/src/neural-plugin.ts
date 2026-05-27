@@ -1,4 +1,4 @@
-import type { ClaudeFlowPlugin, PluginContext } from '../../shared/src/plugin-interface.js';
+import type { ClaudeFlowPlugin, PluginContext } from '@claude-flow/shared/src/plugin-interface.js';
 import { NeuralLearningSystem, createNeuralLearningSystem } from './index.js';
 
 export class NeuralDomainPlugin implements ClaudeFlowPlugin {

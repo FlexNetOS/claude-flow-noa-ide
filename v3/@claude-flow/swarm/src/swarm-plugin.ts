@@ -1,4 +1,4 @@
-import type { ClaudeFlowPlugin, PluginContext } from '../../shared/src/plugin-interface.js';
+import type { ClaudeFlowPlugin, PluginContext } from '@claude-flow/shared/src/plugin-interface.js';
 import { createUnifiedSwarmCoordinator, type UnifiedSwarmCoordinator } from './index.js';
 
 export class SwarmDomainPlugin implements ClaudeFlowPlugin {

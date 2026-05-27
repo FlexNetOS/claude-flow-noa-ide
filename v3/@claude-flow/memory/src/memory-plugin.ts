@@ -1,4 +1,4 @@
-import type { ClaudeFlowPlugin, PluginContext } from '../../shared/src/plugin-interface.js';
+import type { ClaudeFlowPlugin, PluginContext } from '@claude-flow/shared/src/plugin-interface.js';
 import {
   UnifiedMemoryService,
   createInMemoryService,
