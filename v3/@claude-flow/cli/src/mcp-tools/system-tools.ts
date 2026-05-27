@@ -313,13 +313,19 @@ export const systemTools: MCPTool[] = [
       const checks: Array<{ name: string; status: string; latency?: number; message?: string }> = [];
       const projectCwd = getProjectCwd();
 
-      // Memory DB check — verify any supported store file exists
+      // Memory DB check — verify any supported store file exists.
+      // Modern backend is sql.js at .swarm/memory.db (see memory-initializer.js).
+      // Fallback paths cover alternate configs and the legacy JSON backend.
       {
         const t0 = performance.now();
         const legacyPath = join(projectCwd, '.claude-flow', 'memory', 'store.json');
         const agentDbPath = join(projectCwd, '.claude-flow', 'memory', 'agentdb.sqlite');
         const rvfPath = join(projectCwd, '.claude-flow', 'memory', 'store.rvf');
-        const memoryExists = existsSync(legacyPath) || existsSync(agentDbPath) || existsSync(rvfPath);
+        const memoryExists =
+          existsSync(join(projectCwd, '.swarm', 'memory.db')) ||
+          existsSync(join(projectCwd, '.claude-flow', 'memory.db')) ||
+          existsSync(join(projectCwd, 'data', 'memory.db')) ||
+          existsSync(legacyPath) || existsSync(agentDbPath) || existsSync(rvfPath);
         const elapsed = performance.now() - t0;
         checks.push({
           name: 'memory',
