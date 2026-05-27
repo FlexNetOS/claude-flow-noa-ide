@@ -48,14 +48,16 @@ User --> Ruflo (CLI/MCP) --> Router --> Swarm --> Agents --> Memory --> LLM Prov
 Install Ruflo as a native Claude Code plugin -- adds skills, commands, agents, and MCP tools directly:
 
 ```bash
-# Add the marketplace
-/plugin marketplace add ruvnet/ruflo
+> Note: Claude Code cannot install RuFlo plugins directly from the raw `ruvnet/ruflo` GitHub repository.
+> Claude Code expects either a valid published marketplace manifest or a local checkout of the repository.
 
-# Install core + any plugins you need
-/plugin install ruflo-core@ruflo
-/plugin install ruflo-swarm@ruflo
-/plugin install ruflo-autopilot@ruflo
-/plugin install ruflo-federation@ruflo
+```bash
+# Clone RuFlo locally
+git clone https://github.com/ruvnet/ruflo.git
+cd ruflo
+
+# Then install RuFlo plugins from a supported local or published source
+```
 ```
 
 <details>

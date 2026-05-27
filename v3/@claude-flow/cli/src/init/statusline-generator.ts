@@ -651,17 +651,36 @@ function generateStatusline() {
   // Read version from package.json
   let pkgVersion = '3.6';
   try {
-    const pkgPath = path.join(CWD, 'node_modules', '@claude-flow', 'cli', 'package.json');
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-      if (pkg.version) pkgVersion = pkg.version;
-    } else {
-      // Try npx-installed location
-      const npxPkg = path.join(CWD, 'v3', '@claude-flow', 'cli', 'package.json');
-      if (fs.existsSync(npxPkg)) {
-        const pkg = JSON.parse(fs.readFileSync(npxPkg, 'utf-8'));
-        if (pkg.version) pkgVersion = pkg.version;
-      }
+    const home = require('os').homedir();
+    // Resolve global npm prefix so we also cover nvm-style and system-wide
+    // installs (`npm i -g ruflo`). Without this, users on nvm fell through
+    // to the hardcoded fallback even though `ruflo --version` reported correctly.
+    const npmGlobalRoot = safeExec('npm root -g', 1500);
+    const pkgPaths = [
+      // 1. The plugin's own root (installed via /plugin install).
+      path.join(home, '.claude', 'plugins', 'marketplaces', 'ruflo', 'package.json'),
+      // 2. Project-local @claude-flow/cli — npm-style install.
+      path.join(CWD, 'node_modules', '@claude-flow', 'cli', 'package.json'),
+      // 3. Project-local ruflo umbrella.
+      path.join(CWD, 'node_modules', 'ruflo', 'package.json'),
+      // 4. Source-checkout location (when developing in this repo).
+      path.join(CWD, 'v3', '@claude-flow', 'cli', 'package.json'),
+      // 5. Global npm install (nvm / system) — resolved at runtime.
+      ...(npmGlobalRoot ? [
+        path.join(npmGlobalRoot, 'ruflo', 'package.json'),
+        path.join(npmGlobalRoot, '@claude-flow', 'cli', 'package.json'),
+      ] : []),
+    ];
+    for (const p of pkgPaths) {
+      if (!fs.existsSync(p)) continue;
+      try {
+        const pkg = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        if (pkg && typeof pkg.version === 'string' && pkg.version.length > 0) {
+          pkgVersion = pkg.version;
+          break;
+        }
+      } catch { /* malformed package.json — try next */ }
+
     }
   } catch { /* use default */ }
   let header = c.bold + c.brightPurple + '\\u258A RuFlo V' + pkgVersion + ' ' + c.reset;

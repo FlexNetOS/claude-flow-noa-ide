@@ -4,6 +4,21 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
+// Mirror suppression from @claude-flow/cli/bin/cli.js — ruflo imports dist/src/index.js
+// directly so it bypasses the canonical entry's console.warn patch.
+const _origWarn = console.warn;
+console.warn = (...args) => {
+  const msg = String(args[0] ?? '');
+  if (msg.includes('[AgentDB Patch]')) return;
+  _origWarn.apply(console, args);
+};
+const _origLog = console.log;
+console.log = (...args) => {
+  const msg = String(args[0] ?? '');
+  if (msg.includes('[AgentDB Patch]')) return;
+  _origLog.apply(console, args);
+};
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const cliArgs = process.argv.slice(2);
 
@@ -121,9 +136,9 @@ if (isMCPMode) {
   });
   cli.run()
     .then(() => {
-      // #1641/#1653: Exit cleanly after one-shot commands.
-      // HNSW VectorDb, sql.js WASM, and ONNX worker threads keep the
-      // event loop alive after the command handler returns.
+      // #1552/#1641/#1653: Exit cleanly after one-shot commands. Mirrors @claude-flow/cli/bin/cli.js.
+      // HNSW VectorDb, sql.js WASM, and ONNX worker threads keep the event loop alive.
+      // Long-running commands (daemon foreground, mcp, status --watch) never resolve.
       process.exit(0);
     })
     .catch((error) => {
