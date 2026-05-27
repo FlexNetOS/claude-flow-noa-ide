@@ -1,0 +1,437 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1779907289148,
+  "projectRoot": "/home/drdave/_work/repos/_forks/ruflo",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": ">=20.0.0",
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "vitest",
+        "version": "1.0.0",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": "Node.js 20.0.0"
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": "npm test",
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "tsx watch src/index.ts",
+      "build": "tsc",
+      "build:ts": "cd v3/@claude-flow/cli && npm run build || true",
+      "test": "vitest",
+      "test:ui": "vitest --ui",
+      "test:security": "vitest run v3/__tests__/security/",
+      "lint": "cd v3/@claude-flow/cli && npm run lint || true",
+      "security:audit": "npm audit --audit-level high",
+      "security:fix": "npm audit fix",
+      "security:test": "npm run test:security",
+      "v3:domains": "npm run build:domains",
+      "v3:swarm": "npm run start:swarm",
+      "v3:security": "npm run security:audit && npm run security:test"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": "*.test.ts",
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "bin",
+      "docs",
+      "scripts",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "agents": {
+      "path": "agents",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1779907289138,
+      "keyFiles": [
+        "architect.yaml",
+        "coder.yaml",
+        "reviewer.yaml",
+        "security-architect.yaml",
+        "tester.yaml"
+      ]
+    },
+    "bin": {
+      "path": "bin",
+      "purpose": "Executable scripts",
+      "fileCount": 3,
+      "lastAccessed": 1779907289138,
+      "keyFiles": [
+        "cli.js",
+        "npx-repair.js",
+        "npx-safe-launch.js"
+      ]
+    },
+    "data": {
+      "path": "data",
+      "purpose": "Data files",
+      "fileCount": 0,
+      "lastAccessed": 1779907289145,
+      "keyFiles": []
+    },
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 0,
+      "lastAccessed": 1779907289146,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 3,
+      "lastAccessed": 1779907289146,
+      "keyFiles": [
+        "USERGUIDE.md",
+        "_config.yml",
+        "index.md"
+      ]
+    },
+    "plugin": {
+      "path": "plugin",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1779907289146,
+      "keyFiles": []
+    },
+    "plugins": {
+      "path": "plugins",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1779907289146,
+      "keyFiles": [
+        "README.md"
+      ]
+    },
+    "ruflo": {
+      "path": "ruflo",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1779907289146,
+      "keyFiles": [
+        "README.md",
+        "docker-compose.yml",
+        "package.json",
+        "rvf.manifest.json"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 3,
+      "lastAccessed": 1779907289146,
+      "keyFiles": [
+        "cleanup-v3.sh",
+        "install.sh",
+        "verify-appliance.sh"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 8,
+      "lastAccessed": 1779907289146,
+      "keyFiles": [
+        "context-persistence-hook.test.mjs",
+        "rvf-backend.test.ts",
+        "rvf-capability-verify.test.ts",
+        "rvf-embeddings.test.ts",
+        "rvf-event-log.test.ts"
+      ]
+    },
+    "v2": {
+      "path": "v2",
+      "purpose": null,
+      "fileCount": 25,
+      "lastAccessed": 1779907289147,
+      "keyFiles": [
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "DOCKER_TEST_CONFIRMATION.md",
+        "LICENSE",
+        "README.md"
+      ]
+    },
+    "v3": {
+      "path": "v3",
+      "purpose": null,
+      "fileCount": 15,
+      "lastAccessed": 1779907289147,
+      "keyFiles": [
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "README.md",
+        "bunfig.toml",
+        "index.ts"
+      ]
+    },
+    "ruflo/assets": {
+      "path": "ruflo/assets",
+      "purpose": "Static assets",
+      "fileCount": 2,
+      "lastAccessed": 1779907289147,
+      "keyFiles": [
+        "ruFlo.png",
+        "ruflo-small.jpeg"
+      ]
+    },
+    "ruflo/bin": {
+      "path": "ruflo/bin",
+      "purpose": "Executable scripts",
+      "fileCount": 1,
+      "lastAccessed": 1779907289147,
+      "keyFiles": [
+        "ruflo.js"
+      ]
+    },
+    "ruflo/docs": {
+      "path": "ruflo/docs",
+      "purpose": "Documentation",
+      "fileCount": 4,
+      "lastAccessed": 1779907289147,
+      "keyFiles": [
+        "AUTH.md",
+        "DOCKER.md",
+        "MODELS.md"
+      ]
+    },
+    "ruflo/src": {
+      "path": "ruflo/src",
+      "purpose": "Source code",
+      "fileCount": 1,
+      "lastAccessed": 1779907289148,
+      "keyFiles": []
+    },
+    "v3/__tests__": {
+      "path": "v3/__tests__",
+      "purpose": "Test files",
+      "fileCount": 1,
+      "lastAccessed": 1779907289148,
+      "keyFiles": [
+        "setup.ts"
+      ]
+    },
+    "v3/docs": {
+      "path": "v3/docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1779907289148,
+      "keyFiles": [
+        "CLAUDE-FLOW-VS-TEAMMATE-TOOL-COMPARISON.md"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "",
+      "accessCount": 21,
+      "lastAccessed": 1779910951451,
+      "type": "directory"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src",
+      "accessCount": 10,
+      "lastAccessed": 1779908839588,
+      "type": "directory"
+    },
+    {
+      "path": "tests/rvf-backend.test.ts",
+      "accessCount": 4,
+      "lastAccessed": 1779908075434,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/services/worker-daemon.ts",
+      "accessCount": 3,
+      "lastAccessed": 1779908832235,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/production/monitoring.ts",
+      "accessCount": 3,
+      "lastAccessed": 1779908851395,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/memory/intelligence.ts",
+      "accessCount": 3,
+      "lastAccessed": 1779908852984,
+      "type": "file"
+    },
+    {
+      "path": "tests/rvf-capability-verify.test.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779908076159,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/services/worker-queue.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779909902717,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/memory/memory-bridge.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779909911684,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/textGeneration/generate.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779909912068,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/memory/src/cache-manager.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779910837267,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/shared/src/mcp/connection-pool.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779910955218,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/memory/memory-initializer.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779907732797,
+      "type": "file"
+    },
+    {
+      "path": "tests/rvf-learning-store.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779908013658,
+      "type": "file"
+    },
+    {
+      "path": "tests/rvf-migration.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779908021686,
+      "type": "file"
+    },
+    {
+      "path": "v3",
+      "accessCount": 1,
+      "lastAccessed": 1779908785352,
+      "type": "directory"
+    },
+    {
+      "path": "ruflo",
+      "accessCount": 1,
+      "lastAccessed": 1779908789651,
+      "type": "directory"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/ruvector/vector-db.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779908803949,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/production/rate-limiter.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779908812997,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/services/config-file-manager.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779908813501,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779908814248,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/init/statusline-generator.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779908841656,
+      "type": "file"
+    },
+    {
+      "path": "tests",
+      "accessCount": 1,
+      "lastAccessed": 1779909454988,
+      "type": "directory"
+    },
+    {
+      "path": "v3/@claude-flow/cli/src/production/circuit-breaker.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779909470946,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/database.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779909901615,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/conversation.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779909902165,
+      "type": "file"
+    },
+    {
+      "path": "ruflo/src/ruvocal/src/lib/server/database/rvf.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779909910819,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/shared/src/resilience/circuit-breaker.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910843369,
+      "type": "file"
+    },
+    {
+      "path": "v3/@claude-flow/memory/src/json-security.ts",
+      "accessCount": 1,
+      "lastAccessed": 1779910843822,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

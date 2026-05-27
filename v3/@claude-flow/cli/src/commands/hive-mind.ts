@@ -278,8 +278,8 @@ async function spawnClaudeCodeInstance(
 
       // Spawn claude with properly ordered arguments
       const claudeProcess = childSpawn('claude', claudeArgs, {
-        stdio: 'inherit',
-        shell: false,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
       });
 
       // Verify the process actually started — childSpawn() returns synchronously

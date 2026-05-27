@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/ruvnet-ruflo-badge.png)](https://mseep.ai/app/ruvnet-ruflo)
+
 <div align="center">
 
 [![Ruflo Banner](ruflo/assets/ruflo-small.jpeg)](https://flo.ruv.io/)
@@ -11,6 +13,11 @@
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-green?style=for-the-badge&logo=anthropic)](https://github.com/ruvnet/claude-flow)
 
 # Ruflo
+
+## What's different in this fork
+
+We've added a new 'Common Workflows' section to the README to cut down on that
+
 
 **Multi-agent AI orchestration for Claude Code**
 

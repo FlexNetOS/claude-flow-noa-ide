@@ -1,0 +1,21 @@
+{
+  "name": "ruflo-rtk",
+  "description": "RTK shell-output compression adapter — rewrites Bash commands through RTK (Rust Token Killer) for 60-90% token savings at the stdout layer, stacking with Ruflo's context-layer Token Optimizer",
+  "version": "0.1.0",
+  "author": {
+    "name": "dkarasev",
+    "url": "https://github.com/dkarasev"
+  },
+  "homepage": "https://github.com/ruvnet/ruflo",
+  "license": "MIT",
+  "keywords": [
+    "ruflo",
+    "rtk",
+    "token-optimization",
+    "compression",
+    "bash",
+    "hooks",
+    "pre-tool-use",
+    "developer-tools"
+  ]
+}

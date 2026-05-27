@@ -1,0 +1,15 @@
+{
+  "agents": [
+    {
+      "agent_id": "a9c1e29d85d0c3987",
+      "agent_type": "ecc:performance-optimizer",
+      "started_at": "2026-05-27T19:42:30.356Z",
+      "parent_mode": "none",
+      "status": "running"
+    }
+  ],
+  "total_spawned": 1,
+  "total_completed": 0,
+  "total_failed": 0,
+  "last_updated": "2026-05-27T19:42:30.456Z"
+}
