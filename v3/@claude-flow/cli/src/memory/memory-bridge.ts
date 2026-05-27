@@ -432,6 +432,15 @@ export async function bridgeStoreEntry(options: {
       ttl ? now + (ttl * 1000) : null
     );
 
+    // Flush sql.js in-memory data to disk (agentdb sql.js wrapper only saves on close())
+    if (ctx.db && typeof ctx.db.save === 'function') {
+      try { ctx.db.save(); } catch (e) {
+        // Persistence failed; entry exists in-memory but will be lost on exit.
+        // Warn (not throw) to preserve the store-success contract for callers.
+        console.warn(`[memory-bridge] sql.js flush to disk failed: ${e instanceof Error ? e.message : String(e)}. Entry exists in-memory only.`);
+      }
+    }
+
     // Phase 2: Write-through to TieredCache
     const safeNs = String(namespace).replace(/:/g, '_');
     const safeKey = String(key).replace(/:/g, '_');
