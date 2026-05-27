@@ -115,6 +115,44 @@ Install Ruflo as a native Claude Code plugin -- adds skills, commands, agents, a
 | **ruflo-ddd** | Scaffold domain-driven design — contexts, aggregates, events |
 | **ruflo-sparc** | Guided 5-phase development methodology with quality gates |
 
+## AgentDB / RAG behavior
+
+### Automatic ingestion
+Agents automatically ingest project context into AgentDB through:
+
+- SessionStart hooks
+- auto-memory import
+- post-task trajectory capture
+
+This keeps AgentDB updated without requiring manual vector-store prompts.
+
+### Retrieval flow
+Agents retrieve context through:
+
+- `memory_search_unified`
+- AgentDB vector search
+- Claude memory + AgentDB merged retrieval
+
+This allows semantic retrieval before file search or edit decisions.
+
+### Tracking / audit
+RAG usage can be inspected through:
+
+- `memory_bridge_status`
+- statusline memory indicators
+- auto-memory hook status output
+
+This makes AgentDB usage visible and debuggable.
+
+### What gets stored
+AgentDB stores:
+
+- Claude auto-memory entries
+- task trajectories
+- routing decisions
+- learned execution patterns
+- ONNX vector embeddings for semantic search
+
 #### DevOps & Observability
 
 | Plugin | What it does |
@@ -337,6 +375,13 @@ User --> Claude Code / CLI
 </details>
 
 ---
+
+## Roadmap & ADR Tracking
+
+Planning and architecture tracking for the v3.6 cycle is documented here:
+
+- Roadmap: `docs/roadmap/v3.6-roadmap.md`
+- ADR Index: `docs/adr/README.md`
 
 ## Documentation
 
