@@ -192,6 +192,34 @@ describe('ControllerRegistry', () => {
       const report = await registry.healthCheck();
       expect(report.initTimeMs).toBeGreaterThan(0);
     });
+
+    it('should pass vectorBackend config to AgentDB and expose via getController', async () => {
+      const mockVectorBackend = { type: 'ruvector', search: vi.fn() };
+
+      // Mock agentdb module to return instance with vectorBackend property
+      vi.doMock('agentdb', () => ({
+        AgentDB: class MockAgentDB {
+          vectorBackend = mockVectorBackend;
+          vectorBackendName = 'ruvector';
+          vectorDimension = 384;
+          initialized = false;
+          async initialize() { this.initialized = true; }
+          async close() {}
+          get database() { return null; }
+          getController(name: string) {
+            if (['reflexion', 'memory', 'skills', 'causal', 'causalGraph'].includes(name)) return null;
+            throw new Error(`Unknown controller: ${name}`);
+          }
+        },
+      }));
+
+      const reg = new ControllerRegistry();
+      await reg.initialize({ backend: mockBackend, vectorBackend: 'rvf', dimension: 384 });
+
+      const vb = reg.get('vectorBackend');
+      expect(vb).not.toBeNull();
+      expect(vb).toBe(mockVectorBackend);
+    });
   });
 
   // ----- Level-Based Ordering -----

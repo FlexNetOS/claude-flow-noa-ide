@@ -113,6 +113,9 @@ export interface RuntimeConfig {
   /** Vector dimension (default: 384 for MiniLM) */
   dimension?: number;
 
+  /** Vector backend to use (default: 'auto') */
+  vectorBackend?: 'auto' | 'rvf' | 'hnswlib';
+
   /** Embedding generator function */
   embeddingGenerator?: EmbeddingGenerator;
 
@@ -480,7 +483,11 @@ export class ControllerRegistry extends EventEmitter {
         return;
       }
 
-      this.agentdb = new AgentDBClass({ dbPath });
+      this.agentdb = new AgentDBClass({
+        dbPath,
+        vectorBackend: config.vectorBackend ?? 'auto',
+        vectorDimension: config.dimension ?? 384,
+      });
 
       // Suppress agentdb's noisy info-level output during init
       // using stderr redirect instead of monkey-patching console.log
@@ -910,6 +917,15 @@ export class ControllerRegistry extends EventEmitter {
         // These are accessed via AgentDB internal state, not direct construction
         if (!this.agentdb) return null;
         try {
+          // vectorBackend is exposed as a direct property on AgentDB instance.
+          // Note: agentdb.getController() does not support 'vectorBackend'
+          // (only reflexion/skills/causalGraph). Accessing via direct property
+          // is intentional — if AgentDB changes internals, this should be
+          // replaced by a proper getController('vectorBackend') upstream.
+          // TODO: request getController('vectorBackend') support in agentdb.
+          if (name === 'vectorBackend' && this.agentdb.vectorBackend) {
+            return this.agentdb.vectorBackend;
+          }
           if (typeof this.agentdb.getController === 'function') {
             return this.agentdb.getController(name) ?? null;
           }
