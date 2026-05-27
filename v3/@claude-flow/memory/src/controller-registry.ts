@@ -134,6 +134,9 @@ export interface RuntimeConfig {
   /** Controllers to explicitly enable/disable */
   controllers?: Partial<Record<ControllerName, boolean>>;
 
+  /** Vector backend to use (rvf, hnswlib, auto) */
+  vectorBackend?: string;
+
   /** Backend instance to use (if pre-created) */
   backend?: IMemoryBackend;
 

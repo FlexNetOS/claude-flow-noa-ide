@@ -314,26 +314,6 @@ export const systemTools: MCPTool[] = [
       const projectCwd = getProjectCwd();
 
       // Memory DB check — verify any supported store file exists.
-<<<<<<< HEAD
-      // Modern backend is sql.js at .swarm/memory.db (see memory-initializer.js).
-      // Fallback paths cover alternate configs and the legacy JSON backend.
-      {
-        const t0 = performance.now();
-        const legacyPath = join(projectCwd, '.claude-flow', 'memory', 'store.json');
-        const agentDbPath = join(projectCwd, '.claude-flow', 'memory', 'agentdb.sqlite');
-        const rvfPath = join(projectCwd, '.claude-flow', 'memory', 'store.rvf');
-        // #1843 — current sql.js / HNSW / RuVector memory paths used by alpha runtime
-        const sqljsPath = join(projectCwd, '.claude-flow', 'memory', 'claude-flow.db');
-        const swarmDbPath = join(projectCwd, '.swarm', 'memory.db');
-        const ruvectorDbPath = join(projectCwd, 'ruvector.db');
-        const memoryExists =
-          existsSync(legacyPath) ||
-          existsSync(agentDbPath) ||
-          existsSync(rvfPath) ||
-          existsSync(sqljsPath) ||
-          existsSync(swarmDbPath) ||
-          existsSync(ruvectorDbPath);
-=======
       // #1843: cover sql.js / HNSW / .swarm and root-level rvf/db paths,
       // not just the legacy `.claude-flow/memory/*` triple.
       {
@@ -348,7 +328,6 @@ export const systemTools: MCPTool[] = [
           join(projectCwd, 'agentdb.rvf'),                                // root rvf
         ];
         const memoryExists = memoryCandidates.some(existsSync);
->>>>>>> pr-1936-head
         const elapsed = performance.now() - t0;
         checks.push({
           name: 'memory',
@@ -358,20 +337,6 @@ export const systemTools: MCPTool[] = [
         });
       }
 
-<<<<<<< HEAD
-      // Config check — verify config file exists. #1843: also accept YAML.
-      {
-        const t0 = performance.now();
-        const configPath = join(projectCwd, '.claude-flow', 'config.json');
-        const yamlConfigPath = join(projectCwd, '.claude-flow', 'config.yaml');
-        const altConfigPath = join(projectCwd, 'claude-flow.config.json');
-        const altYamlConfigPath = join(projectCwd, 'claude-flow.config.yaml');
-        const configExists =
-          existsSync(configPath) ||
-          existsSync(yamlConfigPath) ||
-          existsSync(altConfigPath) ||
-          existsSync(altYamlConfigPath);
-=======
       // Config check — verify config file exists.
       // #1843: also accept YAML config (.claude-flow/config.yaml) which
       // the rest of v3 treats as canonical; previous code only counted
@@ -387,7 +352,6 @@ export const systemTools: MCPTool[] = [
           join(projectCwd, 'claude-flow.config.yml'),
         ];
         const configExists = configCandidates.some(existsSync);
->>>>>>> pr-1936-head
         const elapsed = performance.now() - t0;
         checks.push({
           name: 'config',
@@ -491,15 +455,6 @@ export const systemTools: MCPTool[] = [
         }
       }
 
-<<<<<<< HEAD
-      // #1843 — `unknown` checks are advisory (we couldn't verify, not failures);
-      // exclude them from the denominator so the score reflects actionable state.
-      const healthy = checks.filter(c => c.status === 'healthy').length;
-      const unknown = checks.filter(c => c.status === 'unknown').length;
-      const total = checks.length;
-      const actionable = total - unknown;
-      const overallHealth = actionable === 0 ? 1 : healthy / actionable;
-=======
       // #1843: exclude `unknown` checks from the health score denominator.
       // Previously a check reporting `unknown` (e.g. swarm/neural which
       // can't be probed in-process) was counted as a non-healthy hit and
@@ -510,12 +465,12 @@ export const systemTools: MCPTool[] = [
       const total = checks.length;
       const scoreDenominator = total - advisory;
       const overallHealth = scoreDenominator > 0 ? healthy / scoreDenominator : 1;
->>>>>>> pr-1936-head
 
       // Update metrics
       metrics.health = overallHealth;
       saveMetrics(metrics);
 
+      const unknown = advisory;
       return {
         overall: overallHealth >= 0.8 ? 'healthy' : overallHealth >= 0.5 ? 'degraded' : 'unhealthy',
         score: Math.round(overallHealth * 100),

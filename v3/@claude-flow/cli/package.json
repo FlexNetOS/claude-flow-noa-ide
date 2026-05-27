@@ -98,7 +98,7 @@
     "@claude-flow/cli-core": "^3.7.0-alpha.5",
     "@claude-flow/mcp": "^3.0.0-alpha.8",
     "@claude-flow/neural": "^3.0.0-alpha.9",
-    "@claude-flow/shared": "^3.0.0-alpha.7",
+    "@claude-flow/shared": "workspace:*",
     "@noble/ed25519": "^2.1.0",
     "@ruvector/rabitq-wasm": "^0.1.0",
     "semver": "^7.6.0",
@@ -106,7 +106,7 @@
     "@claude-flow/memory": "^3.0.0-alpha.17",
     "@claude-flow/embeddings": "^3.0.0-alpha.45",
     "@claude-flow/security": "^3.0.0-alpha.8",
-    "@claude-flow/swarm": "^3.0.0-alpha.8"
+    "@claude-flow/swarm": "workspace:*"
   },
   "optionalDependencies": {
     "@claude-flow/aidefence": "^3.0.2",

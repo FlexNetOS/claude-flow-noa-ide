@@ -1,0 +1,15 @@
+onlyBuiltDependencies:
+  - "@claude-flow/cli"
+  - "@google/genai"
+  - agent-browser
+  - agentdb
+  - agentic-flow
+  - argon2
+  - bcrypt
+  - better-sqlite3
+  - esbuild
+  - hnswlib-node
+  - onnxruntime-node
+  - protobufjs
+  - sharp
+  - tldjs

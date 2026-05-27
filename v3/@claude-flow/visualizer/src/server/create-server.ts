@@ -27,7 +27,25 @@ export interface VisualizerServerOptions {
   storageDir?: string;
 }
 
-export function createVisualizerServer(options: VisualizerServerOptions = {}) {
+
+/**
+ * Explicit return type to avoid TS2742 non-portable declaration error.
+ * express.Application internally references @types/express-serve-static-core
+ * which is non-portable; typing `app` as `any` breaks the transitive chain.
+ */
+export interface VisualizerServerInstance {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  server: any;
+  eventBus: SessionEventBus;
+  eventStore: FileEventStore;
+  appendEvent(event: Omit<VisualizerEvent, "eventId" | "sequence" | "timestamp" | "version" | "sourceRuntime">): VisualizerEvent;
+  seedSession(sessionId: string): SessionSnapshot;
+  listen(): Promise<void>;
+}
+
+export function createVisualizerServer(options: VisualizerServerOptions = {}): VisualizerServerInstance {
   const host = options.host ?? "0.0.0.0";
   const port = options.port ?? 8787;
   const storageDir = options.storageDir ?? join(process.cwd(), ".claude-flow", "visualizer");

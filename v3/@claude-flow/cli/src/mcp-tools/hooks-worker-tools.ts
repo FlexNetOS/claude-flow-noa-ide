@@ -3,7 +3,9 @@
  * Extracted from hooks-tools.ts during the bounded-context split.
  */
 
-import { type MCPTool } from './types.js';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { type MCPTool, getProjectCwd } from './types.js';
 import { validateIdentifier, validateText } from './validate-input.js';
 
 // =============================================================================

@@ -28,5 +28,8 @@
   "publishConfig": {
     "access": "public",
     "tag": "v3alpha"
+  },
+  "dependencies": {
+    "@claude-flow/shared": "workspace:*"
   }
 }

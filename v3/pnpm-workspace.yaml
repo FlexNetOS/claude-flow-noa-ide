@@ -1,2 +1,17 @@
 packages:
   - "@claude-flow/*"
+allowBuilds:
+  '@claude-flow/cli': true
+  '@google/genai': true
+  agent-browser: true
+  agentdb: true
+  agentic-flow: true
+  argon2: true
+  bcrypt: true
+  better-sqlite3: true
+  esbuild: true
+  hnswlib-node: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true
+  tldjs: true

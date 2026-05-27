@@ -315,6 +315,9 @@ export function validateToolInput(
   };
 }
 
+/** Ensures the MCP tool registry is populated (tools are registered on import; this is a compatibility shim for async callers). */
+export async function ensureMcpToolsLoaded(): Promise<void> { /* no-op: tool registration is synchronous on module load */ }
+
 export default {
   callMCPTool,
   getToolMetadata,

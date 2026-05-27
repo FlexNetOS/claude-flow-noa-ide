@@ -432,7 +432,7 @@ export class PluginLoader {
     try {
       // Run initialization with timeout
       await this.withTimeout(
-        plugin.initialize(effectiveContext),
+        plugin.initialize(context),
         this.config.initializationTimeout,
         `Plugin '${plugin.name}' initialization timed out`
       );

@@ -576,11 +576,11 @@ export class SONAManager {
   consolidateEWC(): void {
     if (!this.ewcState) return;
 
-    if (!SonaManager.warnedEwcStub) {
+    if (!SONAManager.warnedEwcStub) {
       console.warn(
         '[SonaManager] consolidateEWC() invoked but EWC is a stub: Fisher information is not populated by the JS wrapper. Catastrophic-forgetting prevention is NOT active.'
       );
-      SonaManager.warnedEwcStub = true;
+      SONAManager.warnedEwcStub = true;
     }
 
     const config = this.getEWCConfig();

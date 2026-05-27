@@ -100,7 +100,7 @@ export class CLI {
       }
 
       // Parse arguments
-      const parseResult = this.parser.parse(args);
+      const parseResult = await this.parser.parse(args);
       const { command: commandPath, flags, positional } = parseResult;
 
       // Handle global flags

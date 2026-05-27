@@ -1,4 +1,3 @@
-<<<<<<< ours
 /**
  * Vitest configuration for @claude-flow/shared.
  *
@@ -8,33 +7,5 @@
  * cross-package include patterns picking up symlinked copies of the same
  * test file via pnpm's nested `node_modules`.
  */
-=======
->>>>>>> theirs
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-<<<<<<< ours
-    environment: 'node',
-    include: ['__tests__/**/*.test.ts', 'src/**/*.test.ts'],
-    exclude: ['node_modules', 'dist', '.git'],
-    globals: true,
-    testTimeout: 10_000,
-    hookTimeout: 10_000,
-    reporters: ['default'],
-    pool: 'forks',
-    poolOptions: {
-      forks: { singleFork: true },
-    },
-    // Match the workspace defaults so behavior is identical when this
-    // package is included from the v3-root harness.
-    mockReset: true,
-    clearMocks: true,
-    restoreMocks: true,
-=======
-    globals: true,
-    environment: 'node',
-    include: ['__tests__/**/*.test.ts'],
->>>>>>> theirs
   },
 });

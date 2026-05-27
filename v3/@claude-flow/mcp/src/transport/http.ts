@@ -382,27 +382,6 @@ export class HttpTransport extends EventEmitter implements ITransport {
     this.httpRequests++;
     this.messagesReceived++;
 
-<<<<<<< ours
-    if (!this.config.allowUnauthenticated) {
-      if (this.config.auth) {
-        const authResult = this.validateAuth(req);
-        if (!authResult.valid) {
-          this.logger.warn('Authentication failed', {
-            ip: req.ip,
-            path: req.path,
-            error: authResult.error,
-          });
-          res.status(401).json({
-            jsonrpc: '2.0',
-            id: null,
-            error: { code: -32001, message: 'Unauthorized' },
-          });
-          return;
-        }
-      } else {
-        // No auth configured and allowUnauthenticated is not set — reject
-        this.logger.warn('No authentication configured — rejecting request. Set allowUnauthenticated for local-only use.');
-=======
     const authConfigured = !!this.config.auth?.tokens?.length;
     const authEnabled = this.config.auth?.enabled === true && authConfigured;
     const nonLoopback = !isLoopback(this.config.host);
@@ -415,7 +394,6 @@ export class HttpTransport extends EventEmitter implements ITransport {
           path: req.path,
           error: authResult.error,
         });
->>>>>>> theirs
         res.status(401).json({
           jsonrpc: '2.0',
           id: null,
@@ -423,8 +401,6 @@ export class HttpTransport extends EventEmitter implements ITransport {
         });
         return;
       }
-<<<<<<< ours
-=======
     } else if (nonLoopback) {
       // Unreachable in normal operation: start() throws for non-loopback without auth.
       // Defensive 401 in case start() was bypassed via direct request injection in tests.
@@ -434,7 +410,6 @@ export class HttpTransport extends EventEmitter implements ITransport {
         error: { code: -32001, message: 'Unauthorized: server requires auth for non-loopback binds' },
       });
       return;
->>>>>>> theirs
     }
 
     const message = req.body;

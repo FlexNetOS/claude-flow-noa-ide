@@ -304,3 +304,10 @@ export interface SimilarityResult {
   /** Metric used */
   metric: SimilarityMetric;
 }
+
+/** Config for optional ruvector ONNX embedding service (ADR-121 Phase 1) */
+export interface RuvectorOnnxEmbeddingConfig {
+  modelPath?: string;
+  dimensions?: number;
+  normalize?: boolean;
+}

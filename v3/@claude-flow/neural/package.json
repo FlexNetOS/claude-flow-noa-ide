@@ -122,6 +122,7 @@
   ],
   "dependencies": {
     "@claude-flow/memory": "^3.0.0-alpha.16",
+    "@claude-flow/shared": "workspace:*",
     "@ruvector/sona": "0.1.5"
   },
   "optionalDependencies": {

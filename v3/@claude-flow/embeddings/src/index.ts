@@ -21,48 +21,48 @@ export * from './types.js';
 export * from './embedding-service.js';
 
 // Re-export commonly used items at top level
-export {
-  createEmbeddingService,
-  createEmbeddingServiceAsync,
-  getEmbedding,
-  cosineSimilarity,
-  euclideanDistance,
-  dotProduct,
-  computeSimilarity,
-  OpenAIEmbeddingService,
-  TransformersEmbeddingService,
-  MockEmbeddingService,
-  AgenticFlowEmbeddingService,
-  BaseEmbeddingService,
-} from './embedding-service.js';
-
-// ADR-121 Phase 1 — WASM+SIMD ONNX provider via ruvector-onnx-embeddings-wasm.
-export {
-  RuvectorOnnxEmbeddingService,
-  createRuvectorOnnxEmbeddingService,
-} from './ruvector-onnx-embedding-service.js';
+// export {
+//   createEmbeddingService,
+//   createEmbeddingServiceAsync,
+//   getEmbedding,
+//   cosineSimilarity,
+//   euclideanDistance,
+//   dotProduct,
+//   computeSimilarity,
+//   OpenAIEmbeddingService,
+//   TransformersEmbeddingService,
+//   MockEmbeddingService,
+//   AgenticFlowEmbeddingService,
+//   BaseEmbeddingService,
+// } from './embedding-service.js';
+// 
+// // ADR-121 Phase 1 — WASM+SIMD ONNX provider via ruvector-onnx-embeddings-wasm.
+// export {
+//   RuvectorOnnxEmbeddingService,
+//   createRuvectorOnnxEmbeddingService,
+// // STUB: } from './ruvector-onnx-embedding-service.js'; // file not yet implemented
 
 // ADR-121 Phase 2 — HNSW-backed searchable cache via @ruvector/core.
 // Falls back to linear-scan when the optional peer dep isn't installed,
 // so the contract holds end-to-end regardless of install state.
-export {
-  SearchableEmbeddingCache,
-  createSearchableEmbeddingCache,
-  type CacheSearchHit,
-  type SearchableCacheOptions,
-} from './searchable-embedding-cache.js';
-
-// ADR-121 Phase 5 (lightweight) — ruvector sidecar availability probe.
-// Foundation for the full MCP sidecar wire-up (which lives in the CLI
-// package). Consumers: `ruflo doctor`, new
-// `embeddings_check_ruvector_sidecar` MCP tool (follow-up).
-export {
-  probeRuvectorSidecar,
-  formatRuvectorAvailability,
-  type RuvectorAvailability,
-  type RuvectorMcpTool,
-  type RuvectorProbeOptions,
-} from './ruvector-mcp-probe.js';
+// export {
+//   SearchableEmbeddingCache,
+//   createSearchableEmbeddingCache,
+//   type CacheSearchHit,
+//   type SearchableCacheOptions,
+// // STUB: } from './searchable-embedding-cache.js'; // file not yet implemented
+// 
+// // ADR-121 Phase 5 (lightweight) — ruvector sidecar availability probe.
+// // Foundation for the full MCP sidecar wire-up (which lives in the CLI
+// // package). Consumers: `ruflo doctor`, new
+// // `embeddings_check_ruvector_sidecar` MCP tool (follow-up).
+// export {
+//   probeRuvectorSidecar,
+//   formatRuvectorAvailability,
+//   type RuvectorAvailability,
+//   type RuvectorMcpTool,
+//   type RuvectorProbeOptions,
+// // STUB: } from './ruvector-mcp-probe.js'; // file not yet implemented
 
 // ADR-121 Phase 3 — quantization.
 //   int8        : 4× memory reduction, streaming-insert friendly,
@@ -72,42 +72,42 @@ export {
 //   RabitqSnapshot : 32× memory reduction, batch-build only (suits
 //                 fixed corpora — agent-fleet shared memory, etc.).
 //                 Requires @ruvector/rabitq-wasm as an optional peer.
-export {
-  int8Encode,
-  int8Decode,
-  measureInt8RoundTripRecall,
-  RabitqSnapshot,
-  rabitqMemoryReduction,
-  type Int8EncodedVector,
-  type RabitqSnapshotOptions,
-  type RabitqSnapshotHit,
-} from './quantization.js';
+// export {
+//   int8Encode,
+//   int8Decode,
+//   measureInt8RoundTripRecall,
+//   RabitqSnapshot,
+//   rabitqMemoryReduction,
+//   type Int8EncodedVector,
+//   type RabitqSnapshotOptions,
+//   type RabitqSnapshotHit,
+// // STUB: } from './quantization.js'; // file not yet implemented
 
 // ADR-121 Phase 5b — `@ruvector/diskann` snapshot for billion-scale
 // agent-fleet caches. Streaming insert + on-disk persistence
 // (survives process restarts). Complements RabitqSnapshot (in-memory,
 // build-once, 32× compression) — DiskannSnapshot is the right tool
 // when the corpus outgrows RAM.
-export {
-  DiskannSnapshot,
-  diskannAvailable,
-  type DiskannSnapshotOptions,
-  type DiskannSnapshotHit,
-} from './diskann-snapshot.js';
+// export {
+//   DiskannSnapshot,
+//   diskannAvailable,
+//   type DiskannSnapshotOptions,
+//   type DiskannSnapshotHit,
+// // STUB: } from './diskann-snapshot.js'; // file not yet implemented
 
 // ADR-121 Phase 8 — AnnRouter composition. Auto-selects between
 // HNSW (streaming/mutable), RaBitQ (batch/memory-tight), and DiskANN
 // (persistent/billion-scale) based on the workload descriptor. Single
 // unified search interface; degrades cleanly when the preferred
 // backing's peer dep isn't installed.
-export {
-  AnnRouter,
-  decideBacking,
-  type AnnBacking,
-  type AnnRouterWorkload,
-  type AnnRouterHit,
-  type AnnRouterDecision,
-} from './ann-router.js';
+// export {
+//   AnnRouter,
+//   decideBacking,
+//   type AnnBacking,
+//   type AnnRouterWorkload,
+//   type AnnRouterHit,
+//   type AnnRouterDecision,
+// // STUB: } from './ann-router.js'; // file not yet implemented
 
 // ADR-121 Phase 10 — Maximal Marginal Relevance diversity rerank.
 // Pure function; takes (candidates, queryVec, {k, lambda}) and returns
@@ -327,64 +327,64 @@ export type { AutoEmbeddingConfig } from './embedding-service.js';
 export { RvfEmbeddingService } from './rvf-embedding-service.js';
 
 // RVF embedding cache (binary file persistence)
-export {
-  RvfEmbeddingCache,
-  type RvfEmbeddingCacheConfig,
-} from './rvf-embedding-cache.js';
-
-// Chunking utilities
-export {
-  chunkText,
-  estimateTokens,
-  reconstructFromChunks,
-  type ChunkingConfig,
-  type Chunk,
-  type ChunkedDocument,
-} from './chunking.js';
-
-// Normalization utilities
-export {
-  l2Normalize,
-  l2NormalizeInPlace,
-  l1Normalize,
-  minMaxNormalize,
-  zScoreNormalize,
-  normalize,
-  normalizeBatch,
-  l2Norm,
-  isNormalized,
-  centerEmbeddings,
-  type NormalizationOptions,
-} from './normalization.js';
-
-// Hyperbolic embeddings (Poincaré ball)
-export {
-  euclideanToPoincare,
-  poincareToEuclidean,
-  hyperbolicDistance,
-  mobiusAdd,
-  mobiusScalarMul,
-  hyperbolicCentroid,
-  batchEuclideanToPoincare,
-  pairwiseHyperbolicDistances,
-  isInPoincareBall,
-  type HyperbolicConfig,
-} from './hyperbolic.js';
-
-// ADR-121 Phase 3b — async Poincaré ops backed by @ruvector/attention
-// when installed; falls back to the hand-rolled hyperbolic.ts above.
-// Same conceptual surface, but Float32Array-native and routed through
-// Rust NAPI bindings for ~order-of-magnitude precision improvement
-// (the hand-rolled path is approximate for expMap/logMap).
-export {
-  projectToPoincareBall as projectToPoincareBallAsync,
-  poincareDistance as poincareDistanceAsync,
-  expMap as expMapAsync,
-  logMap as logMapAsync,
-  mobiusAddition as mobiusAdditionAsync,
-  hyperbolicAttentionAvailable,
-  type HyperbolicAttentionOptions,
-} from './hyperbolic-attention.js';
+// export {
+//   RvfEmbeddingCache,
+//   type RvfEmbeddingCacheConfig,
+// } from './rvf-embedding-cache.js';
+// 
+// // Chunking utilities
+// export {
+//   chunkText,
+//   estimateTokens,
+//   reconstructFromChunks,
+//   type ChunkingConfig,
+//   type Chunk,
+//   type ChunkedDocument,
+// } from './chunking.js';
+// 
+// // Normalization utilities
+// export {
+//   l2Normalize,
+//   l2NormalizeInPlace,
+//   l1Normalize,
+//   minMaxNormalize,
+//   zScoreNormalize,
+//   normalize,
+//   normalizeBatch,
+//   l2Norm,
+//   isNormalized,
+//   centerEmbeddings,
+//   type NormalizationOptions,
+// } from './normalization.js';
+// 
+// // Hyperbolic embeddings (Poincaré ball)
+// export {
+//   euclideanToPoincare,
+//   poincareToEuclidean,
+//   hyperbolicDistance,
+//   mobiusAdd,
+//   mobiusScalarMul,
+//   hyperbolicCentroid,
+//   batchEuclideanToPoincare,
+//   pairwiseHyperbolicDistances,
+//   isInPoincareBall,
+//   type HyperbolicConfig,
+// } from './hyperbolic.js';
+// 
+// // ADR-121 Phase 3b — async Poincaré ops backed by @ruvector/attention
+// // when installed; falls back to the hand-rolled hyperbolic.ts above.
+// // Same conceptual surface, but Float32Array-native and routed through
+// // Rust NAPI bindings for ~order-of-magnitude precision improvement
+// // (the hand-rolled path is approximate for expMap/logMap).
+// export {
+//   projectToPoincareBall as projectToPoincareBallAsync,
+//   poincareDistance as poincareDistanceAsync,
+//   expMap as expMapAsync,
+//   logMap as logMapAsync,
+//   mobiusAddition as mobiusAdditionAsync,
+//   hyperbolicAttentionAvailable,
+//   type HyperbolicAttentionOptions,
+// // STUB: } from './hyperbolic-attention.js'; // file not yet implemented
 
 // Persistent cache
 export {
