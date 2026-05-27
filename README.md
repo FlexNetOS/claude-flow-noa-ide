@@ -61,6 +61,8 @@ Install Ruflo as a native Claude Code plugin -- adds skills, commands, agents, a
 <details>
 <summary><strong>All 32 plugins</strong></summary>
 
+Ruflo is CLI-agnostic and works with any compatible agent CLI, including Claude Code, OpenAI CLI, Gemini CLI, and Google CLI.
+
 ## Status Bar on Narrow Terminals
 
 On narrow terminal windows, the status bar can take up significant screen space and reduce visible log output.

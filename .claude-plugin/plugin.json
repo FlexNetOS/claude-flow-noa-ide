@@ -7,13 +7,8 @@
     "email": "ruv@ruv.net"
   },
   "homepage": "https://github.com/ruvnet/claude-flow",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ruvnet/claude-flow.git"
-  },
-  "bugs": {
-    "url": "https://github.com/ruvnet/claude-flow/issues"
-  },
+  "repository": "https://github.com/ruvnet/claude-flow.git",
+  "bugs": "https://github.com/ruvnet/claude-flow/issues",
   "license": "MIT",
   "keywords": [
     "ai-agents",
