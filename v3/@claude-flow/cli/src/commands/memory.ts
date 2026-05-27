@@ -343,16 +343,29 @@ const searchCommand: Command = {
     // Use direct sql.js search with vector similarity
     try {
       const { searchEntries } = await import('../memory/memory-initializer.js');
-      const useSmart = (ctx.flags.smart || ctx.flags.s) as boolean;
+      const requestedSmart = (ctx.flags.smart || ctx.flags.s) as boolean;
+      let useSmart = requestedSmart;
 
       let results: { key: string; score: number; namespace: string; preview: string }[];
       let searchTimeMs: number;
       let smartStats: Record<string, unknown> | undefined;
       let backendLabel = 'HNSW + sql.js';
 
+      // Probe smartSearch availability before committing to the smart path. The published
+      // @claude-flow/memory package may be older than this CLI and not yet export smartSearch.
+      let smartSearchFn: ((fn: unknown, opts: unknown) => Promise<{ results: Array<{ key: string; content: string; score: number; namespace: string }>; stats: { durationMs: number } & Record<string, unknown> }>) | undefined;
       if (useSmart) {
-        const { smartSearch } = await import('@claude-flow/memory');
+        const memoryMod = await import('@claude-flow/memory');
+        const candidate = (memoryMod as { smartSearch?: unknown }).smartSearch;
+        if (typeof candidate === 'function') {
+          smartSearchFn = candidate as typeof smartSearchFn;
+        } else {
+          output.printWarning('--smart: smartSearch is not exported by the installed @claude-flow/memory — falling back to standard HNSW semantic search.');
+          useSmart = false;
+        }
+      }
 
+      if (useSmart && smartSearchFn) {
         // Adapt searchEntries to the SearchFn interface
         const rawSearch = async (req: { query: string; namespace?: string; limit?: number; threshold?: number }) => {
           const r = await searchEntries({
@@ -372,7 +385,7 @@ const searchCommand: Command = {
           };
         };
 
-        const smartResult = await smartSearch(rawSearch, {
+        const smartResult = await smartSearchFn(rawSearch, {
           query,
           namespace,
           limit,

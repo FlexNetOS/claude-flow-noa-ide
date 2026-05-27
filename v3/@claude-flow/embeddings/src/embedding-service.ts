@@ -198,6 +198,28 @@ abstract class BaseEmbeddingService extends EventEmitter implements IEmbeddingSe
 // OpenAI Embedding Service
 // ============================================================================
 
+const ALLOWED_EMBEDDING_HOSTS = new Set([
+  'api.openai.com',
+  'api.anthropic.com',
+  'generativelanguage.googleapis.com',
+  'api.cohere.ai',
+  'api-inference.huggingface.co',
+]);
+
+function validateEmbeddingURL(url: string): string {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Embedding service requires HTTPS, got: ${parsed.protocol}`);
+  }
+  if (!ALLOWED_EMBEDDING_HOSTS.has(parsed.hostname)) {
+    throw new Error(
+      `Embedding service URL not in allowlist: ${parsed.hostname}. ` +
+      `Allowed: ${[...ALLOWED_EMBEDDING_HOSTS].join(', ')}`
+    );
+  }
+  return url;
+}
+
 export class OpenAIEmbeddingService extends BaseEmbeddingService {
   readonly provider: EmbeddingProvider = 'openai';
   private readonly apiKey: string;
@@ -210,7 +232,7 @@ export class OpenAIEmbeddingService extends BaseEmbeddingService {
     super(config);
     this.apiKey = config.apiKey;
     this.model = config.model ?? 'text-embedding-3-small';
-    this.baseURL = config.baseURL ?? 'https://api.openai.com/v1/embeddings';
+    this.baseURL = validateEmbeddingURL(config.baseURL ?? 'https://api.openai.com/v1/embeddings');
     this.timeout = config.timeout ?? 30000;
     this.maxRetries = config.maxRetries ?? 3;
   }
@@ -373,19 +395,37 @@ export class TransformersEmbeddingService extends BaseEmbeddingService {
   readonly provider: EmbeddingProvider = 'transformers';
   private pipeline: any = null;
   private readonly modelName: string;
+  private readonly modelPath?: string;
+  private readonly localFilesOnly: boolean;
   private initialized = false;
 
   constructor(config: TransformersEmbeddingConfig) {
     super(config);
     this.modelName = config.model ?? 'Xenova/all-MiniLM-L6-v2';
+    this.modelPath = config.modelPath;
+    this.localFilesOnly = config.localFilesOnly ?? false;
   }
 
   private async initialize(): Promise<void> {
     if (this.initialized) return;
 
     try {
-      const { pipeline } = await import('@xenova/transformers');
-      this.pipeline = await pipeline('feature-extraction', this.modelName);
+      // ADR-094: try @huggingface/transformers first (clears the
+      // protobufjs <7.5.5 critical RCE chain), fall back to legacy
+      // @xenova/transformers for backwards compatibility.
+      const { loadTransformersPipeline } = await import('./transformers-loader.js');
+      const handle = await loadTransformersPipeline();
+      if (!handle) {
+        throw new Error(
+          'No transformers package available. Install @huggingface/transformers (preferred) ' +
+          'or @xenova/transformers to enable ONNX embeddings.',
+        );
+      }
+      const options = this.modelPath ? {
+        cache_dir: this.modelPath,
+        local_files_only: this.localFilesOnly,
+      } : undefined;
+      this.pipeline = await handle.pipeline('feature-extraction', this.modelName, options);
       this.initialized = true;
     } catch (error) {
       throw new Error(`Failed to initialize transformers.js: ${error}`);
@@ -898,6 +938,10 @@ export interface AutoEmbeddingConfig {
   modelId?: string;
   /** Model name for transformers */
   model?: string;
+  /** Transformers.js cache/model directory */
+  modelPath?: string;
+  /** Force local files only for transformers */
+  localFilesOnly?: boolean;
   /** Dimensions */
   dimensions?: number;
   /** Cache size */
@@ -971,6 +1015,8 @@ export async function createEmbeddingServiceAsync(
       const service = new TransformersEmbeddingService({
         provider: 'transformers',
         model: rest.model ?? 'Xenova/all-MiniLM-L6-v2',
+        modelPath: rest.modelPath,
+        localFilesOnly: rest.localFilesOnly,
         cacheSize: rest.cacheSize,
       });
       // Validate it can initialize
@@ -1002,6 +1048,8 @@ export async function createEmbeddingServiceAsync(
         return new TransformersEmbeddingService({
           provider: 'transformers',
           model: rest.model ?? 'Xenova/all-MiniLM-L6-v2',
+          modelPath: rest.modelPath,
+          localFilesOnly: rest.localFilesOnly,
           cacheSize: rest.cacheSize,
         });
       case 'openai':

@@ -9,6 +9,7 @@ import type { Command, CommandContext, CommandResult } from '../types.js';
 import { output } from '../output.js';
 import { existsSync, readFileSync, statSync } from 'fs';
 import { join, dirname } from 'path';
+import { findExistingMCPRegistration } from '../init/mcp-detection.js';
 import { fileURLToPath } from 'url';
 import { execSync, exec } from 'child_process';
 import { promisify } from 'util';
@@ -192,33 +193,56 @@ async function checkGitRepo(): Promise<HealthCheck> {
   }
 }
 
-// Check MCP servers
-async function checkMcpServers(): Promise<HealthCheck> {
-  const mcpConfigPaths = [
-    join(process.env.HOME || '', '.claude/claude_desktop_config.json'),
-    join(process.env.HOME || '', '.config/claude/mcp.json'),
-    '.mcp.json'
-  ];
+// Check AIDefence package availability (#1807)
+//
+// `aidefence_*` MCP tools (scan, analyze, has_pii, stats, learn) require
+// `@claude-flow/aidefence` to be installed and loadable. The package is an
+// optional dependency — present in some installs (project-local) but
+// missing in others (npm-global of `claude-flow`). Without it, every
+// aidefence MCP call fails at runtime with "Cannot find module".
+//
+// Surface that state in `doctor` so operators know BEFORE they rely on
+// AI-defence scanning. The probe is the same dynamic `import()` the MCP
+// tool's handler uses, so a `pass` here means the actual tools will work.
+async function checkAIDefence(): Promise<HealthCheck> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    await import('@claude-flow/aidefence');
+    return {
+      name: 'AIDefence',
+      status: 'pass',
+      message: '@claude-flow/aidefence loadable — aidefence_* MCP tools functional',
+    };
+  } catch {
+    return {
+      name: 'AIDefence',
+      status: 'warn',
+      message: '@claude-flow/aidefence not loadable — aidefence_* MCP tools will fail (optional package)',
+      fix: 'npm install --save @claude-flow/aidefence  (in your project), or run `claude-flow mcp start` from a directory that has it installed',
+    };
+  }
+}
 
-  for (const configPath of mcpConfigPaths) {
-    if (existsSync(configPath)) {
-      try {
-        const content = JSON.parse(readFileSync(configPath, 'utf8'));
-        const servers = content.mcpServers || content.servers || {};
-        const count = Object.keys(servers).length;
-        const hasClaudeFlow = 'claude-flow' in servers || 'claude-flow_alpha' in servers || 'ruflo' in servers || 'ruflo_alpha' in servers;
-        if (hasClaudeFlow) {
-          return { name: 'MCP Servers', status: 'pass', message: `${count} servers (ruflo configured)` };
-        } else {
-          return { name: 'MCP Servers', status: 'warn', message: `${count} servers (ruflo not found)`, fix: 'claude mcp add ruflo -- npx -y ruflo@latest mcp start' };
-        }
-      } catch {
-        // continue to next path
-      }
-    }
+// Check MCP servers — covers Claude Code project-scoped registrations,
+// global ~/.claude.json, Claude Desktop configs, and parent .mcp.json.
+async function checkMcpServers(): Promise<HealthCheck> {
+  const match = findExistingMCPRegistration(process.cwd());
+  if (match) {
+    const scope = match.projectKey ? ` [project-scoped: ${match.projectKey}]` : '';
+    const aliasNote = match.key === 'claude-flow' ? ' (legacy alias)' : '';
+    return {
+      name: 'MCP Servers',
+      status: 'pass',
+      message: `ruflo MCP configured at ${match.configPath}${scope}${aliasNote}`,
+    };
   }
 
-  return { name: 'MCP Servers', status: 'warn', message: 'No MCP config found', fix: 'claude mcp add ruflo -- npx -y ruflo@latest mcp start' };
+  return {
+    name: 'MCP Servers',
+    status: 'warn',
+    message: 'No ruflo MCP registration found',
+    fix: 'claude mcp add ruflo -- npx -y ruflo@latest mcp start',
+  };
 }
 
 // Check disk space (async with proper env inheritance)

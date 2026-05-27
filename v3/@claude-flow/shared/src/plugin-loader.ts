@@ -15,6 +15,7 @@ import type {
 } from './plugin-interface.js';
 import { PluginError } from './plugin-interface.js';
 import type { PluginRegistry } from './plugin-registry.js';
+import { SandboxedPluginRunner } from './plugin-sandbox.js';
 
 /**
  * Plugin loader configuration
@@ -324,10 +325,33 @@ export class PluginLoader {
   private async initializePlugin(plugin: ClaudeFlowPlugin, context: PluginContext): Promise<void> {
     this.registry.updatePluginState(plugin.name, 'initializing');
 
+    // HIGH-05: Snapshot env before plugin code runs
+    const protectedSnapshot = snapshotProtectedEnv();
+    const fullEnvBefore = { ...process.env };
+
+    // CRIT-02: Route to sandboxed or full context based on trust level
+    let effectiveContext = context;
+    let trustLevel = plugin.trustLevel ?? 'unverified';
+    // Don't trust self-declared official/verified without namespace verification
+    if ((trustLevel === 'official' || trustLevel === 'verified') &&
+        !plugin.name.startsWith('@claude-flow/')) {
+      trustLevel = 'unverified';
+    }
+    if (trustLevel === 'community' || trustLevel === 'unverified') {
+      const sandbox = new SandboxedPluginRunner({
+        timeout: this.config.initializationTimeout,
+      });
+      effectiveContext = sandbox.createRestrictedContext(
+        context,
+        plugin.permissions ?? {},
+        plugin.name,
+      );
+    }
+
     try {
       // Run initialization with timeout
       await this.withTimeout(
-        plugin.initialize(context),
+        plugin.initialize(effectiveContext),
         this.config.initializationTimeout,
         `Plugin '${plugin.name}' initialization timed out`
       );

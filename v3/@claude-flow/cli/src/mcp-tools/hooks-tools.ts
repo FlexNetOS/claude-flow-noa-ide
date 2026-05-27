@@ -3532,11 +3532,63 @@ export const hooksWorkerDispatch: MCPTool = {
 
     activeWorkers.set(workerId, worker);
 
-    if (!background) {
-      worker.progress = 100;
-      worker.phase = 'completed';
-      worker.status = 'completed';
-      worker.completedAt = new Date();
+    // Determine honest status
+    let reportedStatus: 'dispatched' | 'completed' | 'failed' | 'no-daemon' | 'synthetic-completed';
+    let note: string;
+    let executionDurationMs: number | undefined;
+    let executionError: string | undefined;
+
+    if (!daemonAlive) {
+      reportedStatus = 'no-daemon';
+      note = 'No worker daemon detected. Run `claude-flow daemon start` to enable real worker execution. The dispatch was recorded in-process but no actual work will run.';
+    } else {
+      // #1845 — actually run the worker. We mirror the `daemon trigger -w` CLI
+      // pattern: instantiate a WorkerDaemon in-process and call triggerWorker().
+      // Both this process and the running daemon (pid ${daemonPid}) share state
+      // via the atomically-written state file, so success/run counters update
+      // for either caller. This replaces the previous "queued" lie where the
+      // request never reached the daemon.
+      const { getDaemon } = await import('../services/worker-daemon.js');
+
+      const runWorker = async (): Promise<void> => {
+        worker.status = 'running';
+        worker.phase = 'executing';
+        try {
+          const daemon = getDaemon(cwd);
+          const result = await daemon.triggerWorker(trigger as never);
+          if (result.success) {
+            worker.status = 'completed';
+            worker.phase = 'completed';
+            worker.progress = 100;
+          } else {
+            worker.status = 'failed';
+            worker.phase = 'failed';
+            executionError = result.error;
+          }
+          executionDurationMs = result.durationMs;
+        } catch (err) {
+          worker.status = 'failed';
+          worker.phase = 'failed';
+          executionError = err instanceof Error ? err.message : String(err);
+        } finally {
+          worker.completedAt = new Date();
+        }
+      };
+
+      if (background) {
+        // Fire-and-forget. Caller polls hooks_worker-status for completion.
+        void runWorker();
+        reportedStatus = 'dispatched';
+        note = `Worker dispatched in-process (pid ${process.pid}); state syncs with the running daemon (pid ${daemonPid}) via .claude-flow/daemon-state.json. Poll hooks_worker-status to track progression — do not assume completion until status === "completed".`;
+      } else {
+        // Synchronous: await the worker completion before responding.
+        await runWorker();
+        reportedStatus = worker.status === 'completed' ? 'completed' : 'failed';
+        note =
+          worker.status === 'completed'
+            ? `Worker completed in ${executionDurationMs ?? 0}ms; state synced with daemon (pid ${daemonPid}).`
+            : `Worker failed${executionError ? `: ${executionError}` : ''}.`;
+      }
     }
 
     return {
@@ -3552,7 +3604,9 @@ export const hooksWorkerDispatch: MCPTool = {
       },
       status: background ? 'scheduled' : 'completed',
       background,
-      note: background ? 'Worker scheduled. Use hooks_worker-status to check progress. Start the daemon (daemon start) for real background execution.' : undefined,
+      note,
+      ...(executionDurationMs !== undefined ? { durationMs: executionDurationMs } : {}),
+      ...(executionError ? { error: executionError } : {}),
       timestamp: new Date().toISOString(),
     };
   },

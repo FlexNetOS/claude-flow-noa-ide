@@ -108,6 +108,7 @@ export interface PluginDiscoveryResult {
   cid?: string;
   source?: string;
   fromCache?: boolean;
+  isDemoMode?: boolean;
   error?: string;
 }
 
@@ -116,7 +117,7 @@ export interface PluginDiscoveryResult {
  */
 export class PluginDiscoveryService {
   private config: PluginStoreConfig;
-  private cache: Map<string, { registry: PluginRegistry; timestamp: number }> = new Map();
+  private cache: Map<string, { registry: PluginRegistry; timestamp: number; isDemoMode?: boolean }> = new Map();
 
   constructor(config: Partial<PluginStoreConfig> = {}) {
     this.config = { ...DEFAULT_PLUGIN_STORE_CONFIG, ...config };
@@ -147,6 +148,7 @@ export class PluginDiscoveryService {
         registry: cached.registry,
         fromCache: true,
         source: registry.name,
+        isDemoMode: cached.isDemoMode,
       };
     }
 
@@ -176,10 +178,15 @@ export class PluginDiscoveryService {
       }
 
       // Verify registry signature if required
-      if (this.config.requireVerification && registryData.registrySignature) {
+      if (this.config.requireVerification) {
+        if (!registryData.registrySignature) {
+          console.warn(`[PluginDiscovery] Registry missing required signature — rejecting`);
+          return { success: false, error: 'Registry signature missing (verification required)' };
+        }
         const verified = this.verifyRegistrySignature(registryData, registry.publicKey);
         if (!verified) {
-          console.warn(`[PluginDiscovery] Registry signature verification failed`);
+          console.warn(`[PluginDiscovery] Registry signature verification FAILED — rejecting`);
+          return { success: false, error: 'Registry signature verification failed' };
         }
       }
 
@@ -249,10 +256,11 @@ export class PluginDiscoveryService {
       ],
     };
 
-    // Cache the demo registry
+    // Cache the demo registry (preserve isDemoMode flag for subsequent lookups)
     this.cache.set(registry.ipnsName, {
       registry: demoRegistry,
       timestamp: Date.now(),
+      isDemoMode: true,
     });
 
     return {
@@ -261,6 +269,7 @@ export class PluginDiscoveryService {
       cid: `bafybeiplugin${crypto.randomBytes(16).toString('hex')}`,
       source: `${registry.name} (demo)`,
       fromCache: false,
+      isDemoMode: true,
     };
   }
 
@@ -1194,14 +1203,54 @@ export class PluginDiscoveryService {
   }
 
   /**
-   * Verify registry signature
+   * Verify registry signature using Ed25519
    */
   private verifyRegistrySignature(registry: PluginRegistry, expectedPublicKey: string): boolean {
     if (!registry.registrySignature || !registry.registryPublicKey) {
       return false;
     }
-    // In production: Verify Ed25519 signature
-    return registry.registryPublicKey.startsWith(expectedPublicKey.split(':')[0]);
+
+    // Expected format: "ed25519:<hex-encoded-32-byte-key>"
+    const [scheme, expectedHex] = expectedPublicKey.split(':');
+    if (scheme !== 'ed25519' || !expectedHex || expectedHex.length !== 64) {
+      return false;
+    }
+
+    // Registry must declare the same public key
+    const [registryScheme, registryHex] = (registry.registryPublicKey || '').split(':');
+    if (registryScheme !== 'ed25519' || registryHex !== expectedHex) {
+      return false;
+    }
+
+    try {
+      const publicKeyBytes = Buffer.from(expectedHex, 'hex');
+      // DER-encode Ed25519 public key: SPKI header + raw 32-byte key
+      const ed25519SpkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
+      const derKey = Buffer.concat([ed25519SpkiPrefix, publicKeyBytes]);
+
+      const keyObject = crypto.createPublicKey({
+        key: derKey,
+        format: 'der',
+        type: 'spki',
+      });
+
+      const signatureBuffer = Buffer.from(registry.registrySignature, 'base64');
+
+      // Canonical signing payload: sorted keys, signature excluded
+      const registryCopy = { ...registry };
+      delete registryCopy.registrySignature;
+      const sortedKeys = Object.keys(registryCopy).sort();
+      const canonical: Record<string, unknown> = {};
+      for (const k of sortedKeys) {
+        canonical[k] = registryCopy[k as keyof typeof registryCopy];
+      }
+      const dataToVerify = Buffer.from(JSON.stringify(canonical), 'utf-8');
+
+      return crypto.verify(null, dataToVerify, keyObject, signatureBuffer);
+    } catch {
+      console.warn('[PluginDiscovery] Signature verification failed with crypto error');
+      return false;
+    }
   }
 
   /**

@@ -321,11 +321,17 @@ export const systemTools: MCPTool[] = [
         const legacyPath = join(projectCwd, '.claude-flow', 'memory', 'store.json');
         const agentDbPath = join(projectCwd, '.claude-flow', 'memory', 'agentdb.sqlite');
         const rvfPath = join(projectCwd, '.claude-flow', 'memory', 'store.rvf');
+        // #1843 — current sql.js / HNSW / RuVector memory paths used by alpha runtime
+        const sqljsPath = join(projectCwd, '.claude-flow', 'memory', 'claude-flow.db');
+        const swarmDbPath = join(projectCwd, '.swarm', 'memory.db');
+        const ruvectorDbPath = join(projectCwd, 'ruvector.db');
         const memoryExists =
-          existsSync(join(projectCwd, '.swarm', 'memory.db')) ||
-          existsSync(join(projectCwd, '.claude-flow', 'memory.db')) ||
-          existsSync(join(projectCwd, 'data', 'memory.db')) ||
-          existsSync(legacyPath) || existsSync(agentDbPath) || existsSync(rvfPath);
+          existsSync(legacyPath) ||
+          existsSync(agentDbPath) ||
+          existsSync(rvfPath) ||
+          existsSync(sqljsPath) ||
+          existsSync(swarmDbPath) ||
+          existsSync(ruvectorDbPath);
         const elapsed = performance.now() - t0;
         checks.push({
           name: 'memory',
@@ -335,12 +341,18 @@ export const systemTools: MCPTool[] = [
         });
       }
 
-      // Config check — verify config file exists
+      // Config check — verify config file exists. #1843: also accept YAML.
       {
         const t0 = performance.now();
         const configPath = join(projectCwd, '.claude-flow', 'config.json');
+        const yamlConfigPath = join(projectCwd, '.claude-flow', 'config.yaml');
         const altConfigPath = join(projectCwd, 'claude-flow.config.json');
-        const configExists = existsSync(configPath) || existsSync(altConfigPath);
+        const altYamlConfigPath = join(projectCwd, 'claude-flow.config.yaml');
+        const configExists =
+          existsSync(configPath) ||
+          existsSync(yamlConfigPath) ||
+          existsSync(altConfigPath) ||
+          existsSync(altYamlConfigPath);
         const elapsed = performance.now() - t0;
         checks.push({
           name: 'config',
@@ -444,9 +456,13 @@ export const systemTools: MCPTool[] = [
         }
       }
 
+      // #1843 — `unknown` checks are advisory (we couldn't verify, not failures);
+      // exclude them from the denominator so the score reflects actionable state.
       const healthy = checks.filter(c => c.status === 'healthy').length;
+      const unknown = checks.filter(c => c.status === 'unknown').length;
       const total = checks.length;
-      const overallHealth = healthy / total;
+      const actionable = total - unknown;
+      const overallHealth = actionable === 0 ? 1 : healthy / actionable;
 
       // Update metrics
       metrics.health = overallHealth;
@@ -458,6 +474,7 @@ export const systemTools: MCPTool[] = [
         checks,
         healthy,
         total,
+        unknown,
         timestamp: new Date().toISOString(),
         issues: checks.filter(c => c.status !== 'healthy').map(c => ({
           component: c.name,

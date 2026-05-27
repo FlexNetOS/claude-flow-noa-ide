@@ -52,9 +52,9 @@ export function generateMCPConfig(options: InitOptions): object {
     npm_config_update_notifier: 'false',
   };
 
-  // Ruflo MCP server (core) — formerly registered as 'claude-flow' before the package rename.
-  // The `claude-flow` key was retained after the rename, which caused duplicate MCP registrations
-  // for users who also added the server under the new name (see issue #1779).
+  // Ruflo MCP server (core) — uses ruflo wrapper for portable npm-resolved invocation.
+  // Key is `ruflo` (canonical, see #1841). Detector accepts the legacy `claude-flow`
+  // alias for compatibility with installations created before this change.
   if (config.claudeFlow) {
     mcpServers['ruflo'] = createMCPServerEntry(
       ['ruflo@latest', 'mcp', 'start'],

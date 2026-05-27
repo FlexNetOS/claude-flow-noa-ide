@@ -362,60 +362,68 @@ export const memoryTools: MCPTool[] = [
       const startTime = performance.now();
 
       try {
+        let smartFallbackReason: string | undefined;
         if (input.smart) {
           // SmartRetrieval pipeline (ADR-090)
-          const { smartSearch } = await import('@claude-flow/memory');
+          const memoryMod = await import('@claude-flow/memory');
+          const smartSearch = (memoryMod as { smartSearch?: unknown }).smartSearch;
 
-          // Adapt searchEntries to the SearchFn interface
-          const rawSearch = async (req: { query: string; namespace?: string; limit?: number; threshold?: number }) => {
-            const r = await searchEntries({
-              query: req.query,
-              namespace: req.namespace || namespace,
-              limit: req.limit || limit * 3,
-              threshold: req.threshold ?? threshold,
+          if (typeof smartSearch !== 'function') {
+            // Older published @claude-flow/memory may not export smartSearch — fall through to standard HNSW path.
+            smartFallbackReason = 'smartSearch is not exported by the installed @claude-flow/memory; falling back to standard HNSW semantic search';
+          } else {
+            // Adapt searchEntries to the SearchFn interface
+            const rawSearch = async (req: { query: string; namespace?: string; limit?: number; threshold?: number }) => {
+              const r = await searchEntries({
+                query: req.query,
+                namespace: req.namespace || namespace,
+                limit: req.limit || limit * 3,
+                threshold: req.threshold ?? threshold,
+              });
+              return {
+                results: r.results.map(e => ({
+                  id: e.id,
+                  key: e.key,
+                  content: e.content,
+                  score: e.score,
+                  namespace: e.namespace,
+                })),
+              };
+            };
+
+            const smartResult = await (smartSearch as (
+              fn: typeof rawSearch,
+              opts: { query: string; namespace: string; limit: number; threshold: number }
+            ) => Promise<{ results: Array<{ key: string; content: string; score: number; namespace: string }>; stats: unknown }>)(
+              rawSearch,
+              { query, namespace, limit, threshold }
+            );
+
+            const duration = performance.now() - startTime;
+
+            const results = smartResult.results.map(r => {
+              let value: unknown = r.content;
+              try { value = JSON.parse(r.content); } catch { /* keep as string */ }
+              return {
+                key: r.key,
+                namespace: r.namespace,
+                value,
+                similarity: r.score,
+              };
             });
+
             return {
-              results: r.results.map(e => ({
-                id: e.id,
-                key: e.key,
-                content: e.content,
-                score: e.score,
-                namespace: e.namespace,
-              })),
+              query,
+              results,
+              total: results.length,
+              searchTime: `${duration.toFixed(2)}ms`,
+              backend: 'SmartRetrieval (RRF + MMR + Recency)',
+              stats: smartResult.stats,
             };
-          };
-
-          const smartResult = await smartSearch(rawSearch, {
-            query,
-            namespace,
-            limit,
-            threshold,
-          });
-
-          const duration = performance.now() - startTime;
-
-          const results = smartResult.results.map(r => {
-            let value: unknown = r.content;
-            try { value = JSON.parse(r.content); } catch { /* keep as string */ }
-            return {
-              key: r.key,
-              namespace: r.namespace,
-              value,
-              similarity: r.score,
-            };
-          });
-
-          return {
-            query,
-            results,
-            total: results.length,
-            searchTime: `${duration.toFixed(2)}ms`,
-            backend: 'SmartRetrieval (RRF + MMR + Recency)',
-            stats: smartResult.stats,
-          };
+          }
         }
 
-        // Original non-smart path (unchanged)
+        // Standard non-smart path (also used as fallback when smartSearch is unavailable)
         const result = await searchEntries({
           query,
           namespace,
@@ -448,6 +456,7 @@ export const memoryTools: MCPTool[] = [
           total: results.length,
           searchTime: `${duration.toFixed(2)}ms`,
           backend: 'HNSW + sql.js',
+          ...(smartFallbackReason ? { smartFallback: smartFallbackReason } : {}),
         };
       } catch (error) {
         return {

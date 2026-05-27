@@ -105,7 +105,7 @@
     "@claude-flow/codex": "^3.0.0-alpha.8",
     "@claude-flow/embeddings": "^3.0.0-alpha.12",
     "@claude-flow/guidance": "^3.0.0-alpha.1",
-    "@claude-flow/memory": "^3.0.0-alpha.12",
+    "@claude-flow/memory": "^3.0.0-alpha.15",
     "@claude-flow/plugin-gastown-bridge": "^0.1.3",
     "@claude-flow/security": "^3.0.0-alpha.1",
     "@ruvector/attention": "^0.1.32",

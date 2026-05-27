@@ -237,6 +237,12 @@ export const embeddingsTools: MCPTool[] = [
       };
 
       saveConfig(config);
+      try {
+        const { resetEmbeddingModelState } = await import('../memory/memory-initializer.js');
+        resetEmbeddingModelState();
+      } catch {
+        // Best-effort reset for long-running MCP processes.
+      }
 
       return {
         success: true,

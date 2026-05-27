@@ -290,6 +290,73 @@ export async function downloadEmbeddingModel(
   targetDir?: string,
   onProgress?: (progress: { percent: number; bytesDownloaded: number; totalBytes: number }) => void
 ): Promise<string> {
-  const { downloadModel } = await import('agentic-flow/embeddings');
-  return downloadModel(modelId, targetDir ?? '.models', onProgress);
+  const modelDir = targetDir ?? '.models';
+  const modelName = modelId.includes('/') ? modelId : `Xenova/${modelId}`;
+
+  try {
+    const mod = await import('agentic-flow/embeddings').catch((err) => {
+      throw err;
+    });
+    const downloadFn = (mod as Record<string, unknown>).downloadModel;
+    if (typeof downloadFn !== 'function') {
+      // agentic-flow is installed but has no downloadModel export (the
+      // 2.x line shipped clearEmbeddingCache/computeEmbedding* but not
+      // downloadModel; the function lives on a different path or version).
+      // Treat as lazy-fetch path — @xenova/transformers will download on
+      // first generate(). #1700 item 2 follow-up.
+      console.warn('[embeddings] agentic-flow installed but does not expose downloadModel — ' +
+        'falling back to Transformers.js download.');
+      return await downloadWithTransformers(modelName, modelDir, onProgress);
+    }
+    return await (downloadFn as (id: string, dir: string, cb?: typeof onProgress) => Promise<string>)(
+      modelId, modelDir, onProgress
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Distinguish "package missing" / "subpath unsupported" from real
+    // download errors so callers can surface the right hint to users.
+    // #1468: Windows + Node strict-ESM raises
+    //   `Package subpath './embeddings' is not defined by "exports"`
+    // when the bundled agentic-flow's package.json doesn't declare the
+    // ./embeddings entry. WSL/Linux is more permissive on the same code,
+    // so the bug only surfaces on Windows. Treat both shapes as
+    // "agentic-flow neural extras unavailable, fall back to lazy fetch".
+    if (
+      /Cannot find package 'agentic-flow'|Cannot find module/.test(msg)
+      || /Package subpath ['"]\.\/embeddings['"] is not defined/.test(msg)
+      || /ERR_PACKAGE_PATH_NOT_EXPORTED/.test(msg)
+    ) {
+      console.warn('[embeddings] agentic-flow neural extras unavailable — skipping eager model download. ' +
+        'Using Transformers.js to populate the configured model cache. ' +
+        `Reason: ${msg}`);
+      return await downloadWithTransformers(modelName, modelDir, onProgress);
+    }
+    throw err;
+  }
+}
+
+async function downloadWithTransformers(
+  modelName: string,
+  targetDir: string,
+  onProgress?: (progress: { percent: number; bytesDownloaded: number; totalBytes: number }) => void
+): Promise<string> {
+  const { loadTransformersPipeline } = await import('./transformers-loader.js');
+  const handle = await loadTransformersPipeline();
+  if (!handle) {
+    throw new Error(
+      'No transformers package available. Install @huggingface/transformers or @xenova/transformers to download ONNX embeddings.'
+    );
+  }
+
+  await handle.pipeline('feature-extraction', modelName, {
+    cache_dir: targetDir,
+    progress_callback: (progress: Record<string, unknown>) => {
+      const loaded = typeof progress.loaded === 'number' ? progress.loaded : 0;
+      const total = typeof progress.total === 'number' ? progress.total : 0;
+      const percent = total > 0 ? (loaded / total) * 100 : 0;
+      onProgress?.({ percent, bytesDownloaded: loaded, totalBytes: total });
+    },
+  });
+
+  return targetDir;
 }

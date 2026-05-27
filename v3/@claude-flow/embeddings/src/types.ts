@@ -97,6 +97,12 @@ export interface TransformersEmbeddingConfig extends EmbeddingBaseConfig {
   /** Model name from Hugging Face */
   model?: string;
 
+  /** Transformers.js cache/model directory */
+  modelPath?: string;
+
+  /** Force local files only (no network fetch) */
+  localFilesOnly?: boolean;
+
   /** Quantization level */
   quantized?: boolean;
 

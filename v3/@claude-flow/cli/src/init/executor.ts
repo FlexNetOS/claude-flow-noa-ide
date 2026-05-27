@@ -16,6 +16,7 @@ import type { InitOptions, InitResult, PlatformInfo } from './types.js';
 import { detectPlatform, DEFAULT_INIT_OPTIONS } from './types.js';
 import { generateSettingsJson, generateSettings } from './settings-generator.js';
 import { generateMCPJson } from './mcp-generator.js';
+import { findExistingMCPRegistration } from './mcp-detection.js';
 import { generateStatuslineScript, generateStatuslineHook } from './statusline-generator.js';
 import {
   generatePreCommitHook,
@@ -788,6 +789,22 @@ async function writeMCPConfig(
   if (fs.existsSync(mcpPath) && !options.force) {
     result.skipped.push('.mcp.json');
     return;
+  }
+
+  // #1779 / #1840 — Skip writing if the user already has a ruflo (or its
+  // legacy `claude-flow` alias) MCP server registered elsewhere: parent
+  // `.mcp.json`, top-level or project-scoped `~/.claude.json`, or one of the
+  // Claude Desktop config locations. Writing on top of that would produce
+  // duplicate tool registrations. `--force` bypasses this guard.
+  if (!options.force) {
+    const existing = findExistingMCPRegistration(targetDir);
+    if (existing) {
+      const projectScope = existing.projectKey ? ` [project ${existing.projectKey}]` : '';
+      result.skipped.push(
+        `.mcp.json (existing '${existing.key}' MCP registration found at ${existing.configPath}${projectScope} — would create duplicate; pass --force to write anyway)`,
+      );
+      return;
+    }
   }
 
   const content = generateMCPJson(options);

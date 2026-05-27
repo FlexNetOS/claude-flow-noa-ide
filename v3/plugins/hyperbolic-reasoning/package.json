@@ -82,7 +82,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^1.0.0"
+    "vitest": "^4.1.4"
   },
   "optionalDependencies": {
     "@ruvector/hyperbolic-hnsw-wasm": "^0.1.0",

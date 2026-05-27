@@ -280,11 +280,19 @@ export class WorkerDaemon extends EventEmitter {
   } {
     const configPath = join(claudeFlowDir, 'config.json');
     if (!existsSync(configPath)) {
-      // Warn if config.yaml exists but config.json does not (#1395 Bug 4)
+      // #1395 / #1844 — daemon settings live in `.claude-flow/config.json` with
+      // dot-notation keys; the structured `.claude-flow/config.yaml` written by
+      // `ruflo init` does not contain daemon settings. Make that explicit in the
+      // warning so users don't quietly run with defaults.
       const yamlPath = join(claudeFlowDir, 'config.yaml');
       const ymlPath = join(claudeFlowDir, 'config.yml');
       if (existsSync(yamlPath) || existsSync(ymlPath)) {
-        this.log('warn', `Found ${existsSync(yamlPath) ? 'config.yaml' : 'config.yml'} but daemon reads only config.json — YAML config is being ignored. Convert to JSON or create config.json.`);
+        this.log(
+          'warn',
+          `Daemon settings are read from .claude-flow/config.json (dot-notation), not from ${existsSync(yamlPath) ? 'config.yaml' : 'config.yml'}. ` +
+            `Running with defaults. To customize, create .claude-flow/config.json with keys like ` +
+            `{"daemon.maxConcurrent":4,"daemon.workerTimeoutMs":960000,"daemon.resourceThresholds.maxCpuLoad":16}.`,
+        );
       }
       return {};
     }
