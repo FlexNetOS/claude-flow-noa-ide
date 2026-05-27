@@ -753,10 +753,18 @@ export class WorkerDaemon extends EventEmitter {
       try {
         this.log('info', `Running ${workerConfig.type} in headless mode (Claude Code AI)`);
         const result = await this.headlessExecutor.execute(workerConfig.type as HeadlessWorkerType);
-        return {
-          mode: 'headless',
+        const headlessOutput = {
+          mode: 'headless' as const,
+          timestamp: new Date().toISOString(),
           ...result,
         };
+        // Persist headless result to the same metrics file the local-fallback
+        // worker would have written (#1793). Without this, AI-driven runs leave
+        // no observable artifact beyond the raw prompt/result logs in
+        // .claude-flow/logs/headless/, so consumers (statusline, memory store,
+        // self-learning hooks) never see the structured findings.
+        this.persistHeadlessResult(workerConfig.type, headlessOutput);
+        return headlessOutput;
       } catch (error) {
         this.log('warn', `Headless execution failed for ${workerConfig.type}, falling back to local mode`);
         this.emit('headless:fallback', {
@@ -795,6 +803,47 @@ export class WorkerDaemon extends EventEmitter {
         return this.runPreloadWorkerLocal();
       default:
         return { status: 'unknown worker type', mode: 'local' };
+    }
+  }
+
+  /**
+   * Persist a headless worker's output to the same .claude-flow/metrics/<file>.json
+   * that the corresponding local-fallback worker writes. Mirrors the per-worker
+   * filename convention used by runMapWorker / runAuditWorkerLocal / etc., so
+   * downstream consumers (statusline, memory store, self-learning hooks) get the
+   * structured AI findings instead of stale local-mode placeholders. Failures
+   * are logged but never propagated — the worker run itself stays a success.
+   * See #1793.
+   */
+  private persistHeadlessResult(type: string, output: unknown): void {
+    const filenameByType: Record<string, string> = {
+      audit: 'security-audit.json',
+      optimize: 'performance.json',
+      testgaps: 'test-gaps.json',
+      document: 'documentation.json',
+      ultralearn: 'ultralearn.json',
+      refactor: 'refactor.json',
+      deepdive: 'deepdive.json',
+      predict: 'predictions.json',
+    };
+    const filename = filenameByType[type];
+    if (!filename) {
+      // Unknown headless worker — skip rather than guess a path.
+      return;
+    }
+
+    try {
+      const metricsDir = join(this.projectRoot, '.claude-flow', 'metrics');
+      if (!existsSync(metricsDir)) {
+        mkdirSync(metricsDir, { recursive: true });
+      }
+      const metricsFile = join(metricsDir, filename);
+      writeFileSync(metricsFile, JSON.stringify(output, null, 2));
+    } catch (error) {
+      this.log(
+        'warn',
+        `Failed to persist headless ${type} metric file: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
