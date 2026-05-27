@@ -194,7 +194,12 @@ export class SONAManager {
     // Initialize mode implementation
     await this.modeImpl.initialize();
 
-    // Initialize EWC state for continual learning
+    // EWC++ STUB: Fisher information requires per-parameter gradients from the
+    // training loop, which lives in the @ruvector/sona Rust binding. Nothing in
+    // this JS wrapper populates `fisher`/`means`, so consolidateEWC and the
+    // per-mode computeEWCPenalty calls iterate empty maps and effectively
+    // no-op. Do not rely on EWC for catastrophic-forgetting prevention until
+    // upstream lands Fisher-info export.
     this.ewcState = {
       means: new Map(),
       fisher: new Map(),
@@ -560,15 +565,27 @@ export class SONAManager {
   }
 
   /**
-   * Consolidate EWC after learning a new task
+   * Consolidate EWC after learning a new task.
+   *
+   * STUB: Fisher information is never populated in this wrapper (see
+   * initialize()). This method decays empty maps and bumps a counter — it
+   * does not protect against catastrophic forgetting. Tracked for upstream
+   * @ruvector/sona Fisher-info export.
    */
   consolidateEWC(): void {
     if (!this.ewcState) return;
 
+    if (!SonaManager.warnedEwcStub) {
+      console.warn(
+        '[SonaManager] consolidateEWC() invoked but EWC is a stub: Fisher information is not populated by the JS wrapper. Catastrophic-forgetting prevention is NOT active.'
+      );
+      SonaManager.warnedEwcStub = true;
+    }
+
     const config = this.getEWCConfig();
 
-    // Update Fisher information with decay
-    for (const [key, fisher] of this.ewcState.fisher) {
+    // No-op loop — fisher is always empty in the current wrapper.
+    for (const [, fisher] of this.ewcState.fisher) {
       for (let i = 0; i < fisher.length; i++) {
         fisher[i] *= config.decay;
       }
@@ -577,6 +594,8 @@ export class SONAManager {
     this.ewcState.taskCount++;
     this.ewcState.lastConsolidation = Date.now();
   }
+
+  private static warnedEwcStub = false;
 
   // ==========================================================================
   // Statistics

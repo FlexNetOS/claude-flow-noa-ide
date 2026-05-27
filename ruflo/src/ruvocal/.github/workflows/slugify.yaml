@@ -26,6 +26,8 @@ jobs:
 
       - name: Generate slug
         id: slugify
+        env:
+          VALUE: ${{ inputs.value }}
         run: |
           # Create working directory
           mkdir -p $HOME/slugify
@@ -62,7 +64,6 @@ jobs:
           go build -o slugify main.go
 
           # Generate slug
-          VALUE="${{ inputs.value }}"
           echo "Input value: $VALUE"
 
           SLUG=$(./slugify "$VALUE")

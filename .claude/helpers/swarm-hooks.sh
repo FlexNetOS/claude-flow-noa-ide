@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - Swarm Communication Hooks
+# Ezra V3 - Swarm Communication Hooks
 # Enables agent-to-agent messaging, pattern sharing, consensus, and task handoffs
 #
 # Integration with:
@@ -715,7 +715,7 @@ case "${1:-help}" in
 
   "help"|"-h"|"--help")
     cat << 'EOF'
-RuFlo V3 - Swarm Communication Hooks
+Ezra V3 - Swarm Communication Hooks
 
 Usage: swarm-hooks.sh <command> [args]
 

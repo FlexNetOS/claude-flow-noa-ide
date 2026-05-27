@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - Learning Optimizer Worker
+# Ezra V3 - Learning Optimizer Worker
 # Runs SONA micro-LoRA optimization on patterns
 
 set -euo pipefail

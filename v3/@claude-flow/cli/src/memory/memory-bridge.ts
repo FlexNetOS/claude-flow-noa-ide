@@ -1957,6 +1957,40 @@ export async function bridgeHealthCheck(
 // ===== Phase 7: Hierarchical memory, consolidation, batch, context, semantic route =====
 
 /**
+ * Public bridge result types. All bridge functions return `null` when the
+ * underlying AgentDB registry is unreachable; otherwise an envelope.
+ */
+export type BridgeStoreResult =
+  | null
+  | { success: false; error: string }
+  | { success: true; id?: string; key: string; tier: string };
+
+export type BridgeRecallResult =
+  | null
+  | { results: unknown[]; controller: string; error?: undefined }
+  | { results: unknown[]; error: string; controller?: undefined };
+
+export type BridgeConsolidateResult =
+  | null
+  | { success: false; error: string }
+  | { success: true; consolidated: unknown };
+
+export type BridgeBatchResult =
+  | null
+  | { success: false; error: string }
+  | { success: true; operation: string; count: number; result: unknown };
+
+export type BridgeSynthesisResult =
+  | null
+  | { success: false; error: string }
+  | { success: true; synthesis: unknown };
+
+export type BridgeRouteResult =
+  | null
+  | { route: unknown; controller: string; error?: undefined; recommendation?: string }
+  | { route: null; error: string; controller: string; recommendation?: string };
+
+/**
  * Store to hierarchical memory with tier.
  * Valid tiers: working, episodic, semantic
  *
@@ -1965,7 +1999,7 @@ export async function bridgeHealthCheck(
  * Stub API (fallback):
  *   store(key, value, tier) — synchronous
  */
-export async function bridgeHierarchicalStore(params: { key: string; value: string; tier?: string; importance?: number }): Promise<any> {
+export async function bridgeHierarchicalStore(params: { key: string; value: string; tier?: string; importance?: number }): Promise<BridgeStoreResult> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -1997,7 +2031,7 @@ export async function bridgeHierarchicalStore(params: { key: string; value: stri
  * Stub API (fallback):
  *   recall(query: string, topK: number) → synchronous array
  */
-export async function bridgeHierarchicalRecall(params: { query: string; tier?: string; topK?: number }): Promise<any> {
+export async function bridgeHierarchicalRecall(params: { query: string; tier?: string; topK?: number }): Promise<BridgeRecallResult> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2036,7 +2070,7 @@ export async function bridgeHierarchicalRecall(params: { query: string; tier?: s
  * Stub API (fallback):
  *   consolidate() → { promoted, pruned, timestamp }
  */
-export async function bridgeConsolidate(params: { minAge?: number; maxEntries?: number }): Promise<any> {
+export async function bridgeConsolidate(params: { minAge?: number; maxEntries?: number }): Promise<BridgeConsolidateResult> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2053,7 +2087,7 @@ export async function bridgeConsolidate(params: { minAge?: number; maxEntries?: 
  * - delete: calls bulkDelete(table, conditions) on episodes table
  * - update: calls bulkUpdate(table, updates, conditions) on episodes table
  */
-export async function bridgeBatchOperation(params: { operation: string; entries: any[] }): Promise<any> {
+export async function bridgeBatchOperation(params: { operation: string; entries: any[] }): Promise<BridgeBatchResult> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2106,7 +2140,7 @@ export async function bridgeBatchOperation(params: { operation: string; entries:
  * Synthesize context from memories.
  * ContextSynthesizer.synthesize is a static method that takes MemoryPattern[] (not a string).
  */
-export async function bridgeContextSynthesize(params: { query: string; maxEntries?: number }): Promise<any> {
+export async function bridgeContextSynthesize(params: { query: string; maxEntries?: number }): Promise<BridgeSynthesisResult> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {
@@ -2144,7 +2178,7 @@ export async function bridgeContextSynthesize(params: { query: string; maxEntrie
  * Available since agentdb 3.0.0-alpha.10 — uses @ruvector/router for
  * semantic matching with keyword fallback.
  */
-export async function bridgeSemanticRoute(params: { input: string }): Promise<any> {
+export async function bridgeSemanticRoute(params: { input: string }): Promise<BridgeRouteResult> {
   const registry = await getRegistry();
   if (!registry) return null;
   try {

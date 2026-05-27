@@ -24,6 +24,8 @@ import {
   RotateCcw,
   ExternalLink,
   Code,
+  Play,
+  Radar,
 } from "lucide-react";
 import { AgentStep, StepStatus } from "@/components/AgentStep";
 import { Button } from "@/components/ui/button";
@@ -963,6 +965,17 @@ const Index = () => {
                   <Code className="w-3 h-3 sm:w-4 sm:h-4" />
                   <span className="hidden sm:inline">Agent Swarm</span>
                   <span className="sm:hidden">Agents</span>
+                </Button>
+              </RouterLink>
+              <RouterLink to="/observability">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-xs sm:text-sm"
+                >
+                  <Radar className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Observability</span>
+                  <span className="sm:hidden">Observe</span>
                 </Button>
               </RouterLink>
               <Button

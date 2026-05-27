@@ -4,15 +4,15 @@
 
 | Version | Supported          |
 |---------|--------------------|
-| 3.5.x   | Yes                |
-| 3.0-3.4 | No                 |
-| 2.x     | No                 |
+| 3.10.x  | Yes                |
+| 3.6-3.9 | Best-effort        |
+| < 3.6   | No                 |
 
 ## Reporting a Vulnerability
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Please report vulnerabilities by emailing **security@cognitum.one**. Include the following in your report:
+Please report vulnerabilities by emailing **security@ruv.io**. Include the following in your report:
 
 - A clear description of the vulnerability
 - Steps to reproduce the issue

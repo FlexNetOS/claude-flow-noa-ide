@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * RuFlo V3 - Persistent Learning Service
+ * Ezra V3 - Persistent Learning Service
  *
  * Connects ReasoningBank to AgentDB with HNSW indexing and ONNX embeddings.
  *
@@ -1112,7 +1112,7 @@ async function main() {
       case 'help':
       default:
         console.log(`
-RuFlo V3 Learning Service
+Ezra V3 Learning Service
 
 Usage: learning-service.mjs <command> [args]
 

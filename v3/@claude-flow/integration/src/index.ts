@@ -8,9 +8,9 @@
  * This module implements ADR-001: Adopt agentic-flow as Core Foundation
  *
  * Key Features:
- * - SONA Learning: Real-time adaptation with <0.05ms response
- * - Flash Attention: 2.49x-7.47x speedup with 50-75% memory reduction
- * - AgentDB: 150x-12,500x faster search via HNSW indexing
+ * - SONA Learning: native @ruvector/sona wrapper (upstream claims <1ms)
+ * - Flash Attention: FlashAttention class shipped; 2.49x-7.47x is a projection
+ * - AgentDB: HNSW indexing (150x at 10k vectors; 12,500x is a scale projection)
  * - Intelligence Bridge: 19 hook tools + 9 learning tools
  * - Trajectory Tracking: Experience replay for continuous learning
  *
@@ -467,10 +467,10 @@ export const METADATA = {
     'OpenCode Adapter (multi-agent coding backend)',
   ],
   performance: {
-    flashAttentionSpeedup: '2.49x-7.47x',
-    agentDBSearchSpeedup: '150x-12,500x',
-    sonaAdaptationLatency: '<0.05ms',
-    memoryReduction: '50-75%',
+    flashAttentionSpeedup: '2.49x-7.47x (projection, not measured end-to-end)',
+    agentDBSearchSpeedup: '150x at 10k vectors (measured); 12,500x is a scale projection',
+    sonaAdaptationLatency: 'upstream @ruvector/sona claims <1ms; no end-to-end bench for <0.05ms',
+    memoryReduction: '50-75% (Int8 quantization — not wired through public Memory API as of v3.10.1)',
   },
   workerPatterns: {
     baseWorker: 'WorkerBase with embeddings and load management',

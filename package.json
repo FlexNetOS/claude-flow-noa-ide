@@ -54,6 +54,7 @@
     "v3:security": "npm run security:audit && npm run security:test"
   },
   "dependencies": {
+    "helmet": "8.1.0",
     "semver": "^7.6.0",
     "zod": "^3.22.4"
   },
@@ -69,7 +70,21 @@
     "agentic-flow": "^2.0.7"
   },
   "overrides": {
-    "hono": ">=4.11.4"
+    "protobufjs@<=7.5.5": "7.5.5",
+    "@hono/node-server@<=1.19.13": "1.19.13",
+    "express-rate-limit@<=8.2.2": "8.2.2",
+    "hono": "4.12.14",
+    "path-to-regexp@<=8.4.0": "8.4.0",
+    "follow-redirects@<=1.16.0": "1.16.0",
+    "uuid@<=14.0.0": "14.0.0",
+    "cjs-module-lexer@<=2.2.0": "2.2.0",
+    "file-type@<=21.3.3": "21.3.3",
+    "picomatch@<=2.3.2": "2.3.2",
+    "onnxruntime-node@<=1.24.2": "1.24.2",
+    "axios@<=1.15.1": "1.15.1",
+    "yaml@<=2.8.3": "2.8.3",
+    "brace-expansion@<=2.1.0": "2.1.0",
+    "undici@<=7.24.1": "7.24.1"
   },
   "devDependencies": {
     "@openai/codex": "^0.98.0",

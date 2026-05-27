@@ -1,4 +1,4 @@
-# Claude Code Configuration - Ruflo v3.5
+# Claude Code Configuration - Ezra (עזרא)
 
 > **Ruflo v3.6** (2026-04-29) — Stable release with agent federation and comms-first coordination.
 > 6,000+ commits, 314 MCP tools, 16 agent roles + custom types, 19 AgentDB controllers, 21 native plugins.
@@ -41,7 +41,7 @@
 | `@claude-flow/cli` | `v3/@claude-flow/cli/` | CLI entry point (26 commands) |
 | `@claude-flow/codex` | `v3/@claude-flow/codex/` | Dual-mode Claude + Codex collaboration |
 | `@claude-flow/guidance` | `v3/@claude-flow/guidance/` | Governance control plane |
-| `@claude-flow/hooks` | `v3/@claude-flow/hooks/` | 17 hooks + 12 workers |
+| `@claude-flow/hooks` | `v3/@claude-flow/hooks/` | 33 hook subcommands + 11 workers |
 | `@claude-flow/memory` | `v3/@claude-flow/memory/` | AgentDB + HNSW search |
 | `@claude-flow/security` | `v3/@claude-flow/security/` | Input validation, CVE remediation |
 
@@ -343,6 +343,7 @@ This project is configured with Claude Flow V3 (Anti-Drift Defaults):
 - **HNSW Indexing**: Enabled (150x-12,500x faster)
 - **Neural Learning**: Enabled (SONA)
 
+<<<<<<< ours
 ## Development Commands
 
 Local dev/build/test commands as defined in the repo's `package.json` files. Use these instead of inventing equivalents.
@@ -480,6 +481,9 @@ node scripts/sign-witness-from-inventory.mjs  # Sign witness from inventory
 ```
 
 ## V3 CLI Commands (26 Commands, 140+ Subcommands)
+=======
+## V3 CLI Commands (40 Commands, 140+ Subcommands)
+>>>>>>> theirs
 
 ### Core Commands
 
@@ -837,7 +841,7 @@ npx claude-flow@v3alpha hooks task-completed -i task-123 --train-patterns true
 6. **Graceful shutdown** — send `{ type: "shutdown_request" }` before TeamDelete
 7. **Lead synthesizes** — when agents complete, review ALL results before responding to user
 
-## V3 Hooks System (17 Hooks + 12 Workers)
+## V3 Hooks System (33 Hook Subcommands + 11 Workers)
 
 ### Hook Categories
 
@@ -849,22 +853,23 @@ npx claude-flow@v3alpha hooks task-completed -i task-123 --train-patterns true
 | **Learning** | `intelligence` (trajectory-start/step/end, pattern-store/search, stats, attention) | Reinforcement |
 | **Agent Teams** | `teammate-idle`, `task-completed` | Multi-agent coordination |
 
-### 12 Background Workers
+### 11 Background Workers
 
-| Worker | Priority | Description |
-|--------|----------|-------------|
-| `ultralearn` | normal | Deep knowledge acquisition |
-| `optimize` | high | Performance optimization |
-| `consolidate` | low | Memory consolidation |
-| `predict` | normal | Predictive preloading |
-| `audit` | critical | Security analysis |
-| `map` | normal | Codebase mapping |
-| `preload` | low | Resource preloading |
-| `deepdive` | normal | Deep code analysis |
-| `document` | normal | Auto-documentation |
-| `refactor` | normal | Refactoring suggestions |
-| `benchmark` | normal | Performance benchmarking |
-| `testgaps` | normal | Test coverage analysis |
+Registered in `v3/@claude-flow/hooks/src/workers/index.ts`.
+
+| Worker | Description |
+|--------|-------------|
+| `performance` | Performance profiling and bottleneck detection |
+| `health` | System health and dependency checks |
+| `swarm` | Swarm coordination and topology analysis |
+| `git` | Git activity and history analysis |
+| `learning` | Pattern learning and consolidation |
+| `adr` | Architecture decision record tracking |
+| `ddd` | DDD bounded-context auditing |
+| `security` | Security scanning |
+| `patterns` | Code pattern detection |
+| `cache` | Cache management |
+| `v3progress` | V3 implementation progress tracking |
 
 ### Essential Hook Commands
 
@@ -896,17 +901,17 @@ npx claude-flow@v3alpha hooks worker status
 ## Intelligence System (RuVector)
 
 V3 includes the RuVector Intelligence System:
-- **SONA**: Self-Optimizing Neural Architecture (<0.05ms adaptation)
+- **SONA**: Self-Optimizing Neural Architecture (upstream `@ruvector/sona` claims <1ms; no end-to-end ruflo benchmark for the <0.05ms figure)
 - **MoE**: Mixture of Experts for specialized routing
-- **HNSW**: 150x-12,500x faster pattern search
-- **EWC++**: Elastic Weight Consolidation (prevents forgetting)
-- **Flash Attention**: 2.49x-7.47x speedup
+- **HNSW**: 150x faster on the committed 10k-vector bench (`v3/@claude-flow/memory/benchmarks/results/`); 12,500x is a projection at scale, not measured
+- **EWC++**: STUB — `FlashAttention` class shipped, but `SonaManager` Fisher-info maps are never populated; consolidation is a no-op. Do not rely on for catastrophic-forgetting prevention.
+- **Flash Attention**: `FlashAttention` class shipped with internal `benchmark()`; the "2.49x-7.47x" figure is a projection — no committed benchmark result file proves it end-to-end yet.
 
 The 4-step intelligence pipeline:
 1. **RETRIEVE** — Fetch relevant patterns via HNSW
 2. **JUDGE** — Evaluate with verdicts (success/failure)
 3. **DISTILL** — Extract key learnings via LoRA
-4. **CONSOLIDATE** — Prevent catastrophic forgetting via EWC++
+4. **CONSOLIDATE** — Memory pruning (note: EWC++ catastrophic-forgetting prevention is a stub in `SonaManager`; Fisher-info maps are never populated)
 
 ## Embeddings Package (v3.0.0-alpha.12)
 
@@ -940,7 +945,7 @@ Features:
 | HNSW Search | 150x-12,500x faster | **Implemented** (persistent) |
 | Memory Reduction | 50-75% with quantization | **Implemented** (3.92x Int8) |
 | SONA Integration | Pattern learning | **Implemented** (ReasoningBank) |
-| Flash Attention | 2.49x-7.47x speedup | In progress |
+| Flash Attention | 2.49x-7.47x speedup (projection) | Class shipped; integration wiring + reproducible bench result still pending |
 | MCP Response | <100ms | Achieved |
 | CLI Startup | <500ms | Achieved |
 | SONA Adaptation | <0.05ms | In progress |
@@ -1064,9 +1069,9 @@ memory_search_unified({ query: "authentication security", limit: 5 })
 
 ### Publishing Rules
 
-- MUST publish ALL THREE packages when publishing CLI changes: `@claude-flow/cli`, `claude-flow`, AND `ruflo`
+- MUST publish ALL THREE packages when publishing CLI changes: `@claude-flow/cli`, `claude-flow`, AND `ezra`
 - MUST update ALL dist-tags for ALL THREE packages after publishing
-- Publish order: `@claude-flow/cli` first, then `claude-flow` (umbrella), then `ruflo` (alias umbrella)
+- Publish order: `@claude-flow/cli` first, then `claude-flow` (umbrella), then `ezra` (alias umbrella)
 - MUST run verification for ALL THREE before telling user publishing is complete
 
 ```bash
@@ -1086,18 +1091,18 @@ npm publish --tag v3alpha
 npm dist-tag add claude-flow@3.0.0-alpha.XXX latest
 npm dist-tag add claude-flow@3.0.0-alpha.XXX alpha
 
-# STEP 4: Publish ruflo umbrella (CRITICAL - DON'T FORGET!)
+# STEP 4: Publish ezra umbrella (CRITICAL - DON'T FORGET!)
 cd /workspaces/claude-flow/ruflo
 npm version 3.0.0-alpha.XXX --no-git-tag-version
 npm publish --tag alpha
-npm dist-tag add ruflo@3.0.0-alpha.XXX latest
+npm dist-tag add ezra-flow@3.0.0-alpha.XXX latest
 ```
 
 **Verification (run before telling user):**
 ```bash
 npm view @claude-flow/cli dist-tags --json
 npm view claude-flow dist-tags --json
-npm view ruflo dist-tags --json
+npm view ezra-flow dist-tags --json
 # ALL THREE packages need: alpha AND latest pointing to newest version
 ```
 
@@ -1110,12 +1115,12 @@ npm view ruflo dist-tags --json
 | `claude-flow` | `alpha` | `npx claude-flow@alpha` — EASY TO FORGET |
 | `claude-flow` | `latest` | `npx claude-flow@latest` |
 | `claude-flow` | `v3alpha` | `npx claude-flow@v3alpha` |
-| `ruflo` | `alpha` | `npx ruflo@alpha` — EASY TO FORGET |
-| `ruflo` | `latest` | `npx ruflo@latest` |
+| `ezra-flow` | `alpha` | `npx ezra-flow@alpha` — EASY TO FORGET |
+| `ezra-flow` | `latest` | `npx ezra-flow@latest` |
 
-- Never forget the `ruflo` package — it's a thin wrapper users run via `npx ruflo@alpha`
+- Never forget the `ezra-flow` package — it's a thin wrapper users run via `npx ezra-flow@alpha`
 - Never forget the umbrella `alpha` tag — users run `npx claude-flow@alpha`
-- `ruflo` source is in `/ruflo/` — it depends on `@claude-flow/cli`
+- `ezra-flow` source is in `/ruflo/` — it depends on `@claude-flow/cli`
 
 ## Plugin Registry Maintenance (IPFS/Pinata)
 
@@ -1273,6 +1278,21 @@ npx claude-flow@v3alpha plugins publish
 ```
 
 Registry source: IPFS via Pinata (`QmXbfEAaR7D2Ujm4GAkbwcGZQMHqAMpwDoje4583uNP834`)
+
+## Watchdog Security Integration
+
+Ezra can integrate with the Watchdog security platform for real-time threat monitoring.
+To enable, add the Watchdog MCP server:
+
+```bash
+claude mcp add watchdog -- npx watchdog-mcp
+```
+
+Key tools: `watchdog_status`, `watchdog_threats`, `watchdog_scan`, `hub_activate_formation`
+
+Skills: `/watchdog:status` (security dashboard), `/watchdog:defend` (activate formations)
+
+Agent routing: Use agent type `watchdog-security` or routing code 9 for security tasks with Watchdog integration.
 
 ## Support
 

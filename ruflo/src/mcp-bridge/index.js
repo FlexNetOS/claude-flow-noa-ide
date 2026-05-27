@@ -831,7 +831,10 @@ const GROUP_DISPLAY_NAMES = {
 // MCP SERVER — Multiple endpoints per group
 // =============================================================================
 
+const express = require("express");
+const helmet = require("helmet");
 const app = express();
+app.use(helmet());
 app.use(express.json({ limit: "10mb" }));
 
 // ---------- CORS middleware ----------

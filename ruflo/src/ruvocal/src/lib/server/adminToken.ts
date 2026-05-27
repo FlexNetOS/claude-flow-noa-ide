@@ -2,6 +2,7 @@ import { config } from "$lib/server/config";
 import type { Session } from "$lib/types/Session";
 import { logger } from "./logger";
 import { v4 } from "uuid";
+import { timingSafeEqual } from "node:crypto";
 
 class AdminTokenManager {
 	private token = config.ADMIN_TOKEN || v4();
@@ -19,7 +20,9 @@ class AdminTokenManager {
 
 	public checkToken(token: string, sessionId: Session["sessionId"]) {
 		if (!this.enabled) return false;
-		if (token === this.token) {
+		const a = Buffer.from(token);
+		const b = Buffer.from(this.token);
+		if (a.length === b.length && timingSafeEqual(a, b)) {
 			logger.info(`[ADMIN] Token validated`);
 			this.adminSessions.push(sessionId);
 			this.token = config.ADMIN_TOKEN || v4();

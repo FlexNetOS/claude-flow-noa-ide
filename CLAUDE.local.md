@@ -1,4 +1,4 @@
-# Local Development Configuration
+# Ezra — Local Development Configuration
 
 ## Environment Variables
 
@@ -26,16 +26,16 @@ Security: NEVER hardcode API keys. Source from .env at runtime. NEVER commit .en
 
 ## Doctor Health Checks
 
-`npx claude-flow@v3alpha doctor` checks: Node 20+, npm 9+, git, config, daemon, memory DB, API keys, MCP servers, disk space, TypeScript.
+`npx ezra-flow@latest doctor` checks: Node 20+, npm 9+, git, config, daemon, memory DB, API keys, MCP servers, disk space, TypeScript.
 
 ## Hooks Quick Reference
 
 ```bash
-npx claude-flow@v3alpha hooks pre-task --description "[task]"
-npx claude-flow@v3alpha hooks post-task --task-id "[id]" --success true
-npx claude-flow@v3alpha hooks session-start --session-id "[id]"
-npx claude-flow@v3alpha hooks route --task "[task]"
-npx claude-flow@v3alpha hooks worker list
+npx ezra-flow@latest hooks pre-task --description "[task]"
+npx ezra-flow@latest hooks post-task --task-id "[id]" --success true
+npx ezra-flow@latest hooks session-start --session-id "[id]"
+npx ezra-flow@latest hooks route --task "[task]"
+npx ezra-flow@latest hooks worker list
 ```
 
 ## Intelligence System (RuVector)

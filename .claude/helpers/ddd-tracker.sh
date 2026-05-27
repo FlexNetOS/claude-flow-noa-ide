@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - DDD Progress Tracker Worker
+# Ezra V3 - DDD Progress Tracker Worker
 # Tracks Domain-Driven Design implementation progress
 
 set -euo pipefail

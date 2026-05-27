@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - Performance Benchmark Worker
+# Ezra V3 - Performance Benchmark Worker
 # Runs periodic benchmarks and updates metrics using agentic-flow agents
 
 set -euo pipefail

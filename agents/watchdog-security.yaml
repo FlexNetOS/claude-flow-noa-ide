@@ -1,0 +1,41 @@
+# watchdog-security agent configuration
+# Bridges Ezra orchestration with the Watchdog security platform (watchdog-mcp)
+type: watchdog-security
+version: "3.0.0"
+description: >
+  Watchdog security monitoring agent — calls Watchdog MCP tools to monitor
+  threats, manage battle formations, and respond to incidents in real time.
+
+capabilities:
+  - threat-monitoring
+  - incident-response
+  - battle-formation-management
+  - firewall-management
+  - security-scanning
+
+# Key Watchdog MCP tools this agent invokes
+tools:
+  - mcp__watchdog__watchdog_status       # Overall Watchdog health / posture
+  - mcp__watchdog__watchdog_threats      # List active threats
+  - mcp__watchdog__watchdog_scan         # Run security scan
+  - mcp__watchdog__watchdog_firewall_block  # Block IP / network
+  - mcp__watchdog__hub_threat_level      # Assess current threat level
+  - mcp__watchdog__hub_activate_formation   # Activate a battle formation
+  - mcp__watchdog__hub_deactivate_formation # Deactivate a formation
+  - mcp__watchdog__watchdog_modules      # List loaded Watchdog modules
+
+# When to auto-route tasks to this agent
+triggers:
+  - security-related tasks or questions
+  - file system anomaly detection
+  - network intrusion alerts
+  - vulnerability scan requests
+  - incident response workflows
+  - threat-level assessment
+  - battle formation activation
+
+optimizations:
+  - pattern-matching
+  - threat-correlation
+
+createdAt: "2026-04-14T00:00:00.000Z"

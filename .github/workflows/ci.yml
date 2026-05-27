@@ -31,17 +31,13 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Run security audit
-        run: |
-          npm audit --audit-level=high || echo "⚠️ Security vulnerabilities found (non-blocking)"
-          npm audit --production --audit-level=moderate || echo "⚠️ Production vulnerabilities found (non-blocking)"
-        continue-on-error: true
-        
+        run: npm audit --audit-level=high
+
       - name: Lint code
         run: npm run lint
 
       - name: Type check
-        run: npm run typecheck || echo "⚠️ Type checking skipped (TypeScript compiler crash)"
-        continue-on-error: true
+        run: npm run typecheck
 
       - name: Check for outdated dependencies
         run: npm outdated || true
@@ -73,8 +69,7 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Run all tests
-        run: npm test || echo "⚠️ Some tests failed (Jest teardown issues - non-blocking)"
-        continue-on-error: true
+        run: npm test
 
       - name: Generate coverage report
         if: matrix.os == 'ubuntu-latest'
@@ -154,13 +149,11 @@ jobs:
         run: |
           chmod +x ./v3/@claude-flow/cli/bin/cli.js
           node ./v3/@claude-flow/cli/bin/cli.js --version
-        continue-on-error: true
 
       - name: Test CLI binary (Windows)
         if: runner.os == 'Windows'
         run: |
           node ./v3/@claude-flow/cli/bin/cli.js --version
-        continue-on-error: true
 
       - name: Package build
         run: |

@@ -4,7 +4,7 @@
 
 set -e
 
-echo "🔍 RuFlo V3 Configuration Validation"
+echo "🔍 Ezra V3 Configuration Validation"
 echo "==========================================="
 echo ""
 

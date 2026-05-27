@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * RuFlo V3 Statusline Generator (Optimized)
+ * Ezra V3 Statusline Generator (Optimized)
  * Displays real-time V3 implementation progress and system status
  *
  * Usage: node statusline.cjs [--json] [--compact]

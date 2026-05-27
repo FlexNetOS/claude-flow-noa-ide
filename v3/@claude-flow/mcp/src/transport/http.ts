@@ -7,9 +7,16 @@
 import { EventEmitter } from 'events';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import { createServer, Server } from 'http';
+import { createServer as createHttpsServer } from 'https';
+import { readFileSync } from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import helmet from 'helmet';
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0:0:0:0:0:0:0:1']);
+function isLoopback(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host);
+}
 import type {
   ITransport,
   TransportType,
@@ -71,12 +78,40 @@ export class HttpTransport extends EventEmitter implements ITransport {
       throw new Error('HTTP transport already running');
     }
 
+    const nonLoopback = !isLoopback(this.config.host);
+    const authEnabled = this.config.auth?.enabled === true && !!this.config.auth.tokens?.length;
+    const tlsEnabled = this.config.tlsEnabled === true && !!this.config.tlsCert && !!this.config.tlsKey;
+
+    if (nonLoopback && !authEnabled) {
+      throw new Error(
+        `HTTP transport refusing to bind ${this.config.host}:${this.config.port}: ` +
+        `non-loopback host requires auth.enabled=true with at least one token. ` +
+        `Bind to localhost or configure auth tokens.`
+      );
+    }
+    if (nonLoopback && !tlsEnabled) {
+      throw new Error(
+        `HTTP transport refusing to bind ${this.config.host}:${this.config.port}: ` +
+        `non-loopback host requires TLS (tlsEnabled=true with tlsCert and tlsKey). ` +
+        `Bind to localhost or configure TLS.`
+      );
+    }
+
     this.logger.info('Starting HTTP transport', {
       host: this.config.host,
       port: this.config.port,
+      tls: tlsEnabled,
+      auth: authEnabled,
     });
 
-    this.server = createServer(this.app);
+    if (tlsEnabled) {
+      this.server = createHttpsServer(
+        { cert: readFileSync(this.config.tlsCert!), key: readFileSync(this.config.tlsKey!) },
+        this.app
+      );
+    } else {
+      this.server = createServer(this.app);
+    }
 
     this.wss = new WebSocketServer({
       server: this.server,
@@ -93,8 +128,9 @@ export class HttpTransport extends EventEmitter implements ITransport {
     });
 
     this.running = true;
+    const scheme = tlsEnabled ? 'https' : 'http';
     this.logger.info('HTTP transport started', {
-      url: `http://${this.config.host}:${this.config.port}`,
+      url: `${scheme}://${this.config.host}:${this.config.port}`,
     });
   }
 
@@ -346,6 +382,7 @@ export class HttpTransport extends EventEmitter implements ITransport {
     this.httpRequests++;
     this.messagesReceived++;
 
+<<<<<<< ours
     if (!this.config.allowUnauthenticated) {
       if (this.config.auth) {
         const authResult = this.validateAuth(req);
@@ -365,6 +402,20 @@ export class HttpTransport extends EventEmitter implements ITransport {
       } else {
         // No auth configured and allowUnauthenticated is not set — reject
         this.logger.warn('No authentication configured — rejecting request. Set allowUnauthenticated for local-only use.');
+=======
+    const authConfigured = !!this.config.auth?.tokens?.length;
+    const authEnabled = this.config.auth?.enabled === true && authConfigured;
+    const nonLoopback = !isLoopback(this.config.host);
+
+    if (authEnabled) {
+      const authResult = this.validateAuth(req);
+      if (!authResult.valid) {
+        this.logger.warn('Authentication failed', {
+          ip: req.ip,
+          path: req.path,
+          error: authResult.error,
+        });
+>>>>>>> theirs
         res.status(401).json({
           jsonrpc: '2.0',
           id: null,
@@ -372,6 +423,18 @@ export class HttpTransport extends EventEmitter implements ITransport {
         });
         return;
       }
+<<<<<<< ours
+=======
+    } else if (nonLoopback) {
+      // Unreachable in normal operation: start() throws for non-loopback without auth.
+      // Defensive 401 in case start() was bypassed via direct request injection in tests.
+      res.status(401).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32001, message: 'Unauthorized: server requires auth for non-loopback binds' },
+      });
+      return;
+>>>>>>> theirs
     }
 
     const message = req.body;

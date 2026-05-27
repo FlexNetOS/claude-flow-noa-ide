@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - Health Monitor Worker
+# Ezra V3 - Health Monitor Worker
 # Checks disk space, memory pressure, process health
 
 set -euo pipefail

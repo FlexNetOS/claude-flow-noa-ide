@@ -12,7 +12,7 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 RESET='\033[0m'
 
-echo -e "${PURPLE}⚡ RuFlo V3 Quick Status${RESET}"
+echo -e "${PURPLE}⚡ Ezra V3 Quick Status${RESET}"
 
 # Get metrics
 DOMAINS=0

@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - ADR Compliance Checker Worker
+# Ezra V3 - ADR Compliance Checker Worker
 # Checks compliance with Architecture Decision Records
 
 set -euo pipefail

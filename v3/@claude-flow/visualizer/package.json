@@ -1,0 +1,37 @@
+{
+  "name": "@claude-flow/visualizer",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Realtime observability backend and typed contracts for the Ruflo Swarm Visualizer",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./contracts": "./dist/contracts/index.js",
+    "./server": "./dist/server/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server/dev.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.16.5",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "v3alpha"
+  }
+}

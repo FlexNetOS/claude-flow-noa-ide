@@ -75,7 +75,7 @@ case "$1" in
     ;;
 
   "help"|"--help"|"-h"|"")
-    echo "RuFlo V3 Helper Tool"
+    echo "Ezra V3 Helper Tool"
     echo "=========================="
     echo ""
     echo "Usage: v3 <command> [options]"

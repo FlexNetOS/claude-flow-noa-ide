@@ -61,6 +61,12 @@
       "args": ["flow-nexus@latest", "mcp", "start"],
       "description": "Cloud-based orchestration platform with 70+ tools (requires authentication)",
       "optional": true
+    },
+    "watchdog": {
+      "command": "npx",
+      "args": ["watchdog-mcp"],
+      "description": "Watchdog security platform with 76 MCP tools for threat monitoring, battle formations, and incident response",
+      "optional": true
     }
   }
 }

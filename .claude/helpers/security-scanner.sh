@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - Security Scanner Worker
+# Ezra V3 - Security Scanner Worker
 # Scans for secrets, vulnerabilities, CVE updates
 
 set -euo pipefail

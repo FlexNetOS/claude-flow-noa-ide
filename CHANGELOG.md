@@ -1,19 +1,19 @@
 # Changelog
 
-All notable changes to the Ruflo project (formerly Claude Flow) are documented here.
+All notable changes to the Ezra project (formerly Claude Flow) are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.5.0] - 2026-02-27
 
-### Ruflo v3.5 — First Major Stable Release
+### Ezra v3.5 — First Major Stable Release
 
-This release marks the official rebranding from **Claude Flow** to **Ruflo** and represents the first major stable release after 5,800+ commits, 55 alpha iterations, and 10 months of development.
+This release marks the official rebranding from **Claude Flow** to **Ezra** and represents the first major stable release after 5,800+ commits, 55 alpha iterations, and 10 months of development.
 
 ### Highlights
 
-- **Rebranding**: Claude Flow → Ruflo across all packages (`@claude-flow/cli`, `ruv-flow`, `ruflo`)
+- **Rebranding**: Claude Flow → Ezra across all packages (`@claude-flow/cli`, `claude-flow`, `ruflo`)
 - **agentic-flow v3.0.0-alpha.1 Integration**: Full deep integration with 10 subpath exports (ReasoningBank, Router, Orchestration, Agent Booster, SDK, Security, QUIC transport)
 - **AgentDB v3.0.0-alpha.9**: 8 new controllers (HierarchicalMemory, MemoryConsolidation, SemanticRouter, GNNService, RVFOptimizer, MutationGuard, AttestationLog, GuardedVectorBackend) + 6 MCP tools
 - **215 MCP Tools**: Full Model Context Protocol server with vector memory, neural training, swarm coordination

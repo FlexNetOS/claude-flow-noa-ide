@@ -7,7 +7,12 @@
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
-  "keywords": ["rest", "api", "simple", "example"],
+  "keywords": [
+    "rest",
+    "api",
+    "simple",
+    "example"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -15,5 +20,9 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
+  },
+  "overrides": {
+    "qs@<=6.14.2": "6.14.2",
+    "path-to-regexp@<=0.1.13": "0.1.13"
   }
 }

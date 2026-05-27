@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - Learning Hooks
+# Ezra V3 - Learning Hooks
 # Integrates learning-service.mjs with session lifecycle
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -300,7 +300,7 @@ case "${1:-help}" in
     ;;
   "help"|"-h"|"--help")
     cat << 'EOF'
-RuFlo V3 Learning Hooks
+Ezra V3 Learning Hooks
 
 Usage: learning-hooks.sh <command> [args]
 

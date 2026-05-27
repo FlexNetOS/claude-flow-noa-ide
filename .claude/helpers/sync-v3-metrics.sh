@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - Auto-sync Metrics from Actual Implementation
+# Ezra V3 - Auto-sync Metrics from Actual Implementation
 # Scans the V3 codebase and updates metrics to reflect reality
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# RuFlo V3 - Unified Worker Manager
+# Ezra V3 - Unified Worker Manager
 # Orchestrates all background workers with proper scheduling
 
 set -euo pipefail
@@ -65,7 +65,7 @@ run_daemon() {
 
 status_all() {
   echo "╔══════════════════════════════════════════════════════════════╗"
-  echo "║           RuFlo V3 - Worker Status                      ║"
+  echo "║           Ezra V3 - Worker Status                      ║"
   echo "╠══════════════════════════════════════════════════════════════╣"
 
   for worker_def in "${WORKERS[@]}"; do
@@ -140,7 +140,7 @@ case "${1:-help}" in
     ;;
   "help"|*)
     cat << EOF
-RuFlo V3 - Worker Manager
+Ezra V3 - Worker Manager
 
 Usage: $0 <command> [options]
 

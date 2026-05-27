@@ -57,6 +57,8 @@ export const OIDConfig = z
 
 export const loginEnabled = !!OIDConfig.CLIENT_ID;
 
+const TOKEN_CACHE_TTL_MS = 60 * 60 * 1000;
+
 const sameSite = z
 	.enum(["lax", "none", "strict"])
 	.default(dev || config.ALLOW_INSECURE_COOKIES === "true" ? "lax" : "none")
@@ -461,7 +463,9 @@ export async function authenticateRequest(
 			sessionId = secretSessionId = hash;
 
 			const cacheHit = await collections.tokenCaches.findOne({ tokenHash: hash });
-			if (cacheHit) {
+			// TTL enforced in app layer: RVF store has no native TTL index.
+			// Bounds the window where an upstream-revoked HF token still works.
+			if (cacheHit && Date.now() - cacheHit.createdAt.getTime() < TOKEN_CACHE_TTL_MS) {
 				const user = await collections.users.findOne({ hfUserId: cacheHit.userId });
 				if (!user) {
 					throw new Error("User not found");
@@ -473,6 +477,9 @@ export async function authenticateRequest(
 					secretSessionId,
 					isAdmin: user.isAdmin || adminTokenManager.isAdmin(sessionId),
 				};
+			}
+			if (cacheHit) {
+				await collections.tokenCaches.deleteOne({ tokenHash: hash });
 			}
 
 			const response = await fetch("https://huggingface.co/api/whoami-v2", {

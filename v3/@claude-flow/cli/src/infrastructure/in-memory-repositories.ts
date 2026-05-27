@@ -6,18 +6,20 @@
  * @module v3/cli/infrastructure
  */
 
-import { Agent, AgentStatus, AgentRole } from '../../../swarm/src/domain/entities/agent.js';
-import { Task, TaskStatus, TaskPriority } from '../../../swarm/src/domain/entities/task.js';
 import {
+  Agent,
+  AgentStatus,
+  AgentRole,
+  Task,
+  TaskStatus,
+  TaskPriority,
   IAgentRepository,
   AgentQueryOptions,
   AgentStatistics,
-} from '../../../swarm/src/domain/repositories/agent-repository.interface.js';
-import {
   ITaskRepository,
   TaskQueryOptions,
   TaskStatistics,
-} from '../../../swarm/src/domain/repositories/task-repository.interface.js';
+} from '@claude-flow/swarm/domain';
 
 /**
  * In-Memory Agent Repository

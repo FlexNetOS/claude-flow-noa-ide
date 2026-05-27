@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:observability": "VITE_VISUALIZER_HTTP_URL=http://localhost:8787 VITE_VISUALIZER_WS_URL=ws://localhost:8787/ws/visualizer vite",
     "build": "npm run build:widget-only && npm run copy:widget && vite build && npm run copy:widget-to-dist",
     "build:app": "vite build",
     "build:dev": "vite build --mode development",
@@ -56,6 +57,8 @@
     "input-otp": "^1.4.2",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
+    "cytoscape": "^3.30.2",
+    "framer-motion": "^11.18.2",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -68,7 +71,8 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
