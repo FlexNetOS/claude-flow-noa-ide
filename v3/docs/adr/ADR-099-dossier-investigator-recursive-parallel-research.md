@@ -1,8 +1,8 @@
 # ADR-099: Dossier-Investigator — Recursive Parallel Multi-Source Research for `ruflo-goals`
 
-**Status**: Proposed
-**Date**: 2026-05-03
-**Version**: target v3.6.x (additive — `plugins/ruflo-goals` minor bump)
+**Status**: Accepted — Implemented
+**Date**: 2026-05-03 · **Updated**: 2026-05-09
+**Version**: shipped in `plugins/ruflo-goals` (0.1.0 → 0.2.0)
 **Supersedes**: nothing
 **Related**: ADR-098 (plugin capability sync), `plugins/ruflo-goals/agents/deep-researcher.md`, `plugins/ruflo-knowledge-graph`, `plugins/ruflo-rag-memory`
 
@@ -120,6 +120,35 @@ Acceptance criteria:
 - Output written to `dossier` namespace with valid JSON schema.
 - One end-to-end test: seed = `ADR-097`, expected entities include `federation`, `circuit-breaker`, `budget`.
 - Trajectory recorded; pattern stored on success.
+
+## Implementation status (2026-05-09)
+
+All implementation plan steps are complete on `main`.
+
+| Step | File | Status | Commit(s) |
+|---|---|---|---|
+| 1. Agent prompt | `plugins/ruflo-goals/agents/dossier-investigator.md` | Implemented | `1e11ac84e feat(ruflo-goals): dossier-investigator agent + dossier-collect skill (ADR-099) (#1726)` |
+| 2. Skill markdown | `plugins/ruflo-goals/skills/dossier-collect/SKILL.md` | Implemented | same |
+| 3. Slash command | `plugins/ruflo-goals/commands/goals.md` (dossier subcommand) | Implemented | same |
+| 4. Plugin manifest bump | `plugins/ruflo-goals/.claude-plugin/plugin.json` (0.1.0 → 0.2.0) | Implemented | same |
+| 5. README update | `plugins/ruflo-goals/README.md` | Implemented | same |
+| 6. Smoke test | `tests/plugins/ruflo-goals/dossier.spec.ts` | Implemented | same |
+| 7. Feature flag | `dossierInvestigator.enabled` (default `true`) | Implemented | same |
+| Plugin contract adoption | `plugins/ruflo-goals/` — legacy-vs-canonical namespace mapping + ADR-099 anchor | Implemented | `714cd534c feat(ruflo-goals): adopt plugin contract — legacy-vs-canonical namespace mapping + ADR-099 anchor (ADR-0001)` |
+| Dossier examples | `docs/examples/` — 3 examples (ruvnet, ADR-088, ruflo-goals) | Implemented | `ba0479612 docs(examples): add 3 dossier examples` |
+
+### Open questions resolved during implementation
+
+| Original question | Resolution |
+|---|---|
+| Will the ~40% overlap with `deep-researcher` prove excessive? | No — the two agents were used side-by-side without confusion during initial runs. The distinction (question-driven vs seed-driven) held clearly in practice. |
+| Should `--exact` mode for entity-identity-sensitive runs be added at launch? | Deferred to a follow-up issue; the default 0.92 embedding-similarity threshold was sufficient for the launch use cases. |
+
+### Deferred
+
+- **`--exact` mode** for embedding-similarity de-duplication — no false-positive incidents in initial use; tracked as a low-priority follow-up.
+
+---
 
 ## References
 

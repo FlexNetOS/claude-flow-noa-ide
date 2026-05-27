@@ -1,6 +1,10 @@
 {
   "name": "@claude-flow/embeddings",
+<<<<<<< HEAD
   "version": "3.0.0-alpha.15",
+=======
+  "version": "3.0.0-alpha.16",
+>>>>>>> pr-1936-head
   "description": "V3 Embedding Service - OpenAI, Transformers.js, Agentic-Flow (ONNX), Mock providers with hyperbolic embeddings, normalization, and chunking",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,8 +1,14 @@
 # ADR-094: Migrate `@xenova/transformers` → `@huggingface/transformers`
 
+<<<<<<< HEAD
 **Status**: Proposed
 **Date**: 2026-05-03
 **Version**: targets v3.7.x
+=======
+**Status**: Accepted — Implemented (provider-agnostic loader shipped; both call sites migrated; `@xenova/transformers` demoted to optional dep)
+**Date**: 2026-05-03 (proposed) · **Updated**: 2026-05-09
+**Version**: shipped in `@claude-flow/embeddings@3.0.0-alpha.15` / v3.6.19
+>>>>>>> pr-1936-head
 **Supersedes**: nothing
 **Related**: ADR-093, npm audit CVE chain through `protobufjs`
 
@@ -114,6 +120,26 @@ this.transformersSource = t.source;
 
 ## Notes
 
+<<<<<<< HEAD
 - This ADR is the migration plan. Implementation is queued for the next /loop iteration cycle.
 - The `@huggingface/transformers` package itself currently audits clean against npm advisory database as of 2026-05-03.
 - The provider-agnostic loader pattern (try-then-fallback) matches the existing `getQueryEmbedding` pattern in `hooks-tools.ts:3050`, so callers familiar with that codebase will recognize the shape.
+=======
+- The `@huggingface/transformers` package itself currently audits clean against npm advisory database as of 2026-05-03.
+- The provider-agnostic loader pattern (try-then-fallback) matches the existing `getQueryEmbedding` pattern in `hooks-tools.ts:3050`, so callers familiar with that codebase will recognize the shape.
+
+## Implementation status (2026-05-09)
+
+All three files listed in the Decision shipped in a single commit. The `memory-initializer.ts` call site uses an inlined try-prefer-fallback (not the shared loader) to avoid a circular optional-dep at install time.
+
+| Component | Status | Files | Commit(s) |
+|---|---|---|---|
+| **`transformers-loader.ts`** — provider-agnostic loader, prefers `@huggingface/transformers`, falls back to `@xenova/transformers`, caches resolved source | Implemented | `v3/@claude-flow/embeddings/src/transformers-loader.ts` (new, 89 lines) | `21f668c55 feat: implement ADR-094 transformers migration + ADR-095 gap tracking` |
+| **`embedding-service.ts`** call site — replaced direct `@xenova` import with loader | Implemented | `v3/@claude-flow/embeddings/src/embedding-service.ts:387` | `21f668c55` |
+| **`memory-initializer.ts`** call site — inlined try-prefer-fallback (avoids circular optional-dep) | Implemented | `v3/@claude-flow/cli/src/memory/memory-initializer.ts:1539` | `21f668c55` |
+| **`@claude-flow/embeddings/package.json`** — `@huggingface/transformers@^4.2.0` added to `optionalDependencies`; `@xenova/transformers` demoted to `optionalDependencies` | Implemented | `v3/@claude-flow/embeddings/package.json` | `21f668c55` · `6369151ac chore: bump to 3.6.19 + @claude-flow/embeddings@3.0.0-alpha.15` |
+
+### Validation status
+
+Validation steps 1–4 (determinism check, HNSW round-trip, mixed install, 6-agent swarm regression) are specified in the Decision section above. They were not separately committed as automated tests — the build passes clean with both packages optional, which satisfies the "graceful no-provider path" requirement. A full determinism byte-comparison test remains an open follow-up item.
+>>>>>>> pr-1936-head

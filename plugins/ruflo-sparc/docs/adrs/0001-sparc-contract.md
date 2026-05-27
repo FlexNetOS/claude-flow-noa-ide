@@ -1,8 +1,14 @@
 ---
 id: ADR-0001
 title: ruflo-sparc plugin contract — pinning, namespace coordination, ADR/DDD/Docs phase cross-references, smoke as contract
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-1936-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, sparc, methodology, namespace, smoke-test]
@@ -52,3 +58,10 @@ bash plugins/ruflo-sparc/scripts/smoke.sh
 - `plugins/ruflo-docs/docs/adrs/0001-docs-contract.md` — Completion phase (documentation)
 - `plugins/ruflo-goals/docs/adrs/0001-goals-contract.md` — Specification phase (deep-research)
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention
+<<<<<<< HEAD
+=======
+
+## Implementation status
+
+Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-sparc/`. Contract elements implemented: all 5 SPARC phases cross-linked to sibling plugins (goals, ddd, adr, testgen, docs); namespace `sparc-state` claimed; 3 skills (`sparc-spec`, `sparc-implement`, `sparc-refine`) shipped; smoke-as-contract gate defined in `scripts/smoke.sh` (11 checks).
+>>>>>>> pr-1936-head

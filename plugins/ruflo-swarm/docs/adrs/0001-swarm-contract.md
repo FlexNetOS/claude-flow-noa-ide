@@ -1,8 +1,14 @@
 ---
 id: ADR-0001
 title: ruflo-swarm plugin contract — pinning, namespace coordination, MCP surface (4 swarm_* + 8 agent_*), Monitor streaming, smoke as contract
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-1936-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, swarm, agents, monitor, namespace, smoke-test]
@@ -48,3 +54,10 @@ bash plugins/ruflo-swarm/scripts/smoke.sh
 - `plugins/ruflo-intelligence/docs/adrs/0001-intelligence-surface-completeness.md` — `hooks_route` powers swarm agent recommendation
 - `v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts` — 4 `swarm_*` tools
 - `v3/@claude-flow/cli/src/mcp-tools/agent-tools.ts` — 8 `agent_*` tools
+<<<<<<< HEAD
+=======
+
+## Implementation status
+
+Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-swarm/`. Contract elements implemented: all 4 `swarm_*` + 8 `agent_*` MCP tools (12 total) covered; Monitor streaming (`/watch`) skill shipped; namespace `swarm-state` claimed; smoke-as-contract gate defined in `scripts/smoke.sh` (11 checks).
+>>>>>>> pr-1936-head

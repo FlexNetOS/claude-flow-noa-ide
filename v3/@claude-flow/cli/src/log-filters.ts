@@ -1,4 +1,5 @@
 /**
+<<<<<<< HEAD
  * Console filter for noisy subsystem init logs (Bugs #35, plus the original
  * `[AgentDB Patch] Controller index not found` filter).
  *
@@ -34,11 +35,32 @@
 
 import { shouldSurfaceSubsystemNoise, fileOnly } from './util/log.js';
 
+=======
+ * Console filter for the cosmetic "[AgentDB Patch] Controller index not found"
+ * warning emitted by agentic-flow's runtime patch (it expects agentdb v1.x
+ * layout but we use v3). This file MUST be imported as the first side-effect
+ * import in any entry point so the patch is in place before agentic-flow
+ * (and anything that transitively imports it) loads.
+ *
+ * The previous attempt put the suppression as a top-level code block inside
+ * src/index.ts, but ES module imports are evaluated before the file's own
+ * top-level code, so transitive imports of agentic-flow were still
+ * triggering the warning before the suppression took effect. A dedicated
+ * side-effect module imported FIRST avoids that.
+ *
+ * Tight match: requires BOTH "[AgentDB Patch]" AND "Controller index not
+ * found". Other [AgentDB Patch] messages (real issues) flow through.
+ * Audit log audit_1776483149979 flagged the previous broad filter as too
+ * aggressive — this one is tight enough to be safe.
+ */
+
+>>>>>>> pr-1936-head
 const isCosmeticAgentdbPatchNoise = (msg: unknown): boolean => {
   const s = String(msg ?? '');
   return s.includes('[AgentDB Patch]') && s.includes('Controller index not found');
 };
 
+<<<<<<< HEAD
 // Tightly anchored prefixes — only the ones the audit flagged. We match on
 // "starts with prefix" (after optional ✅) so a legitimate error message that
 // happens to contain "[GNNService]" mid-sentence still surfaces via the
@@ -125,3 +147,16 @@ console.error = (...args: unknown[]) => {
   }
   origError(...args);
 };
+=======
+const origWarn = console.warn.bind(console);
+const origLog = console.log.bind(console);
+
+console.warn = (...args: unknown[]) => {
+  if (isCosmeticAgentdbPatchNoise(args[0])) return;
+  origWarn(...args);
+};
+console.log = (...args: unknown[]) => {
+  if (isCosmeticAgentdbPatchNoise(args[0])) return;
+  origLog(...args);
+};
+>>>>>>> pr-1936-head

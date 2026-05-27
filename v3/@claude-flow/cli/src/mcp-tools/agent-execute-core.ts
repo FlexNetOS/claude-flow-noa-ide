@@ -54,6 +54,7 @@ function saveAgentStore(store: AgentStore): void {
   writeFileSync(getAgentPath(), JSON.stringify(store, null, 2), 'utf-8');
 }
 
+<<<<<<< HEAD
 // #1906 — these were stuck on Claude-3.x ids that the Anthropic API now
 // 404s. Current model ids (Claude 4.x family):
 //   Opus 4.7    → claude-opus-4-7
@@ -66,12 +67,23 @@ const MODEL_MAP: Record<string, string> = {
   sonnet: 'claude-sonnet-4-6',
   opus: 'claude-opus-4-7',
   inherit: DEFAULT_ANTHROPIC_MODEL,
+=======
+const MODEL_MAP: Record<string, string> = {
+  haiku: 'claude-3-5-haiku-latest',
+  sonnet: 'claude-3-5-sonnet-latest',
+  opus: 'claude-3-opus-latest',
+  inherit: 'claude-3-5-sonnet-latest',
+>>>>>>> pr-1936-head
 };
 
 export interface AnthropicCallInput {
   prompt: string;
   systemPrompt?: string;
+<<<<<<< HEAD
   model?: string;          // already-resolved Anthropic model id (e.g. 'claude-sonnet-4-6')
+=======
+  model?: string;          // already-resolved Anthropic model id (e.g. 'claude-3-5-sonnet-latest')
+>>>>>>> pr-1936-head
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
@@ -103,6 +115,7 @@ export async function callAnthropicMessages(input: AnthropicCallInput): Promise<
   const explicitProvider = (process.env.RUFLO_PROVIDER || '').toLowerCase();
   const ollamaKey = process.env.OLLAMA_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
+<<<<<<< HEAD
   // #2042 — OpenRouter is an OpenAI-compat endpoint that fronts dozens of
   // providers. Reporter (@ummcke00) had `providers.openrouter.apiKey` in
   // their config.yaml but agent_execute hardcoded Anthropic. Detect via
@@ -124,6 +137,11 @@ export async function callAnthropicMessages(input: AnthropicCallInput): Promise<
       defaultModel: process.env.OPENROUTER_DEFAULT_MODEL || 'anthropic/claude-3.5-sonnet',
     });
   }
+=======
+  const useOllama =
+    explicitProvider === 'ollama' || (!anthropicKey && !!ollamaKey);
+
+>>>>>>> pr-1936-head
   if (useOllama && ollamaKey) {
     return callOllamaCompat({ ...input, apiKey: ollamaKey });
   }
@@ -131,16 +149,27 @@ export async function callAnthropicMessages(input: AnthropicCallInput): Promise<
     return {
       success: false,
       error:
+<<<<<<< HEAD
         'No LLM provider configured. Set ANTHROPIC_API_KEY (Tier-3), OPENROUTER_API_KEY (#2042), OLLAMA_API_KEY (Tier-2), or ANTHROPIC_BASE_URL with a compatible key.',
     };
   }
   const model = input.model || DEFAULT_ANTHROPIC_MODEL;
   const baseUrl = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
+=======
+        'No LLM provider configured. Set ANTHROPIC_API_KEY (Tier-3) or OLLAMA_API_KEY (Tier-2 Ollama Cloud — see issue #1725).',
+    };
+  }
+  const model = input.model || 'claude-3-5-sonnet-latest';
+>>>>>>> pr-1936-head
   const startedAt = Date.now();
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
+<<<<<<< HEAD
     const res = await fetch(`${baseUrl}/v1/messages`, {
+=======
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+>>>>>>> pr-1936-head
       method: 'POST',
       headers: {
         'x-api-key': anthropicKey,
@@ -287,6 +316,7 @@ async function callOllamaCompat(
   }
 }
 
+<<<<<<< HEAD
 /**
  * Generic OpenAI-compat caller for OpenRouter and other OpenAI-shaped
  * endpoints. #2042 — reporter (@ummcke00) configured OpenRouter via
@@ -377,6 +407,8 @@ function resolveOpenAICompatModel(input: string | undefined, fallback: string): 
   return input;
 }
 
+=======
+>>>>>>> pr-1936-head
 function resolveOllamaModel(input: string | undefined): string {
   const DEFAULT = 'gpt-oss:120b-cloud';
   if (!input) return DEFAULT;
@@ -393,11 +425,19 @@ function resolveOllamaModel(input: string | undefined): string {
 /**
  * Resolve a model identifier to an Anthropic model ID. Accepts:
  * - logical names: 'haiku', 'sonnet', 'opus', 'inherit'
+<<<<<<< HEAD
  * - prefixed: 'anthropic:claude-sonnet-4-6'
  * - direct: 'claude-sonnet-4-6'
  */
 export function resolveAnthropicModel(input: string | undefined): string {
   if (!input) return DEFAULT_ANTHROPIC_MODEL;
+=======
+ * - prefixed: 'anthropic:claude-3-5-sonnet-latest'
+ * - direct: 'claude-3-5-sonnet-latest'
+ */
+export function resolveAnthropicModel(input: string | undefined): string {
+  if (!input) return 'claude-3-5-sonnet-latest';
+>>>>>>> pr-1936-head
   if (input in MODEL_MAP) return MODEL_MAP[input];
   if (input.startsWith('anthropic:')) return input.slice('anthropic:'.length);
   return input;
@@ -426,12 +466,29 @@ export interface AgentExecuteResult {
 }
 
 export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentExecuteResult> {
+<<<<<<< HEAD
+=======
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return {
+      success: false,
+      agentId: input.agentId,
+      error: 'ANTHROPIC_API_KEY not set in environment',
+      remediation: 'Set the env var and re-run. The key is read at call time.',
+    };
+  }
+
+>>>>>>> pr-1936-head
   const store = loadAgentStore();
   const agent = store.agents[input.agentId];
   if (!agent) return { success: false, agentId: input.agentId, error: 'Agent not found' };
   if (agent.status === 'terminated') return { success: false, agentId: input.agentId, error: 'Agent has been terminated' };
 
+<<<<<<< HEAD
   const anthropicModel = MODEL_MAP[agent.model || 'sonnet'] || DEFAULT_ANTHROPIC_MODEL;
+=======
+  const anthropicModel = MODEL_MAP[agent.model || 'sonnet'] || 'claude-3-5-sonnet-latest';
+>>>>>>> pr-1936-head
   const systemPrompt = input.systemPrompt ||
     `You are a ${agent.agentType} agent operating as part of a Ruflo swarm. ` +
     `Agent ID: ${input.agentId}. Domain: ${agent.domain ?? 'general'}. ` +
@@ -443,6 +500,7 @@ export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentE
 
   const startedAt = Date.now();
 
+<<<<<<< HEAD
   // #2042 — delegate to callAnthropicMessages so the v3 provider router
   // (Anthropic / Ollama / OpenRouter) governs which backend is hit. The
   // previous inline `fetch('https://api.anthropic.com/...')` bypassed
@@ -493,3 +551,86 @@ export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentE
   };
 }
 
+=======
+  try {
+    const controller = new AbortController();
+    const timeoutMs = input.timeoutMs || 60000;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: anthropicModel,
+        max_tokens: input.maxTokens || 1024,
+        temperature: typeof input.temperature === 'number' ? input.temperature : 0.7,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: input.prompt }],
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '<unreadable error body>');
+      agent.status = 'idle';
+      saveAgentStore(store);
+      return {
+        success: false,
+        agentId: input.agentId,
+        model: anthropicModel,
+        error: `Anthropic API error ${res.status}: ${errText.slice(0, 400)}`,
+      };
+    }
+
+    const data = await res.json() as {
+      id: string;
+      model: string;
+      content: Array<{ type: string; text?: string }>;
+      stop_reason: string;
+      usage: { input_tokens: number; output_tokens: number };
+    };
+
+    const textOut = data.content
+      .filter(c => c.type === 'text' && typeof c.text === 'string')
+      .map(c => c.text as string)
+      .join('');
+
+    const result: AgentExecuteResult = {
+      success: true,
+      agentId: input.agentId,
+      messageId: data.id,
+      model: data.model,
+      stopReason: data.stop_reason,
+      output: textOut,
+      usage: {
+        inputTokens: data.usage.input_tokens,
+        outputTokens: data.usage.output_tokens,
+        totalTokens: data.usage.input_tokens + data.usage.output_tokens,
+      },
+      durationMs: Date.now() - startedAt,
+    };
+
+    agent.status = 'idle';
+    agent.lastResult = result as unknown as Record<string, unknown>;
+    saveAgentStore(store);
+
+    return result;
+  } catch (err) {
+    agent.status = 'idle';
+    saveAgentStore(store);
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      agentId: input.agentId,
+      model: anthropicModel,
+      error: `agent_execute failed: ${msg}`,
+      durationMs: Date.now() - startedAt,
+    };
+  }
+}
+>>>>>>> pr-1936-head

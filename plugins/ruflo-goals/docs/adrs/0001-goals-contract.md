@@ -1,8 +1,14 @@
 ---
 id: ADR-0001
 title: ruflo-goals plugin contract — pinning, namespace coordination + legacy mapping, GOAP/dossier workflow contract, smoke as contract
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-1936-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, goals, goap, research, horizon, dossier, namespace, smoke-test]
@@ -71,3 +77,10 @@ bash plugins/ruflo-goals/scripts/smoke.sh
 - `plugins/ruflo-adr/docs/adrs/0001-adr-plugin-pattern.md` — owns canonical `adr-patterns` namespace
 - `plugins/ruflo-federation/docs/adrs/0001-federation-contract.md` — base-name exception precedent (`federation` namespace)
 - `v3/docs/adr/ADR-099-dossier-investigator-recursive-parallel-research.md` — dossier-collect spec
+<<<<<<< HEAD
+=======
+
+## Implementation status
+
+Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-goals/`. Contract elements implemented: 6 namespaces mapped to correct `memory_*` routing; GOAP A* planner, dossier recursive fan-out (ADR-099), and horizon-track cross-session agents shipped; smoke-as-contract gate defined in `scripts/smoke.sh`.
+>>>>>>> pr-1936-head

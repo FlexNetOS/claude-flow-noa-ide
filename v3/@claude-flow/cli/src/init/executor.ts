@@ -845,15 +845,20 @@ async function writeSettings(
  * surface it in the skipped-message), or null if none found.
  */
 function detectExistingRufloMCP(targetDir: string): string | null {
+<<<<<<< HEAD
   // STRAT-1: claudeRoot drives the .claude/mcp.json candidate; the
   // ~/.claude.json file lives one level UP from claudeRoot so we still
   // derive it from the home directory directly.
   const home = (process.env.HOME ?? process.env.USERPROFILE) ?? '';
   const installCtx = resolveInstallContext({ forceGlobal: true });
+=======
+  const home = (process.env.HOME ?? process.env.USERPROFILE) ?? '';
+>>>>>>> pr-1936-head
   const candidates = new Set<string>();
   // User-global Claude Code config locations
   if (home) {
     candidates.add(path.join(home, '.claude.json'));
+<<<<<<< HEAD
   }
   if (installCtx.claudeRoot) {
     candidates.add(path.join(installCtx.claudeRoot, 'mcp.json'));
@@ -862,26 +867,78 @@ function detectExistingRufloMCP(targetDir: string): string | null {
   let dir = path.resolve(targetDir);
   while (true) {
     candidates.add(path.join(dir, '.mcp.json'));
+=======
+    candidates.add(path.join(home, '.claude', 'mcp.json'));
+  }
+  // Walk parents of targetDir up to root, checking for .mcp.json at each
+  const targetResolved = path.resolve(targetDir);
+  let dir = targetResolved;
+  const targetAncestors = new Set<string>();
+  while (true) {
+    candidates.add(path.join(dir, '.mcp.json'));
+    targetAncestors.add(normalizeProjectKey(dir));
+>>>>>>> pr-1936-head
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   // Skip the targetDir itself — that's the one we're about to write
+<<<<<<< HEAD
   candidates.delete(path.join(path.resolve(targetDir), '.mcp.json'));
+=======
+  candidates.delete(path.join(targetResolved, '.mcp.json'));
+>>>>>>> pr-1936-head
 
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;
     try {
       const parsed = JSON.parse(fs.readFileSync(candidate, 'utf-8'));
+<<<<<<< HEAD
       if (parsed && typeof parsed === 'object' && parsed.mcpServers && typeof parsed.mcpServers === 'object') {
         if ('ruflo' in parsed.mcpServers) return candidate;
       }
+=======
+      if (!parsed || typeof parsed !== 'object') continue;
+      // (a) Top-level mcpServers (legacy / global form)
+      if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
+        if ('ruflo' in parsed.mcpServers) return candidate;
+      }
+      // (b) #1840: Claude Code project-scoped registrations under
+      //     parsed.projects[<projectPath>].mcpServers.ruflo. Match by
+      //     normalized path against targetDir or any of its ancestors so
+      //     a `claude mcp add ruflo` in this repo is detected even when
+      //     Claude stored the key with different casing/slash style.
+      if (parsed.projects && typeof parsed.projects === 'object') {
+        for (const [projectKey, projectVal] of Object.entries(parsed.projects)) {
+          if (!projectVal || typeof projectVal !== 'object') continue;
+          const projectMcp = (projectVal as { mcpServers?: unknown }).mcpServers;
+          if (!projectMcp || typeof projectMcp !== 'object') continue;
+          if (!('ruflo' in (projectMcp as Record<string, unknown>))) continue;
+          if (targetAncestors.has(normalizeProjectKey(projectKey))) {
+            return `${candidate} (projects[${projectKey}])`;
+          }
+        }
+      }
+>>>>>>> pr-1936-head
     } catch { /* malformed JSON — ignore */ }
   }
   return null;
 }
 
 /**
+<<<<<<< HEAD
+=======
+ * Normalize a project path key for cross-platform comparison.
+ * Claude Code stores Windows paths like "C:/Users/.../Project" while
+ * Node's `path.resolve()` may emit "C:\Users\...\Project". Lowercase +
+ * forward-slash gives a stable comparison key on both platforms.
+ */
+function normalizeProjectKey(p: string): string {
+  return path.resolve(p).replace(/\\/g, '/').toLowerCase();
+}
+
+/**
+>>>>>>> pr-1936-head
  * Write .mcp.json
  */
 async function writeMCPConfig(
@@ -1963,11 +2020,17 @@ async function writeClaudeMd(
   // Also write/append global ~/.claude/CLAUDE.md so ruflo tools are used automatically (#1497).
   // Opt-out via --no-global / options.skipGlobalClaudeMd (#1744 — keeps global rules file pristine
   // for users who don't want a per-machine pointer block).
+<<<<<<< HEAD
   // STRAT-1: route through the shared resolver so the global-mode path
   // matches every other consumer (settings-generator, mcp-server, …).
   const installCtx = resolveInstallContext({ forceGlobal: true });
   if (installCtx.claudeRoot && !options.skipGlobalClaudeMd) {
     const globalClaudeDir = installCtx.claudeRoot;
+=======
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+  if (homeDir && !options.skipGlobalClaudeMd) {
+    const globalClaudeDir = path.join(homeDir, '.claude');
+>>>>>>> pr-1936-head
     const globalClaudeMd = path.join(globalClaudeDir, 'CLAUDE.md');
     const rufloBlock = [
       '',

@@ -52,9 +52,13 @@ export function generateMCPConfig(options: InitOptions): object {
     npm_config_update_notifier: 'false',
   };
 
+<<<<<<< HEAD
   // Ruflo MCP server (core) — uses ruflo wrapper for portable npm-resolved invocation.
   // Key is `ruflo` (canonical, see #1841). Detector accepts the legacy `claude-flow`
   // alias for compatibility with installations created before this change.
+=======
+  // Ruflo MCP server (core) — uses ruflo wrapper for portable npm-resolved invocation
+>>>>>>> pr-1936-head
   if (config.claudeFlow) {
     mcpServers['ruflo'] = createMCPServerEntry(
       ['ruflo@latest', 'mcp', 'start'],

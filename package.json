@@ -1,6 +1,10 @@
 {
   "name": "claude-flow",
+<<<<<<< HEAD
   "version": "3.7.0-alpha.11",
+=======
+  "version": "3.7.0-alpha.19",
+>>>>>>> pr-1936-head
   "description": "Ruflo - Enterprise AI agent orchestration for Claude Code. Deploy 60+ specialized agents in coordinated swarms with self-learning, fault-tolerant consensus, vector memory, and MCP integration",
   "main": "dist/index.js",
   "type": "module",
@@ -60,7 +64,10 @@
     "@claude-flow/shared": "^3.0.0-alpha.7",
     "@noble/ed25519": "^2.1.0",
     "@ruvector/rabitq-wasm": "^0.1.0",
+<<<<<<< HEAD
     "helmet": "8.1.0",
+=======
+>>>>>>> pr-1936-head
     "semver": "^7.6.0",
     "zod": "^3.22.4"
   },
@@ -76,6 +83,7 @@
     "agentic-flow": "^2.0.7"
   },
   "overrides": {
+<<<<<<< HEAD
     "protobufjs@<=7.5.5": "7.5.5",
     "@hono/node-server@<=1.19.13": "1.19.13",
     "express-rate-limit@<=8.2.2": "8.2.2",
@@ -98,6 +106,23 @@
     "@isaacs/brace-expansion": ">=5.0.1",
     "cacache": ">=20.0.0",
     "make-fetch-happen": ">=15.0.0"
+=======
+    "hono": ">=4.11.4",
+    "@ruvector/rvf-wasm": "0.1.5",
+    "@hono/node-server": ">=1.19.10",
+    "flatted": ">=3.4.0",
+    "tar": ">=7.5.11",
+    "picomatch": ">=4.0.3",
+    "path-to-regexp": ">=8.2.1",
+    "undici": ">=7.18.0",
+    "minimatch": ">=10.0.0",
+    "@isaacs/brace-expansion": ">=5.0.1",
+    "cacache": ">=20.0.0",
+    "make-fetch-happen": ">=15.0.0",
+    "express-rate-limit": ">=8.4.1",
+    "protobufjs": ">=7.5.5",
+    "uuid": ">=14.0.0"
+>>>>>>> pr-1936-head
   },
   "devDependencies": {
     "@openai/codex": "^0.98.0",

@@ -12,6 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readFileMaybeEncrypted, writeFileRestricted } from '../fs-secure.js';
+<<<<<<< HEAD
 // #bug31: shared in-process DB pool — eliminates the per-call file
 // read + sql.js re-parse that dominated 440 ms baseline.
 import {
@@ -22,6 +23,65 @@ import {
   invalidatePool,
   type RouteSource,
 } from './db-pool.js';
+=======
+
+/**
+ * #1854: previously every site that needed the memory directory hardcoded
+ * `getMemoryRoot()`, so the documented config entry
+ * points (`memory.persistPath` config field, `memory configure --path`,
+ * `CLAUDE_FLOW_MEMORY_PATH` env var) all silently no-op'd. This helper
+ * is the single source of truth — every `.swarm/memory.db` resolution in
+ * this file flows through it.
+ *
+ * Precedence (highest → lowest):
+ *   1. CLAUDE_FLOW_MEMORY_PATH env var
+ *   2. memory.persistPath / memory.path in claude-flow.config.json (cwd or
+ *      the directory the CLI was invoked from)
+ *   3. Default: cwd/.swarm
+ *
+ * Cached per-process so repeated lookups are cheap; reset only by spawning
+ * a fresh process (which is how config changes already propagate).
+ */
+let _memoryRootCache: string | undefined;
+export function getMemoryRoot(): string {
+  if (_memoryRootCache !== undefined) return _memoryRootCache;
+
+  // 1. Env var
+  const envPath = process.env.CLAUDE_FLOW_MEMORY_PATH;
+  if (envPath && envPath.trim().length > 0) {
+    _memoryRootCache = path.resolve(envPath);
+    return _memoryRootCache;
+  }
+
+  // 2. Config file (claude-flow.config.json)
+  const configCandidates = [
+    path.resolve(process.cwd(), 'claude-flow.config.json'),
+    path.resolve(process.cwd(), '.claude-flow', 'config.json'),
+  ];
+  for (const configPath of configCandidates) {
+    if (!fs.existsSync(configPath)) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const fromConfig: unknown = raw?.memory?.persistPath ?? raw?.memory?.path;
+      if (typeof fromConfig === 'string' && fromConfig.trim().length > 0) {
+        _memoryRootCache = path.resolve(fromConfig);
+        return _memoryRootCache;
+      }
+    } catch {
+      /* malformed config — fall through to default */
+    }
+  }
+
+  // 3. Default
+  _memoryRootCache = path.resolve(process.cwd(), '.swarm');
+  return _memoryRootCache;
+}
+
+/** For tests + the `memory configure` flow that mutates the config at runtime. */
+export function _resetMemoryRootCache(): void {
+  _memoryRootCache = undefined;
+}
+>>>>>>> pr-1936-head
 
 // ADR-053: Lazy import of AgentDB v3 bridge
 let _bridge: typeof import('./memory-bridge.js') | null | undefined;
@@ -408,7 +468,7 @@ export async function getHNSWIndex(options?: {
     const { VectorDb } = ruvectorCore;
 
     // Persistent storage paths — resolve to absolute to survive CWD changes
-    const swarmDir = path.resolve(process.cwd(), '.swarm');
+    const swarmDir = getMemoryRoot();
     if (!fs.existsSync(swarmDir)) {
       fs.mkdirSync(swarmDir, { recursive: true });
     }
@@ -517,7 +577,7 @@ function saveHNSWMetadata(): void {
   if (!hnswIndex?.entries) return;
 
   try {
-    const swarmDir = path.join(process.cwd(), '.swarm');
+    const swarmDir = getMemoryRoot();
     const metadataPath = path.join(swarmDir, 'hnsw.metadata.json');
     const metadata = Array.from(hnswIndex.entries.entries());
     fs.writeFileSync(metadataPath, JSON.stringify(metadata));
@@ -1007,9 +1067,14 @@ export async function ensureSchemaColumns(dbPath: string): Promise<{
       return { success: true, columnsAdded: [] };
     }
 
+<<<<<<< HEAD
     // Use the pooled handle — first call cold-loads, subsequent
     // calls (in this process) hit the in-memory cache.
     const { db } = await getPooledDB(dbPath);
+=======
+    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
+    const db = new SQL.Database(fileBuffer);
+>>>>>>> pr-1936-head
 
     // Get current columns in memory_entries
     const tableInfo = db.exec("PRAGMA table_info(memory_entries)");
@@ -1048,9 +1113,15 @@ export async function ensureSchemaColumns(dbPath: string): Promise<{
     }
 
     if (modified) {
+<<<<<<< HEAD
       // #bug31: persist via the pool so our cached mtime stays in
       // sync with disk and we don't reload our own write.
       persistPooledDB(dbPath);
+=======
+      // Save updated database
+      const data = db.export();
+      writeFileRestricted(dbPath, Buffer.from(data), { encrypt: true });
+>>>>>>> pr-1936-head
     }
 
     // Mark verified — even if `modified` is false, we now know the
@@ -1197,7 +1268,7 @@ export async function initializeMemoryDatabase(options: {
     migrate = true
   } = options;
 
-  const swarmDir = path.join(process.cwd(), '.swarm');
+  const swarmDir = getMemoryRoot();
   const dbPath = customPath || path.join(swarmDir, 'memory.db');
   const dbDir = path.dirname(dbPath);
 
@@ -1414,7 +1485,7 @@ export async function checkMemoryInitialization(dbPath?: string): Promise<{
   };
   tables?: string[];
 }> {
-  const swarmDir = path.join(process.cwd(), '.swarm');
+  const swarmDir = getMemoryRoot();
   const path_ = dbPath || path.join(swarmDir, 'memory.db');
 
   if (!fs.existsSync(path_)) {
@@ -1474,7 +1545,7 @@ export async function applyTemporalDecay(dbPath?: string): Promise<{
   patternsDecayed: number;
   error?: string;
 }> {
-  const swarmDir = path.join(process.cwd(), '.swarm');
+  const swarmDir = getMemoryRoot();
   const path_ = dbPath || path.join(swarmDir, 'memory.db');
 
   try {
@@ -2135,7 +2206,7 @@ export async function storeEntry(options: {
     upsert = false
   } = options;
 
-  const swarmDir = path.resolve(process.cwd(), '.swarm');
+  const swarmDir = getMemoryRoot();
   const dbPath = customPath ? path.resolve(customPath) : path.join(swarmDir, 'memory.db');
 
   try {
@@ -2146,10 +2217,18 @@ export async function storeEntry(options: {
     // Ensure schema has all required columns (migration for older DBs)
     await ensureSchemaColumns(dbPath);
 
+<<<<<<< HEAD
     // #bug31: pooled handle — first call cold-loads (~440 ms),
     // subsequent calls in this process hit the in-memory cache (~10 ms).
     const { db, source } = await getPooledDB(dbPath);
     const _routedThrough: RouteSource = source;
+=======
+    const initSqlJs = (await import('sql.js')).default;
+    const SQL = await initSqlJs();
+
+    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
+    const db = new SQL.Database(fileBuffer);
+>>>>>>> pr-1936-head
 
     const id = `entry_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const now = Date.now();
@@ -2194,10 +2273,17 @@ export async function storeEntry(options: {
       ttl ? now + (ttl * 1000) : null
     ]);
 
+<<<<<<< HEAD
     // #bug31: persist via the pool — keeps the cached handle alive
     // and refreshes our observed mtime so the next read in this
     // process doesn't false-positive on the bump we just caused.
     persistPooledDB(dbPath);
+=======
+    // Save
+    const data = db.export();
+    writeFileRestricted(dbPath, Buffer.from(data), { encrypt: true });
+    db.close();
+>>>>>>> pr-1936-head
 
     // Add to HNSW index for faster future searches
     if (embeddingJson) {
@@ -2266,7 +2352,7 @@ export async function searchEntries(options: {
   } = options;
   const effectiveNamespace = namespace || 'all';
 
-  const swarmDir = path.resolve(process.cwd(), '.swarm');
+  const swarmDir = getMemoryRoot();
   const dbPath = customPath ? path.resolve(customPath) : path.join(swarmDir, 'memory.db');
   const startTime = Date.now();
 
@@ -2287,8 +2373,16 @@ export async function searchEntries(options: {
       const { searchRabitq } = await import('./rabitq-index.js');
       const rabitqCandidates = await searchRabitq(queryEmbedding, { k: limit * 2, namespace: effectiveNamespace });
       if (rabitqCandidates && rabitqCandidates.length > 0) {
+<<<<<<< HEAD
         // #bug31: pooled handle (read-only rerank — no persist needed).
         const { db } = await getPooledDB(dbPath);
+=======
+        // Rerank candidates with exact cosine similarity from SQLite
+        const initSqlJs = (await import('sql.js')).default;
+        const SQL = await initSqlJs();
+        const fileBuffer = readFileMaybeEncrypted(dbPath, null);
+        const db = new SQL.Database(fileBuffer);
+>>>>>>> pr-1936-head
         const reranked: { id: string; key: string; content: string; score: number; namespace: string }[] = [];
 
         for (const candidate of rabitqCandidates) {
@@ -2336,9 +2430,17 @@ export async function searchEntries(options: {
     }
 
     // Fall back to brute-force SQLite search
+<<<<<<< HEAD
     // #bug31: pooled handle (read-only — no persist).
     const { db, source } = await getPooledDB(dbPath);
     const _bruteRoute: RouteSource = source;
+=======
+    const initSqlJs = (await import('sql.js')).default;
+    const SQL = await initSqlJs();
+
+    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
+    const db = new SQL.Database(fileBuffer);
+>>>>>>> pr-1936-head
 
     // Get entries with embeddings
     const searchStmt = db.prepare(
@@ -2479,7 +2581,7 @@ export async function listEntries(options: {
     dbPath: customPath
   } = options;
 
-  const swarmDir = path.join(process.cwd(), '.swarm');
+  const swarmDir = getMemoryRoot();
   const dbPath = customPath || path.join(swarmDir, 'memory.db');
 
   try {
@@ -2490,8 +2592,16 @@ export async function listEntries(options: {
     // Ensure schema has all required columns (migration for older DBs)
     await ensureSchemaColumns(dbPath);
 
+<<<<<<< HEAD
     // #bug31: pooled handle (read-only listing — no persist).
     const { db } = await getPooledDB(dbPath);
+=======
+    const initSqlJs = (await import('sql.js')).default;
+    const SQL = await initSqlJs();
+
+    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
+    const db = new SQL.Database(fileBuffer);
+>>>>>>> pr-1936-head
 
     // Get total count
     const countStmt = namespace
@@ -2604,7 +2714,7 @@ export async function getEntry(options: {
     dbPath: customPath
   } = options;
 
-  const swarmDir = path.join(process.cwd(), '.swarm');
+  const swarmDir = getMemoryRoot();
   const dbPath = customPath || path.join(swarmDir, 'memory.db');
 
   try {
@@ -2615,8 +2725,16 @@ export async function getEntry(options: {
     // Ensure schema has all required columns (migration for older DBs)
     await ensureSchemaColumns(dbPath);
 
+<<<<<<< HEAD
     // #bug31: pooled handle — read + atomic update of access_count.
     const { db } = await getPooledDB(dbPath);
+=======
+    const initSqlJs = (await import('sql.js')).default;
+    const SQL = await initSqlJs();
+
+    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
+    const db = new SQL.Database(fileBuffer);
+>>>>>>> pr-1936-head
 
     // Find entry by key
     const getStmt = db.prepare(`
@@ -2651,8 +2769,16 @@ export async function getEntry(options: {
       WHERE id = ?
     `, [String(id)]);
 
+<<<<<<< HEAD
     // #bug31: persist via the pool — keeps cached mtime in sync.
     persistPooledDB(dbPath);
+=======
+    // Save updated database
+    const data = db.export();
+    writeFileRestricted(dbPath, Buffer.from(data), { encrypt: true });
+
+    db.close();
+>>>>>>> pr-1936-head
 
     let tags: string[] = [];
     if (tagsJson) {
@@ -2732,7 +2858,7 @@ export async function deleteEntry(options: {
     dbPath: customPath
   } = options;
 
-  const swarmDir = path.join(process.cwd(), '.swarm');
+  const swarmDir = getMemoryRoot();
   const dbPath = customPath || path.join(swarmDir, 'memory.db');
 
   try {
@@ -2750,8 +2876,16 @@ export async function deleteEntry(options: {
     // Ensure schema has all required columns (migration for older DBs)
     await ensureSchemaColumns(dbPath);
 
+<<<<<<< HEAD
     // #bug31: pooled handle — soft-delete + count + persist.
     const { db } = await getPooledDB(dbPath);
+=======
+    const initSqlJs = (await import('sql.js')).default;
+    const SQL = await initSqlJs();
+
+    const fileBuffer = readFileMaybeEncrypted(dbPath, null);
+    const db = new SQL.Database(fileBuffer);
+>>>>>>> pr-1936-head
 
     // Check if entry exists first
     const checkStmt = db.prepare(`
@@ -2802,8 +2936,16 @@ export async function deleteEntry(options: {
     const countResult = db.exec(`SELECT COUNT(*) FROM memory_entries WHERE status = 'active'`);
     const remainingEntries = countResult[0]?.values?.[0]?.[0] as number || 0;
 
+<<<<<<< HEAD
     // #bug31: persist via the pool (refreshes cached mtime).
     persistPooledDB(dbPath);
+=======
+    // Save updated database
+    const data = db.export();
+    writeFileRestricted(dbPath, Buffer.from(data), { encrypt: true });
+
+    db.close();
+>>>>>>> pr-1936-head
 
     // Clean up in-memory HNSW index so ghost vectors don't appear in searches.
     // Remove the entry from the HNSW entries map and invalidate the index.

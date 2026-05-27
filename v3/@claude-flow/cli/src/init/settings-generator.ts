@@ -51,9 +51,12 @@ export function isGlobalInstall(targetDir: string | undefined): boolean {
 export function generateSettings(options: InitOptions): object {
   const settings: Record<string, unknown> = {};
 
+<<<<<<< HEAD
   // Detect global vs per-project install for hook-command path emission (#bug8).
   const globalInstall = isGlobalInstall(options.targetDir);
 
+=======
+>>>>>>> pr-1936-head
   // Add hooks if enabled. CRITICAL (#1744 #3): only emit the hooks block when
   // the helpers directory will also be bundled. The hook commands point at
   // .claude/helpers/hook-handler.cjs; if that file isn't created (as in
@@ -61,7 +64,11 @@ export function generateSettings(options: InitOptions): object {
   // fails to find its handler. Either bundle the helpers OR drop the hooks —
   // the option this fix takes is the latter (minimal stays minimal).
   if (options.components.settings && options.components.helpers) {
+<<<<<<< HEAD
     settings.hooks = generateHooksConfig(options.hooks, { globalInstall });
+=======
+    settings.hooks = generateHooksConfig(options.hooks);
+>>>>>>> pr-1936-head
   }
 
   // Add statusLine configuration if enabled

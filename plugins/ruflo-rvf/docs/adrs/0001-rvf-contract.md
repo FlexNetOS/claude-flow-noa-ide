@@ -1,8 +1,14 @@
 ---
 id: ADR-0001
 title: ruflo-rvf plugin contract — pinning, namespace coordination, RVF cross-references (browser sessions, ruvector containers), smoke as contract
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-1936-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, rvf, session-persistence, portable-memory, namespace, smoke-test]
@@ -44,3 +50,10 @@ bash plugins/ruflo-rvf/scripts/smoke.sh
 - `plugins/ruflo-browser/docs/adrs/0001-browser-skills-architecture.md` — browser sessions as RVF containers
 - `plugins/ruflo-ruvector/docs/adrs/0001-pin-ruvector-0.2.25.md` — RVF tooling (`ruvector rvf *`)
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention
+<<<<<<< HEAD
+=======
+
+## Implementation status
+
+Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-rvf/`. Contract elements implemented: canonical portable-memory + session-persistence slice documented; RVF container lifecycle (browser sessions + ruvector containers) cross-referenced; namespace `rvf-sessions` claimed; smoke-as-contract gate defined in `scripts/smoke.sh`.
+>>>>>>> pr-1936-head

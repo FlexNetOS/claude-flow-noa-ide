@@ -1,8 +1,14 @@
 ---
 id: ADR-0001
 title: ruflo-daa plugin contract — pinning, namespace coordination, intelligence-pipeline alignment, smoke as contract
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-1936-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, daa, cognitive, adaptive, knowledge-sharing, namespace, smoke-test]
@@ -51,3 +57,10 @@ bash plugins/ruflo-daa/scripts/smoke.sh
 - `plugins/ruflo-intelligence/docs/adrs/0001-intelligence-surface-completeness.md` — 4-step pipeline DAA feeds
 - `plugins/ruflo-ruvector/docs/adrs/0001-pin-ruvector-0.2.25.md`
 - `v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts` — 8 daa_* tools
+<<<<<<< HEAD
+=======
+
+## Implementation status
+
+Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-daa/`. Contract elements implemented: 8 `daa_*` MCP tools covered; namespace `daa-patterns` claimed per convention; intelligence-pipeline alignment (feeds cognitive patterns into RETRIEVE/JUDGE/DISTILL/CONSOLIDATE steps) documented; smoke-as-contract gate defined in `scripts/smoke.sh`.
+>>>>>>> pr-1936-head

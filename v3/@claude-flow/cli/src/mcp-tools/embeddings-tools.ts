@@ -899,6 +899,7 @@ export const embeddingsTools: MCPTool[] = [
 
       const ruvectorEnabled = config.neural.ruvector?.enabled ?? false;
 
+<<<<<<< HEAD
       // #bug21 — embeddings_status reports `initialized: true` with config
       // details but no indication of whether any embeddings have actually
       // been stored. Probe the memory store for an embedding count so the
@@ -923,6 +924,9 @@ export const embeddingsTools: MCPTool[] = [
       const isIdle = embeddingCount === 0;
 
       const result: Record<string, unknown> = {
+=======
+      return {
+>>>>>>> pr-1936-head
         success: true,
         initialized: true,
         config: {

@@ -23,11 +23,14 @@ import { validateIdentifier, validateText } from './validate-input.js';
 
 const RUVECTOR_PIN = 'ruvector@0.2.25';
 const RVF_DIR_DEFAULT = '.ruflo/browser-sessions';
+<<<<<<< HEAD
 // rvf create requires -d/--dimension <n>. 384 matches the embedding dimension
 // used elsewhere in the codebase (ONNX all-MiniLM-L6-v2,
 // neural_status.totalEmbeddingDims). Without this, the rvf create call errors
 // out immediately and browser_session_record is unusable (Bug 19).
 const RVF_DIMENSION = '384';
+=======
+>>>>>>> pr-1936-head
 
 interface ShellResult {
   success: boolean;
@@ -65,6 +68,7 @@ async function ensureSessionsDir(): Promise<string> {
   return dir;
 }
 
+<<<<<<< HEAD
 /**
  * #bug20 — In-process retrieve from the memory bridge / sql.js+HNSW backend.
  *
@@ -97,6 +101,8 @@ async function retrieveFromMemory(namespace: string, key: string): Promise<Retri
   }
 }
 
+=======
+>>>>>>> pr-1936-head
 function makeSessionId(taskSlug: string): string {
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const slug = taskSlug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'session';
@@ -149,9 +155,14 @@ export const browserSessionTools: MCPTool[] = [
       const dir = (input.rvf_dir as string | undefined) ?? (await ensureSessionsDir());
       const rvfPath = path.join(dir, `${sessionId}.rvf`);
 
+<<<<<<< HEAD
       // 1. RVF allocate. rvf create requires -d/--dimension <n>; pass 384 to
       //    match the codebase-wide embedding dimension (Bug 19).
       const rvf = await shell('npx', ['-y', RUVECTOR_PIN, 'rvf', 'create', rvfPath, '--kind', 'browser-session', '--dimension', RVF_DIMENSION], { timeout: 60000 });
+=======
+      // 1. RVF allocate
+      const rvf = await shell('npx', ['-y', RUVECTOR_PIN, 'rvf', 'create', rvfPath, '--kind', 'browser-session'], { timeout: 60000 });
+>>>>>>> pr-1936-head
       if (!rvf.success) return fail('rvf create failed', { detail: rvf.error, stderr: rvf.stderr, sessionId, rvfPath });
 
       // 2. trajectory-begin
@@ -320,6 +331,7 @@ export const browserSessionTools: MCPTool[] = [
     handler: async (input) => {
       const vN = validateText(input.name as string, 'name');
       if (!vN.valid) return fail(vN.error || 'invalid name');
+<<<<<<< HEAD
       // #bug20: in-process call into the memory backend instead of
       // re-spawning `npx @claude-flow/cli@latest memory retrieve`.
       const r = await retrieveFromMemory('browser-templates', input.name as string);
@@ -331,6 +343,15 @@ export const browserSessionTools: MCPTool[] = [
       return ok({
         templateName: input.name,
         recipe: r.value,
+=======
+      const r = await shell('npx', ['-y', '@claude-flow/cli@latest', 'memory', 'retrieve',
+        '--namespace', 'browser-templates',
+        '--key', input.name as string], { timeout: 60000 });
+      if (!r.success) return fail('template fetch failed', { detail: r.error, stderr: r.stderr });
+      return ok({
+        templateName: input.name,
+        recipe: r.stdout,
+>>>>>>> pr-1936-head
         nextStep: 'Caller dispatches the recipe via browser_* tools; persist updated selectors to browser-selectors on success.',
       });
     },
@@ -354,6 +375,7 @@ export const browserSessionTools: MCPTool[] = [
     handler: async (input) => {
       const vH = validateText(input.host as string, 'host');
       if (!vH.valid) return fail(vH.error || 'invalid host');
+<<<<<<< HEAD
       // #bug20: in-process call into the memory backend instead of
       // re-spawning `npx @claude-flow/cli@latest memory retrieve`.
       const r = await retrieveFromMemory('browser-cookies', input.host as string);
@@ -362,11 +384,21 @@ export const browserSessionTools: MCPTool[] = [
           detail: r.error ?? `host "${input.host}" not found in browser-cookies namespace`,
         });
       }
+=======
+      const r = await shell('npx', ['-y', '@claude-flow/cli@latest', 'memory', 'retrieve',
+        '--namespace', 'browser-cookies',
+        '--key', input.host as string], { timeout: 60000 });
+      if (!r.success) return fail('cookie lookup failed', { detail: r.error, stderr: r.stderr });
+>>>>>>> pr-1936-head
       // The contract: the value blob includes a vault_handle, expiry, aidefence_verdict.
       // Raw values do not enter this namespace (browser-login is responsible).
       return ok({
         host: input.host,
+<<<<<<< HEAD
         vault: r.value,
+=======
+        vault: r.stdout,
+>>>>>>> pr-1936-head
         nextStep: 'Caller mounts the handle via the browser runner; the raw cookie is materialized only inside the browser process, never returned to the model.',
       });
     },

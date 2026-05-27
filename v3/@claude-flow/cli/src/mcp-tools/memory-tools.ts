@@ -468,62 +468,91 @@ export const memoryTools: MCPTool[] = [
       const startTime = performance.now();
 
       try {
+        // #1846: feature-detect smartSearch on the resolved memory package.
+        // The export landed in @claude-flow/memory@>3.0.0-alpha.14 — older
+        // installs pin to a build that exposes search/store/retrieve but
+        // not smartSearch. Throwing `is not a function` is hostile; instead
+        // detect at runtime and gracefully fall through to plain semantic
+        // search with an explicit fallback note.
+        let smartFallbackReason: string | undefined;
         if (input.smart) {
+<<<<<<< HEAD
           // SmartRetrieval pipeline (ADR-090)
           // #bug16a: @claude-flow/memory@3.0.0-alpha.14 dropped the smartSearch export.
           // Use local shim until upstream re-exports the function.
           const { smartSearch } = await import('../memory/smart-search-shim.js');
+=======
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let memMod: any;
+          try {
+            memMod = await import('@claude-flow/memory');
+          } catch (err) {
+            smartFallbackReason = `@claude-flow/memory failed to load: ${(err as Error).message}`;
+          }
+          const smartSearch = memMod && typeof memMod.smartSearch === 'function'
+            ? memMod.smartSearch
+            : undefined;
+>>>>>>> pr-1936-head
 
-          // Adapt searchEntries to the SearchFn interface
-          const rawSearch = async (req: { query: string; namespace?: string; limit?: number; threshold?: number }) => {
-            const r = await searchEntries({
-              query: req.query,
-              namespace: req.namespace || namespace,
-              limit: req.limit || limit * 3,
-              threshold: req.threshold ?? threshold,
+          if (smartSearch) {
+            // SmartRetrieval pipeline (ADR-090)
+            const rawSearch = async (req: { query: string; namespace?: string; limit?: number; threshold?: number }) => {
+              const r = await searchEntries({
+                query: req.query,
+                namespace: req.namespace || namespace,
+                limit: req.limit || limit * 3,
+                threshold: req.threshold ?? threshold,
+              });
+              return {
+                results: r.results.map(e => ({
+                  id: e.id,
+                  key: e.key,
+                  content: e.content,
+                  score: e.score,
+                  namespace: e.namespace,
+                })),
+              };
+            };
+
+            const smartResult = await smartSearch(rawSearch, {
+              query,
+              namespace,
+              limit,
+              threshold,
             });
+
+            const duration = performance.now() - startTime;
+
+            const results = smartResult.results.map((r: { content: string; key: string; namespace: string; score: number }) => {
+              let value: unknown = r.content;
+              try { value = JSON.parse(r.content); } catch { /* keep as string */ }
+              return {
+                key: r.key,
+                namespace: r.namespace,
+                value,
+                similarity: r.score,
+              };
+            });
+
             return {
-              results: r.results.map(e => ({
-                id: e.id,
-                key: e.key,
-                content: e.content,
-                score: e.score,
-                namespace: e.namespace,
-              })),
+              query,
+              results,
+              total: results.length,
+              searchTime: `${duration.toFixed(2)}ms`,
+              backend: 'SmartRetrieval (RRF + MMR + Recency)',
+              stats: smartResult.stats,
             };
-          };
+          }
 
-          const smartResult = await smartSearch(rawSearch, {
-            query,
-            namespace,
-            limit,
-            threshold,
-          });
-
-          const duration = performance.now() - startTime;
-
-          const results = smartResult.results.map(r => {
-            let value: unknown = r.content;
-            try { value = JSON.parse(r.content); } catch { /* keep as string */ }
-            return {
-              key: r.key,
-              namespace: r.namespace,
-              value,
-              similarity: r.score,
-            };
-          });
-
-          return {
-            query,
-            results,
-            total: results.length,
-            searchTime: `${duration.toFixed(2)}ms`,
-            backend: 'SmartRetrieval (RRF + MMR + Recency)',
-            stats: smartResult.stats,
-          };
+          // smart=true but smartSearch unavailable on installed package.
+          // Fall through to plain search with an explicit warning.
+          smartFallbackReason = smartFallbackReason
+            ?? 'smartSearch is not exported by the installed @claude-flow/memory build (likely a release lag — see #1846). Falling back to standard semantic search.';
         }
 
-        // Original non-smart path (unchanged)
+        // Original non-smart path (unchanged) — also reached when smart was
+        // requested but unavailable. We attach `smartFallback` to the
+        // response so callers can see the degradation explicitly.
         const result = await searchEntries({
           query,
           namespace,
@@ -556,6 +585,7 @@ export const memoryTools: MCPTool[] = [
           total: results.length,
           searchTime: `${duration.toFixed(2)}ms`,
           backend: 'HNSW + sql.js',
+          ...(smartFallbackReason ? { smartFallback: smartFallbackReason } : {}),
         };
       } catch (error) {
         return {
@@ -780,9 +810,42 @@ export const memoryTools: MCPTool[] = [
       if (input.namespace) { const vNs = validateIdentifier(ns, 'namespace'); if (!vNs.valid) return { success: false, imported: 0, error: vNs.error }; }
       const allProjects = input.allProjects as boolean;
 
+<<<<<<< HEAD
       // #bug7: route through the shared enumerator so importer count
       // matches `memory_bridge_status.claudeCode.memoryFiles`.
       const memoryFiles = getClaudeProjectMemoryFiles({ allProjects }).files;
+=======
+      // Find memory files
+      const memoryFiles: Array<{ path: string; project: string; file: string }> = [];
+
+      if (allProjects) {
+        // Scan all projects
+        if (existsSync(claudeProjectsDir)) {
+          try {
+            for (const project of readdirSync(claudeProjectsDir, { withFileTypes: true })) {
+              if (!project.isDirectory()) continue;
+              const memDir = join(claudeProjectsDir, project.name, 'memory');
+              if (!existsSync(memDir)) continue;
+              for (const file of readdirSync(memDir).filter((f: string) => f.endsWith('.md'))) {
+                memoryFiles.push({ path: join(memDir, file), project: project.name, file });
+              }
+            }
+          } catch { /* scan error */ }
+        }
+      } else {
+        // Current project only — find by CWD hash
+        const cwd = process.cwd();
+        const projectHash = cwd.replace(/\//g, '-');
+        const memDir = join(claudeProjectsDir, projectHash, 'memory');
+        if (existsSync(memDir)) {
+          try {
+            for (const file of readdirSync(memDir).filter((f: string) => f.endsWith('.md'))) {
+              memoryFiles.push({ path: join(memDir, file), project: projectHash, file });
+            }
+          } catch { /* scan error */ }
+        }
+      }
+>>>>>>> pr-1936-head
 
       if (memoryFiles.length === 0) {
         return { success: true, imported: 0, message: 'No Claude memory files found' };
@@ -868,11 +931,29 @@ export const memoryTools: MCPTool[] = [
     handler: async () => {
       await ensureInitialized();
 
+<<<<<<< HEAD
       // #bug7: route through the shared enumerator so this count matches
       // what `memory_import_claude` (allProjects=true) would actually find.
       const claudeSummary = getClaudeProjectMemoryFiles({ allProjects: true });
       const claudeFiles = claudeSummary.files.length;
       const claudeProjects = claudeSummary.projectsWithMemory;
+=======
+      // Count Claude memory files
+      const claudeProjectsDir = join(homedir(), '.claude', 'projects');
+      let claudeFiles = 0;
+      let claudeProjects = 0;
+      if (existsSync(claudeProjectsDir)) {
+        try {
+          for (const project of readdirSync(claudeProjectsDir, { withFileTypes: true })) {
+            if (!project.isDirectory()) continue;
+            const memDir = join(claudeProjectsDir, project.name, 'memory');
+            if (!existsSync(memDir)) continue;
+            const files = readdirSync(memDir).filter((f: string) => f.endsWith('.md'));
+            if (files.length > 0) { claudeProjects++; claudeFiles += files.length; }
+          }
+        } catch { /* ignore */ }
+      }
+>>>>>>> pr-1936-head
 
       // AgentDB status
       let agentdbEntries = 0;

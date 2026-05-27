@@ -314,6 +314,7 @@ export const systemTools: MCPTool[] = [
       const projectCwd = getProjectCwd();
 
       // Memory DB check — verify any supported store file exists.
+<<<<<<< HEAD
       // Modern backend is sql.js at .swarm/memory.db (see memory-initializer.js).
       // Fallback paths cover alternate configs and the legacy JSON backend.
       {
@@ -332,6 +333,22 @@ export const systemTools: MCPTool[] = [
           existsSync(sqljsPath) ||
           existsSync(swarmDbPath) ||
           existsSync(ruvectorDbPath);
+=======
+      // #1843: cover sql.js / HNSW / .swarm and root-level rvf/db paths,
+      // not just the legacy `.claude-flow/memory/*` triple.
+      {
+        const t0 = performance.now();
+        const memoryCandidates = [
+          join(projectCwd, '.claude-flow', 'memory', 'store.json'),       // legacy
+          join(projectCwd, '.claude-flow', 'memory', 'agentdb.sqlite'),
+          join(projectCwd, '.claude-flow', 'memory', 'store.rvf'),
+          join(projectCwd, '.claude-flow', 'memory', 'claude-flow.db'),   // sql.js
+          join(projectCwd, '.swarm', 'memory.db'),                        // swarm
+          join(projectCwd, 'ruvector.db'),                                // ruvector
+          join(projectCwd, 'agentdb.rvf'),                                // root rvf
+        ];
+        const memoryExists = memoryCandidates.some(existsSync);
+>>>>>>> pr-1936-head
         const elapsed = performance.now() - t0;
         checks.push({
           name: 'memory',
@@ -341,6 +358,7 @@ export const systemTools: MCPTool[] = [
         });
       }
 
+<<<<<<< HEAD
       // Config check — verify config file exists. #1843: also accept YAML.
       {
         const t0 = performance.now();
@@ -353,6 +371,23 @@ export const systemTools: MCPTool[] = [
           existsSync(yamlConfigPath) ||
           existsSync(altConfigPath) ||
           existsSync(altYamlConfigPath);
+=======
+      // Config check — verify config file exists.
+      // #1843: also accept YAML config (.claude-flow/config.yaml) which
+      // the rest of v3 treats as canonical; previous code only counted
+      // .json variants and reported `degraded` when YAML was used.
+      {
+        const t0 = performance.now();
+        const configCandidates = [
+          join(projectCwd, '.claude-flow', 'config.json'),
+          join(projectCwd, '.claude-flow', 'config.yaml'),
+          join(projectCwd, '.claude-flow', 'config.yml'),
+          join(projectCwd, 'claude-flow.config.json'),
+          join(projectCwd, 'claude-flow.config.yaml'),
+          join(projectCwd, 'claude-flow.config.yml'),
+        ];
+        const configExists = configCandidates.some(existsSync);
+>>>>>>> pr-1936-head
         const elapsed = performance.now() - t0;
         checks.push({
           name: 'config',
@@ -456,6 +491,7 @@ export const systemTools: MCPTool[] = [
         }
       }
 
+<<<<<<< HEAD
       // #1843 — `unknown` checks are advisory (we couldn't verify, not failures);
       // exclude them from the denominator so the score reflects actionable state.
       const healthy = checks.filter(c => c.status === 'healthy').length;
@@ -463,6 +499,18 @@ export const systemTools: MCPTool[] = [
       const total = checks.length;
       const actionable = total - unknown;
       const overallHealth = actionable === 0 ? 1 : healthy / actionable;
+=======
+      // #1843: exclude `unknown` checks from the health score denominator.
+      // Previously a check reporting `unknown` (e.g. swarm/neural which
+      // can't be probed in-process) was counted as a non-healthy hit and
+      // dragged the score below 100 even when every actionable check was
+      // green. Treat `unknown` as advisory and surface it separately.
+      const healthy = checks.filter(c => c.status === 'healthy').length;
+      const advisory = checks.filter(c => c.status === 'unknown').length;
+      const total = checks.length;
+      const scoreDenominator = total - advisory;
+      const overallHealth = scoreDenominator > 0 ? healthy / scoreDenominator : 1;
+>>>>>>> pr-1936-head
 
       // Update metrics
       metrics.health = overallHealth;
@@ -473,10 +521,11 @@ export const systemTools: MCPTool[] = [
         score: Math.round(overallHealth * 100),
         checks,
         healthy,
+        advisory,
         total,
         unknown,
         timestamp: new Date().toISOString(),
-        issues: checks.filter(c => c.status !== 'healthy').map(c => ({
+        issues: checks.filter(c => c.status !== 'healthy' && c.status !== 'unknown').map(c => ({
           component: c.name,
           status: c.status,
           suggestion: `Check ${c.name} component configuration`,

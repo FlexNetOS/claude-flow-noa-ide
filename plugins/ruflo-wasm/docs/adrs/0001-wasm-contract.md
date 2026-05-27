@@ -1,8 +1,14 @@
 ---
 id: ADR-0001
 title: ruflo-wasm plugin contract — pinning, namespace coordination, ADR-070 integration cross-reference, smoke as contract
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-1936-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, wasm, sandbox, gallery, namespace, smoke-test]
@@ -57,3 +63,10 @@ bash plugins/ruflo-wasm/scripts/smoke.sh
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md` — namespace convention
 - `plugins/ruflo-aidefence/docs/adrs/0001-aidefence-contract.md` — 3-gate pattern (relevant for sandboxed prompt-injection defense)
 - `v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts` — 10 `wasm_*` tools
+<<<<<<< HEAD
+=======
+
+## Implementation status
+
+Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-wasm/`. Contract elements implemented: all 10 `wasm_*` MCP tools covered; ADR-070 (rvagent WASM completion) cross-referenced; 3-gate pattern alignment with ruflo-aidefence documented for sandboxed prompt-injection defense; namespace `wasm-agents` claimed; smoke-as-contract gate defined in `scripts/smoke.sh` (11 checks).
+>>>>>>> pr-1936-head

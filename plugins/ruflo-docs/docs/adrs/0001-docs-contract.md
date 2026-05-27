@@ -1,8 +1,14 @@
 ---
 id: ADR-0001
 title: ruflo-docs plugin contract — pinning, namespace coordination, document-worker integration, smoke as contract
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-1936-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, docs, drift-detection, document-worker, namespace, smoke-test]
@@ -44,3 +50,10 @@ bash plugins/ruflo-docs/scripts/smoke.sh
 - `plugins/ruflo-agentdb/docs/adrs/0001-agentdb-optimization.md`
 - `plugins/ruflo-adr/docs/adrs/0001-adr-plugin-pattern.md` — sibling docs cadence
 - `plugins/ruflo-loop-workers/...` — defines the `document` background worker
+<<<<<<< HEAD
+=======
+
+## Implementation status
+
+Plugin version v0.2.0 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-docs/`. Contract elements implemented: `document` background worker dispatch via `hooks_worker-dispatch`; namespace `docs-state` claimed for drift-detection state; Haiku model pinned for cost-efficiency; smoke-as-contract gate defined in `scripts/smoke.sh`.
+>>>>>>> pr-1936-head

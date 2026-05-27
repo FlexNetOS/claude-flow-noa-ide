@@ -1,8 +1,14 @@
 # ADR-098: Plugin Capability Sync + Token / Performance / Intelligence / Self-Optimization Pass
 
+<<<<<<< HEAD
 **Status**: Proposed
 **Date**: 2026-05-04
 **Version**: target v3.6.x (multi-iteration, no single-version pin)
+=======
+**Status**: Accepted — Partially Implemented (Parts 1–4 landed; Part 5 deferred)
+**Date**: 2026-05-04 · **Updated**: 2026-05-09
+**Version**: Parts 1–4 shipped across v3.6.25–v3.6.26 plugin releases
+>>>>>>> pr-1936-head
 **Supersedes**: nothing
 **Related**: ADR-094 (transformers loader), ADR-095 (architectural gaps), ADR-096 (encryption-at-rest), ADR-097 (federation budget circuit breaker), `plugins/ruflo-*` directory
 
@@ -144,6 +150,7 @@ Lower priority than Parts 1-4 because workers run async and benefit from stable 
 - No new ADR cycle unless a part surfaces a runtime gap (e.g. Part 5 might need a new MCP tool for worker telemetry; if so, separate ADR).
 - Per-plugin version bumps follow semver: capability sync = minor (0.1.0 → 0.2.0); token diet alone = patch (0.1.0 → 0.1.1).
 
+<<<<<<< HEAD
 ## Implementation status
 
 | Part | Scope | Status |
@@ -153,6 +160,23 @@ Lower priority than Parts 1-4 because workers run async and benefit from stable 
 | 3 | Model tier rightsizing (1 agent) | pending |
 | 4 | Neural training hook (7 agents) | pending |
 | 5 | Worker dispatch (variable) | pending — lands after Part 4 |
+=======
+## Implementation status (2026-05-09)
+
+Parts 1–4 are fully landed on `main`. Part 5 (worker dispatch) remains deferred — it was explicitly ordered to land after Part 4 per the ADR.
+
+| Part | Scope | Status | Commit(s) |
+|---|---|---|---|
+| **Part 1** — Capability sync (6 plugins) | Implemented | 4 slices: `6a4057474` (security plugins), `6130f4061` (memory plugins), `00a9d13b5` (cost-tracker federation pairing), `cf96a562c` (agentdb + knowledge-graph G7 controllers) |
+| **Part 2** — Token diet (4 fat agent prompts → ≤60 lines) | Implemented | 4 slices: `f1bb3cf84` (iot-cognitum), `1e5a8ec89` (ruflo-ddd), `85eab480e` (ruflo-adr), `5addd83b4` (ruflo-cost-tracker) |
+| **Part 3** — Model-tier rightsizing (security-auditor: opus → sonnet) | Implemented | `29542ce6d feat(plugins): ADR-098 Part 3 — security-auditor opus → sonnet` |
+| **Part 4** — Neural training hook standardization (7 agents) | Implemented | `2e5c90c90 feat(plugins): ADR-098 Part 4 — standardize neural-learning hook` |
+| **Part 5** — Self-optimization worker dispatch | Deferred | — |
+
+### Deferred
+
+- **Part 5** — Worker-dispatch lines (`hooks worker dispatch --trigger <worker>`) in work-producing agent prompts. Explicitly ordered post-Part 4 in the ADR; no follow-up commit has landed.
+>>>>>>> pr-1936-head
 
 ## Acceptance criteria
 

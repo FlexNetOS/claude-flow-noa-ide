@@ -6,6 +6,7 @@
  */
 
 export * from '@claude-flow/cli-core/mcp-tools/types';
+<<<<<<< HEAD
 
 /**
  * Returns the effective project working directory.
@@ -23,3 +24,5 @@ export function getProjectCwd(): string {
   }
   return process.cwd();
 }
+=======
+>>>>>>> pr-1936-head

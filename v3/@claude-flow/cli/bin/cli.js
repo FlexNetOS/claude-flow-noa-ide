@@ -40,6 +40,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
+<<<<<<< HEAD
 // ---------------------------------------------------------------------------
 // Boot trace (opt-in) — `RUFLO_BOOT_TRACE=1 ruflo --version`
 // ---------------------------------------------------------------------------
@@ -55,6 +56,8 @@ _trace('cli.js entry');
 // ---------------------------------------------------------------------------
 // Cosmetic noise suppression for [AgentDB Patch]
 // ---------------------------------------------------------------------------
+=======
+>>>>>>> pr-1936-head
 // Suppress the SPECIFIC cosmetic "[AgentDB Patch] Controller index not found"
 // warning from agentic-flow's runtime patch — these are emitted because the
 // patch was written for agentdb v1.x and we use v3, where the controllers
@@ -80,6 +83,7 @@ console.log = (...args) => {
   _origLog.apply(console, args);
 };
 
+<<<<<<< HEAD
 // ---------------------------------------------------------------------------
 // Hand-maintained help & version helpers (no SDK load)
 // ---------------------------------------------------------------------------
@@ -161,6 +165,16 @@ function _printHelpAndExit() {
 // ---------------------------------------------------------------------------
 // Argv parsing (no SDK)
 // ---------------------------------------------------------------------------
+=======
+// Check if we should run in MCP server mode
+// Conditions:
+//   1. stdin is being piped AND no CLI arguments provided (auto-detect)
+//   2. stdin is being piped AND args are "mcp start" (explicit, e.g. npx claude-flow@alpha mcp start)
+//   3. EXCEPT — if the user explicitly passed --transport <non-stdio>
+//      (e.g. -t http), defer to the parser. Without this, every smoke
+//      test or non-TTY caller of `mcp start -t http` got force-routed
+//      into stdio mode and never hit the HTTP server (#1874 follow-up).
+>>>>>>> pr-1936-head
 const cliArgs = process.argv.slice(2);
 const isBareTTY = process.stdin.isTTY === true && process.argv.length === 2;
 
@@ -204,7 +218,16 @@ if (isBareTTY) {
 //   2. stdin is piped AND args are "mcp start" (explicit, e.g.
 //      npx claude-flow@alpha mcp start)
 const isExplicitMCP = cliArgs.length >= 1 && cliArgs[0] === 'mcp' && (cliArgs.length === 1 || cliArgs[1] === 'start');
-const isMCPMode = !process.stdin.isTTY && (process.argv.length === 2 || isExplicitMCP);
+const explicitNonStdioTransport = cliArgs.some((a, i) => {
+  // -t <value> | --transport <value>
+  if ((a === '-t' || a === '--transport') && cliArgs[i + 1] && cliArgs[i + 1] !== 'stdio') return true;
+  // --transport=<value>
+  if (/^--transport=/.test(a) && !/^--transport=stdio$/.test(a)) return true;
+  return false;
+});
+const isMCPMode = !process.stdin.isTTY
+  && !explicitNonStdioTransport
+  && (process.argv.length === 2 || isExplicitMCP);
 
 if (isMCPMode) {
   _trace('mcp-mode detected, importing mcp-client');
@@ -305,7 +328,7 @@ if (isMCPMode) {
           id: message.id,
           result: {
             protocolVersion: '2024-11-05',
-            serverInfo: { name: 'claude-flow', version: VERSION },
+            serverInfo: { name: 'ruflo', version: VERSION },
             capabilities: {
               tools: { listChanged: true },
               resources: { subscribe: true, listChanged: true },

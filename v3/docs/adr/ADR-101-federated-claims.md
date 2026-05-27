@@ -1,10 +1,10 @@
 # ADR-101: Federated Claims — Cross-Node Work Coordination via the Federation Plane
 
-**Status**: Proposed
-**Date**: 2026-05-05
-**Version**: target v3.8.0 (post v3.7.x stabilization)
+**Status**: Accepted — Implemented (Phases 1–3 + Component C wiring landed)
+**Date**: 2026-05-05 (proposed) · **Updated**: 2026-05-09
+**Version**: shipped in `@claude-flow/plugin-agent-federation@1.0.0-alpha.5` and `@claude-flow/claims@3.0.0-alpha.x`
 **Supersedes**: nothing
-**Related**: ADR-086 (Agent Federation), ADR-097 (Federation budget circuit breaker), commit `6f495369` (G2 Ed25519 signing in federation), `v3/@claude-flow/claims/` (existing local-only claims module), `v3/@claude-flow/plugin-agent-federation/` (existing federation runtime)
+**Related**: ADR-086 (Agent Federation), ADR-097 (Federation budget circuit breaker), ADR-102 (CI smoke harness — federation policy-engine fix attested via witness), commit `6f495369` (G2 Ed25519 signing), `v3/@claude-flow/claims/`, `v3/@claude-flow/plugin-agent-federation/`
 
 ## Context
 
@@ -261,7 +261,66 @@ A separate `@claude-flow/federated-claims` that depends on both `@claude-flow/cl
 - The existing `IClaimRepository` and `IClaimEventStore` interfaces are already the right extension points. A sibling package would either duplicate them or re-export them, both of which add noise.
 - npm dependency graphs already track this fan-in; a sibling package buys nothing the existing package can't deliver via opt-in DI.
 
+## Implementation status (2026-05-09)
+
+All three phases are landed and present on `main`. Component C's
+policy-engine wiring was completed as a follow-on fix during the
+2026-05-08 CI cleanup. Witness manifest now attests the load-bearing
+markers across the federation surface.
+
+| Phase / Component | Status | Files | Commit(s) |
+|---|---|---|---|
+| **Phase 1** — HLC clock + skew-tolerant timestamps | Implemented | `v3/@claude-flow/claims/src/infrastructure/hlc.ts` + tests | `1f826fb9b feat(claims): ADR-101 Phase 1` |
+| **Phase 2** — Federated repository + event-store adapters | Implemented | `claims/src/infrastructure/federated-claim-repository.ts`, `federated-event-store.ts`, `event-store.ts` + tests | `edc39f7da feat(claims): ADR-101 Phase 2` |
+| **Phase 3** — Attested handoff envelopes (`claim-event`, `agent-handoff` message types) | Implemented | `plugin-agent-federation/src/domain/entities/federation-envelope.ts:17–19` | `cc6af4b77 feat(federation): ADR-101 Phase 3` |
+| **Phase 3 follow-on** — `CLAIMS_FOR_MESSAGE_TYPE` policy-engine wiring | Implemented (2026-05-08) | `plugin-agent-federation/src/application/policy-engine.ts:65–73` | `3ba0b6141 fix(plugin-agent-federation): add CLAIMS_FOR_MESSAGE_TYPE entries for ADR-101 Component C` |
+| **Phase 4** — Soak test, version bump, witness regen | Witness regen done; soak test deferred | `verification.md.json` (#82 entry, marker `'agent-handoff': ['federation:write', 'federation:spawn']`) | `779eb309b chore(witness): register ADR-101-C federation fix as #82` |
+
+Combined merge: PR `#1777` brought Phases 1–3 onto `main` as `9d4a9ea96`.
+
+### Claim-type mapping (Component C wiring)
+
+The `CLAIMS_FOR_MESSAGE_TYPE` `Record` in `policy-engine.ts` was missing
+entries for the two new ADR-101 message types after Phase 3 landed,
+which broke `Build V3` for 3+ days (TS2739 exhaustiveness error). The
+follow-on fix added:
+
+```ts
+'claim-event':   ['federation:write'],                          // same shape as task-assignment
+'agent-handoff': ['federation:write', 'federation:spawn'],      // state mutation + agent-lifecycle authority
+```
+
+Rationale: `claim-event` is a broadcast of state mutation across peers
+(matches `task-assignment`'s authorization shape). `agent-handoff`
+reshapes who owns work — sibling of `agent-spawn` — so it requires
+both write authority and spawn-lifecycle authority. Both fit the
+consensus-required posture this ADR specifies.
+
+### Regression coverage
+
+- **Witness marker** (`#82` in `verification.md.json`): file `plugin-agent-federation/dist/application/policy-engine.js`, marker string `'agent-handoff': ['federation:write', 'federation:spawn']`. A future regression that drops either entry triggers `markerVerified=false` in CI's `witness-verify` job before reaching users.
+- **TypeScript exhaustiveness check** on `Record<FederationMessageType, FederationClaimType[]>` is the compile-time safety net — adding a new `FederationMessageType` member without a `CLAIMS_FOR_MESSAGE_TYPE` entry breaks `Build V3`. (This is what surfaced the original gap.)
+
+### Open questions resolved during implementation
+
+| Original question | Resolution |
+|---|---|
+| Trust registry — share or separate? | Shared, gated by `CLAIMS_MIN_TRUST` config (default `WORKING`). |
+| Behavior on partition? | Continue independently for non-causal events; fail-closed for handoffs (matches the consensus-required gate). |
+| Vector clock GC? | Not yet implemented; deferred. Tracked as a follow-up issue (no incidents from accumulation observed in soak runs to date). |
+
+### Deferred
+
+- **Phase 4 soak test (3 nodes × 30 min × 1000 claims × 200 handoffs/min)** — not yet run on CI. Local soak runs have completed cleanly during development. Promoting to scheduled CI job is a follow-up; the witness marker provides the regression-detection floor in the interim.
+- **Vector-clock GC via `peer-status: EVICTED`** — depends on ADR-097 Phase 2/3 EVICT events landing; partial dependency unblocked.
+- **`CLAIMS_FEDERATION_ENABLED` feature flag** — implemented as documented but defaulting to `true` rather than `false` because the implementation cleared all gating concerns during PR review. If a user-visible regression surfaces, re-gating is a single-commit revert.
+
+---
+
 ## Implementation plan
+
+> Historical reference — the plan as proposed in 2026-05-05. See
+> "Implementation status" above for what actually shipped.
 
 Three phases, each independently mergeable. Each phase ships behind the feature flag `CLAIMS_FEDERATION_ENABLED` (default `false` until v3.8.0).
 

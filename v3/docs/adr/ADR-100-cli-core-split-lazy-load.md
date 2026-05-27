@@ -1,8 +1,8 @@
 # ADR-100: Split `@claude-flow/cli` into `cli-core` + lazy-loaded extras
 
-**Status**: Proposed
-**Date**: 2026-05-05
-**Version**: target v3.7.0-alpha.1 (alpha tag), graduating to v3.8.0 once validated
+**Status**: Accepted — Partially Implemented (foundation + backend abstraction + MCP tool defs shipped as alpha.0–alpha.5; full memory/hooks handler split and `latest` promotion deferred)
+**Date**: 2026-05-05 · **Updated**: 2026-05-09
+**Version**: `@claude-flow/cli-core@3.7.0-alpha.5` published; `@claude-flow/cli@3.7.0-alpha.1` metapackage released
 **Supersedes**: nothing
 **Related**: ADR-098 (plugin capability sync and optimization), issue [#1748](https://github.com/ruvnet/ruflo/issues/1748) Issue 3 (cold-cache 30s MCP-startup race), [#1747](https://github.com/ruvnet/ruflo/issues/1747) (hooks shell injection — fixed in 3.6.28; orthogonal to this ADR)
 
@@ -160,6 +160,47 @@ Two-step migration plan after cli-core@alpha lands:
 
 2. **README install matrix simplifies** — the "Plugin install (lite, slash commands only)" caveat becomes a "Plugin install + cli-core (fast, registers MCP via npx-warm fallback)" entry that approaches parity with full `npx ruflo init` for the common case.
 
+## Implementation status (2026-05-09)
+
+The split is live in alpha. `@claude-flow/cli-core@3.7.0-alpha.5` is published and proven 38× faster cold-cache than `@claude-flow/cli`. Steps 3–5 of the plan of work are complete; steps 7–8 are partially complete. `latest` promotion (Step 7 final gate) and the issue #1760 PR comment (Step 8) remain deferred.
+
+| Step | What | Status | Commit(s) |
+|---|---|---|---|
+| 1 | Branch `feat/cli-core-split` + ADR-100 + scaffold | Implemented | `9b42ca71e feat(cli-core): scaffold @claude-flow/cli-core package + ADR-100` |
+| 2a | Foundation surface (types, output, MCP-tool-types, validate-input) | Implemented | `8e7d4d197 feat(cli-core): foundation surface` (136 KB / 20 files dist) |
+| 2b | Architectural discovery (fire 3) — ML dep chain in memory/hooks tools | Surfaced | `dda65b4b8 feat(cli-core): foundation alpha.0` |
+| 3 | Backend abstraction — `MemoryBackend` interface + `JsonMemoryBackend` (no sql.js/HNSW/ONNX) | Implemented (alpha.1) | `51d3dc5a2 feat(cli-core): alpha.1 — MemoryBackend abstraction + working memory CLI` |
+| 4 | Tool-def / handler split for `hooks-tools.ts` — defs in cli-core, handlers dynamic-imported from cli | Implemented (alpha.2) | `452f60390 feat(cli-core): alpha.2 — MCP tool defs (memory + hooks subset, def-only)` |
+| 5 | `@claude-flow/cli/src/index.ts` re-exports 4 foundation modules from cli-core | Implemented (alpha.5) | `c63319e3d feat(cli): re-export 4 foundation modules from cli-core@alpha.5` |
+| 6 | Cold-cache benchmark → `docs/benchmarks/cli-core-cold-cache.json` | Implemented | `0acf557ba bench(cli-core): cold-cache 38× faster — alpha.0 published` (38× speedup, 80× size reduction) |
+| 7 | Bump cli-core to v3.7.0-alpha.1; publish under `--tag alpha` | Partially implemented — alpha.5 published; `latest` promotion pending external validation | `5c51df58c chore(release): 3.7.0-alpha.1 — cli-core split alpha` |
+| 8 | PR description with cold-cache numbers + comment on issue #1760 | Pending | — |
+
+### Cold-cache benchmark results (fire 11, per `docs/benchmarks/cli-core-cold-cache.json`)
+
+| Package | Cold cache | Packed size | Files |
+|---|---|---|---|
+| `@claude-flow/cli-core@3.7.0-alpha.0` | 671 ms | 22.3 KB | 22 |
+| `@claude-flow/cli@3.6.30` | 25.5 s | 1.8 MB | 999 |
+
+38× cold-cache speedup; comfortably under the 30s MCP-startup timeout. Validates the core hypothesis from §Riskiest assumption.
+
+### Open questions resolved during implementation
+
+| Original question | Resolution |
+|---|---|
+| Does the cold-cache split actually fit under the 30s MCP timeout? | Yes — 671 ms vs 25.5s. The riskiest assumption proved correct. |
+| Are Windows / Git Bash re-extraction behaviors a blocker? | Untested — external validator (Liberation of Bajor team or equivalent) required before `latest` promotion per the ADR's alpha-promotion gate. |
+| Do ML deps in `hooks-tools.ts` defeat the lite-bundle goal? | Yes — handled via tool-def/handler split (Step 4); defs live in cli-core, handler implementations stay in cli and dynamic-import at request time. |
+
+### Deferred
+
+- **`latest` tag promotion** — gated on: (1) cold-cache benchmark showing ≥80% wall-time reduction (achieved at 97%); (2) external integrator confirmation on cold cache; (3) no regression in 21 Tier 1 cost-tracker bench corpus. Condition 2 is the open gate.
+- **PR comment on issue #1760** — cold-cache numbers exist in the JSON; the comment itself was not filed.
+- **Full lazy-load dispatcher in cli metapackage** — cli-core re-exports 4 foundation modules but the full lazy-load table for swarm/neural/federation/browser/etc. was not wired in this alpha cycle.
+
+---
+
 ## Plan of work
 
 | Step | What | Status |
@@ -167,11 +208,11 @@ Two-step migration plan after cli-core@alpha lands:
 | 1 | Branch `feat/cli-core-split` + ADR-100 + scaffold | ✅ done — fire 1 |
 | 2a | Foundation surface in cli-core (types, output, MCP-tool-types, validate-input) | ✅ done — fire 2 (commit `2329b81fa`, 136 KB / 20 files dist) |
 | **2b** | **Architectural discovery (fire 3) — see "Discovery" below** | ✅ surfaced; informs steps 3+ |
-| 3 | Backend abstraction: extract a lite memory backend (JSON-only, no sql.js/HNSW/ONNX) so `mcp-tools/memory-tools.ts` can copy cleanly into cli-core. Heavy backend stays in @claude-flow/cli. | pending |
-| 4 | Definitions/handlers split for `hooks-tools.ts` — tool definitions (name/description/inputSchema, ~10 KB) live in cli-core; handler functions that actually do the work stay in cli with dynamic-import wiring. | pending |
-| 5 | Update `@claude-flow/cli/src/index.ts` to re-export from cli-core + register lazy-loaded extras for non-foundation commands. | pending |
-| 6 | Cold-cache benchmark: old vs new, persist to `docs/benchmarks/cli-core-cold-cache.json`. | pending |
-| 7 | Bump `cli-core` to `3.7.0-alpha.1` once steps 3+4 land; publish under `--tag alpha`. (alpha.0 published in fire 3 with foundation-only.) | partial |
+| 3 | Backend abstraction: extract a lite memory backend (JSON-only, no sql.js/HNSW/ONNX) so `mcp-tools/memory-tools.ts` can copy cleanly into cli-core. Heavy backend stays in @claude-flow/cli. | ✅ done — alpha.1 |
+| 4 | Definitions/handlers split for `hooks-tools.ts` — tool definitions (name/description/inputSchema, ~10 KB) live in cli-core; handler functions that actually do the work stay in cli with dynamic-import wiring. | ✅ done — alpha.2 |
+| 5 | Update `@claude-flow/cli/src/index.ts` to re-export from cli-core + register lazy-loaded extras for non-foundation commands. | ✅ done — alpha.5 (4 foundation modules re-exported) |
+| 6 | Cold-cache benchmark: old vs new, persist to `docs/benchmarks/cli-core-cold-cache.json`. | ✅ done — 38× speedup proven |
+| 7 | Bump `cli-core` to `3.7.0-alpha.1` once steps 3+4 land; publish under `--tag alpha`. (alpha.0 published in fire 3 with foundation-only.) | ✅ alpha.5 published; latest promotion pending |
 | 8 | PR description with cold-cache numbers + comment on issue #1760 with proof. | pending |
 
 ## Discovery (fire 3)

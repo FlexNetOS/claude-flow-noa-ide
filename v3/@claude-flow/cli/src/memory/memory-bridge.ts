@@ -98,42 +98,205 @@ async function getRegistry(dbPath?: string): Promise<any | null> {
           console.log = origLog;
         }
 
-        // Wire intelligence module as the learning backend
-        // AgentDB's ReasoningBank/LearningSystem need a better-sqlite3 db handle
-        // which ControllerRegistry doesn't expose. Instead, use the local intelligence
-        // module (SONA + LocalReasoningBank + file persistence) for learning.
+        // Wire intelligence module as the learning backend.
+        // AgentDB's ReasoningBank/LearningSystem need a better-sqlite3 db
+        // handle which ControllerRegistry doesn't expose. Instead, use the
+        // local intelligence module (SONA + LocalReasoningBank + file
+        // persistence) for learning.
+        //
+        // PERF: parallelize the two independent post-init paths
+        // (intelligence module load + agentdb import). Previously these
+        // ran serially, adding ~50-150ms to cold start. Both can resolve
+        // concurrently because they touch disjoint controller slots.
         try {
-          const intelligence = await import('./intelligence.js');
-          const initResult = await intelligence.initializeIntelligence();
           const reg = registry as any;
 
-          if (initResult.reasoningBankEnabled) {
-            const rb = intelligence.getReasoningBank();
-            if (rb && !reg.get('reasoningBank')) {
-              if (typeof reg.set === 'function') reg.set('reasoningBank', rb);
-              else reg._controllers = { ...(reg._controllers || {}), reasoningBank: rb };
-            }
-          }
+          const intelligencePromise = (async () => {
+            try {
+              const intelligence = await import('./intelligence.js');
+              const initResult = await intelligence.initializeIntelligence();
 
-          if (initResult.sonaEnabled) {
-            const sona = intelligence.getSonaCoordinator();
-            if (sona && !reg.get('learningSystem')) {
-              if (typeof reg.set === 'function') reg.set('learningSystem', sona);
-              else reg._controllers = { ...(reg._controllers || {}), learningSystem: sona };
-            }
-          }
+              if (initResult.reasoningBankEnabled) {
+                const rb = intelligence.getReasoningBank();
+                if (rb && !reg.get('reasoningBank')) {
+                  if (typeof reg.set === 'function') reg.set('reasoningBank', rb);
+                  else reg._controllers = { ...(reg._controllers || {}), reasoningBank: rb };
+                }
+              }
 
-          // SkillLibrary from AgentDB (no db required)
-          try {
-            const agentdb = await import('agentdb');
-            if (agentdb.SkillLibrary && !reg.get('skills')) {
-              const sk = new (agentdb.SkillLibrary as any)();
-              if (typeof reg.set === 'function') reg.set('skills', sk);
-              else reg._controllers = { ...(reg._controllers || {}), skills: sk };
-            }
-          } catch { /* AgentDB not available */ }
+              if (initResult.sonaEnabled) {
+                const sona = intelligence.getSonaCoordinator();
+                if (sona && !reg.get('learningSystem')) {
+                  if (typeof reg.set === 'function') reg.set('learningSystem', sona);
+                  else reg._controllers = { ...(reg._controllers || {}), learningSystem: sona };
+                }
+              }
+            } catch { /* intelligence module not available — learning stays unwired */ }
+          })();
+
+          const agentdbPromise = (async () => {
+            // Single import shared across SkillLibrary + SemanticRouter probe.
+            let agentdb: Record<string, unknown> | null = null;
+            try { agentdb = (await import('agentdb')) as unknown as Record<string, unknown>; }
+            catch { return; /* AgentDB not available */ }
+
+            // SkillLibrary (no db required)
+            try {
+              const SkillCtor = agentdb.SkillLibrary as (new () => unknown) | undefined;
+              if (SkillCtor && !reg.get('skills')) {
+                const sk = new SkillCtor();
+                if (typeof reg.set === 'function') reg.set('skills', sk);
+                else reg._controllers = { ...(reg._controllers || {}), skills: sk };
+              }
+            } catch { /* SkillLibrary optional */ }
+
+            // ADR-093 F9: probe multiple router class names across agentdb
+            // alpha versions (alpha.10 had SemanticRouter; alpha.11+ removed
+            // it in favor of @ruvector/router; future versions may
+            // reintroduce). Wire only if .route() is callable.
+            try {
+              const candidates = ['SemanticRouter', 'IntentRouter', 'TaskRouter'] as const;
+              let routerInstance: { route?: (input: string) => Promise<unknown> | unknown } | null = null;
+              for (const name of candidates) {
+                const Ctor = agentdb[name];
+                if (typeof Ctor === 'function') {
+                  try {
+                    const inst = (() => {
+                      try { return new (Ctor as new (cfg: { dimension: number }) => unknown)({ dimension: 384 }); }
+                      catch { return new (Ctor as new () => unknown)(); }
+                    })() as { route?: (input: string) => Promise<unknown> | unknown };
+                    if (inst && typeof inst.route === 'function') {
+                      routerInstance = inst;
+                      break;
+                    }
+                  } catch { /* try next candidate */ }
+                }
+              }
+              if (routerInstance && !reg.get('semanticRouter')) {
+                if (typeof reg.set === 'function') reg.set('semanticRouter', routerInstance);
+                else reg._controllers = { ...(reg._controllers || {}), semanticRouter: routerInstance };
+              }
+            } catch { /* router optional */ }
+
+            // ADR-095 G7: load disabled-by-default controllers via direct
+            // file:// URLs from the bundled agentdb. agentdb's exports
+            // field doesn't expose these subpaths and we can't reliably
+            // patch it across pnpm-hoisted multi-version trees, so we
+            // sidestep the exports field entirely and import the file
+            // by absolute URL. Only loads controllers whose constructor
+            // is safe with no special prerequisites — others remain off
+            // pending per-controller activation ADRs.
+            try {
+              const { createRequire } = await import('node:module');
+              const { pathToFileURL } = await import('node:url');
+              const path = await import('node:path');
+              const fs = await import('node:fs');
+              const cjsRequire = createRequire(import.meta.url);
+              let adbPkgJsonPath: string | null = null;
+              try { adbPkgJsonPath = cjsRequire.resolve('agentdb/package.json'); } catch { adbPkgJsonPath = null; }
+              if (adbPkgJsonPath) {
+                const adbDir = path.dirname(adbPkgJsonPath);
+                const candidates: Array<{ name: string; relPath: string; configurable: boolean }> = [
+                  // GNNService and RVFOptimizer can construct with no args
+                  // in current agentdb — safe to activate as-is.
+                  { name: 'gnnService', relPath: 'dist/src/services/GNNService.js', configurable: false },
+                  { name: 'rvfOptimizer', relPath: 'dist/src/optimizations/RVFOptimizer.js', configurable: false },
+                  // ADR-095 G7 follow-up: MutationGuard constructs cleanly
+                  // with no args and exposes WASM-backed proof generation.
+                  // No external deps; safe-default activation.
+                  { name: 'mutationGuard', relPath: 'dist/src/security/MutationGuard.js', configurable: false },
+                  // AttestationLog needs a sqlite db handle — wired below
+                  // separately because we have to construct a db too.
+                  // GuardedVectorBackend needs key material — leave for
+                  // follow-up ADR.
+                ];
+                for (const cand of candidates) {
+                  if (reg.get(cand.name)) continue;
+                  const abs = path.join(adbDir, cand.relPath);
+                  if (!fs.existsSync(abs)) continue;
+                  try {
+                    const url = pathToFileURL(abs).href;
+                    const mod = await import(url) as Record<string, unknown>;
+                    // Look for a default export, named export matching the
+                    // file basename, or any class-typed export.
+                    const baseName = path.basename(cand.relPath, '.js');
+                    const Ctor = (mod[baseName] || mod.default ||
+                      Object.values(mod).find(v => typeof v === 'function')) as (new () => unknown) | undefined;
+                    if (typeof Ctor !== 'function') continue;
+                    const inst = new Ctor();
+                    if (typeof reg.set === 'function') reg.set(cand.name, inst);
+                    else reg._controllers = { ...(reg._controllers || {}), [cand.name]: inst };
+                  } catch { /* skip controllers that fail to construct */ }
+                }
+
+                // AttestationLog activation — needs a better-sqlite3
+                // database. We open a dedicated file at .swarm/attestation.db
+                // (separate from the main memory.db so the audit trail
+                // is isolated). Best-effort: if better-sqlite3 isn't
+                // resolvable in this env, skip cleanly.
+                let attestationInst: unknown = null;
+                if (!reg.get('attestationLog')) {
+                  try {
+                    const attestationFile = path.join(adbDir, 'dist/src/security/AttestationLog.js');
+                    if (fs.existsSync(attestationFile)) {
+                      const Database = (cjsRequire('better-sqlite3') as unknown) as new (p: string) => unknown;
+                      const swarmDir = path.resolve(process.cwd(), '.swarm');
+                      if (!fs.existsSync(swarmDir)) fs.mkdirSync(swarmDir, { recursive: true });
+                      const dbPath = path.join(swarmDir, 'attestation.db');
+                      const db = new Database(dbPath);
+                      const url = pathToFileURL(attestationFile).href;
+                      const mod = await import(url) as Record<string, unknown>;
+                      const Ctor = mod.AttestationLog as (new (cfg: { db: unknown }) => unknown) | undefined;
+                      if (typeof Ctor === 'function') {
+                        const inst = new Ctor({ db });
+                        attestationInst = inst;
+                        if (typeof reg.set === 'function') reg.set('attestationLog', inst);
+                        else reg._controllers = { ...(reg._controllers || {}), attestationLog: inst };
+                      }
+                    }
+                  } catch { /* better-sqlite3 missing or schema init failed — skip silently */ }
+                }
+
+                // ADR-095 G7 follow-up: GuardedVectorBackend wraps the
+                // existing vectorBackend with mutationGuard + attestationLog
+                // for proof-gated state mutations (ADR-060). All three
+                // dependencies are reachable here — vectorBackend is in
+                // the baseline init, mutationGuard was just activated, and
+                // attestationLog is constructed above. Skip if any piece
+                // is missing rather than constructing with undefined.
+                if (!reg.get('guardedVectorBackend')) {
+                  try {
+                    const gvbFile = path.join(adbDir, 'dist/src/backends/ruvector/GuardedVectorBackend.js');
+                    if (fs.existsSync(gvbFile)) {
+                      const inner = reg.get('vectorBackend');
+                      const guard = reg.get('mutationGuard');
+                      const log = attestationInst ?? reg.get('attestationLog');
+                      if (inner && guard) {
+                        const url = pathToFileURL(gvbFile).href;
+                        const mod = await import(url) as Record<string, unknown>;
+                        const Ctor = mod.GuardedVectorBackend as (new (i: unknown, g: unknown, l: unknown) => unknown) | undefined;
+                        if (typeof Ctor === 'function') {
+                          const inst = new Ctor(inner, guard, log);
+                          if (typeof reg.set === 'function') reg.set('guardedVectorBackend', inst);
+                          else reg._controllers = { ...(reg._controllers || {}), guardedVectorBackend: inst };
+                        }
+                      }
+                    }
+                  } catch { /* GuardedVectorBackend optional */ }
+                }
+              }
+            } catch { /* G7 wiring optional */ }
+          })();
+
+          // Run both in parallel; settle either way so a single failing
+          // path doesn't tear down the rest of the post-init wiring.
+          await Promise.allSettled([intelligencePromise, agentdbPromise]);
+
+          // Remaining disabled controllers tracked in ADR-095 G7 for
+          // per-controller activation ADRs:
+          //   - graphAdapter (graph DB adapter — needs graph DB connection)
         } catch {
-          // Intelligence module not available — learning stays unwired
+          // Top-level catch — registry stays usable even if post-init wiring fails wholesale.
         }
 
         registryInstance = registry;
@@ -1527,7 +1690,10 @@ export async function bridgeDeleteHierarchical(options: {
           SET status = 'deleted', updated_at = ?
           WHERE key = ? AND namespace LIKE 'hierarchical%' AND status = 'active'
         `).run(Date.now(), key);
+<<<<<<< HEAD
         flushDb(ctx);
+=======
+>>>>>>> pr-1936-head
         const changes = result?.changes ?? 0;
         if (changes > 0) {
           await logAttestation(registry, 'delete', key, { namespace: 'hierarchical', tier });
@@ -1621,7 +1787,10 @@ export async function bridgeDeleteCausalEdge(options: {
           SET status = 'deleted', updated_at = ?
           WHERE key = ? AND namespace = 'causal-edges' AND status = 'active'
         `).run(Date.now(), edgeKey);
+<<<<<<< HEAD
         flushDb(ctx);
+=======
+>>>>>>> pr-1936-head
         const changes = result?.changes ?? 0;
         if (changes > 0) {
           await logAttestation(registry, 'delete', edgeKey, { namespace: 'causal-edges', relation });
@@ -1710,7 +1879,10 @@ export async function bridgeDeleteCausalNode(options: {
           AND status = 'active'
           AND (key LIKE ? OR key LIKE ?)
       `).run(Date.now(), `${nodeId}→%`, `%→${nodeId}`);
+<<<<<<< HEAD
       flushDb(ctx);
+=======
+>>>>>>> pr-1936-head
       deletedEdges = edgeResult?.changes ?? 0;
 
       const nodeResult = ctx.db.prepare(`
@@ -1718,7 +1890,10 @@ export async function bridgeDeleteCausalNode(options: {
         SET status = 'deleted', updated_at = ?
         WHERE key = ? AND status = 'active'
       `).run(Date.now(), nodeId);
+<<<<<<< HEAD
       flushDb(ctx);
+=======
+>>>>>>> pr-1936-head
       deletedNode = (nodeResult?.changes ?? 0) > 0;
 
       await logAttestation(registry, 'delete', nodeId, { namespace: 'causal-nodes', deletedEdges });
@@ -2183,10 +2358,20 @@ export async function bridgeSemanticRoute(params: { input: string }): Promise<Br
   if (!registry) return null;
   try {
     const router = registry.get('semanticRouter');
-    if (!router) return { route: null, error: 'SemanticRouter not available' };
+    if (!router) {
+      // ADR-093 F9: surface an actionable error pointing callers at the
+      // alternative routing surfaces that DO work, instead of just
+      // saying "not available".
+      return {
+        route: null,
+        error: 'SemanticRouter not available in current agentdb build',
+        recommendation: 'Use bridgeRouteTask (registers as `agentdb_route` MCP tool) for keyword+pattern routing, or hooks_model-route for ADR-026 model selection.',
+        controller: 'none',
+      };
+    }
     const result = await router.route(params.input);
     return { route: result, controller: 'semanticRouter' };
-  } catch (e: any) { return { route: null, error: e.message }; }
+  } catch (e: any) { return { route: null, error: e.message, controller: 'error' }; }
 }
 
 // ===== RaBitQ data export =====

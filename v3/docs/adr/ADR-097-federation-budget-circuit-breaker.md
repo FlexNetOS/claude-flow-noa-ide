@@ -1,8 +1,14 @@
 # ADR-097: Federation-wide Budget Circuit Breaker and Token Quotas
 
+<<<<<<< HEAD
 **Status**: Proposed
 **Date**: 2026-05-04
 **Version**: target v3.6.x
+=======
+**Status**: Accepted — Partially Implemented (Phase 1 + Phase 3 consumer-side landed; Phases 2 and 4 deferred)
+**Date**: 2026-05-04 · **Updated**: 2026-05-09
+**Version**: Phase 1 shipped in `@claude-flow/plugin-agent-federation` (v3.6.x); Phase 3 consumer in `ruflo-cost-tracker@0.14.0`
+>>>>>>> pr-1936-head
 **Supersedes**: nothing
 **Related**: ADR-086 (Agent Federation), ADR-095 (Architectural gaps — G2 includes federation transport), issues #1723 and #1724 (#1724 closed as duplicate of #1723), commit `6f495369` (G2 Ed25519 signing in federation)
 
@@ -128,6 +134,36 @@ Test surface:
 3. **Suspended peer recovery storm**. If many peers transition `SUSPENDED → ACTIVE` simultaneously after cooldown, they could all retry pending sends at once. Mitigation: jitter the cooldown by ±10% per peer.
 4. **Cost-tracker plugin not installed**. If the user runs federation without cost-tracker, USD-based breaker rules degrade to "always permitted." Token-count breaker still works (federation tracks tokens itself). Document this — cost-tracker is the recommended pair, not strictly required.
 
+<<<<<<< HEAD
+=======
+## Implementation status (2026-05-09)
+
+Phases 1 and 3 (consumer-side) are landed on `main`. Phase 2 (peer state machine) and Phase 4 (doctor + `federation_breaker_status` MCP tool) are deferred.
+
+| Phase / Component | Status | Files | Commit(s) |
+|---|---|---|---|
+| **Phase 1** — Budget envelope + hop counter on `federation_send` | Implemented | `v3/@claude-flow/plugin-agent-federation/src/domain/value-objects/federation-budget.ts` (new), `mcp-tools.ts` updated | `7e1cc06df feat(federation): ADR-097 Phase 1 — budget envelope + hop counter (#1723)` |
+| **Phase 2** — Peer state machine (`ACTIVE`/`SUSPENDED`/`EVICTED`) | Deferred | `federation-node.ts` — no `state` field added | — |
+| **Phase 3** — Cost-tracker bus event + per-peer rolling aggregation | Consumer-side implemented; upstream emitter deferred | `plugins/ruflo-cost-tracker/scripts/federation.mjs`, `skills/cost-federation/SKILL.md` | `1c0804315 feat(cost-tracker): P6 — ADR-097 Phase 3 federation_spend consumer (v0.14.0)` |
+| **Phase 3 plugin wiring** — federation plugin adopts budget integration + ADR-097 doc | Implemented | `plugins/ruflo-federation/` (v0.2.0), `docs/adrs/0001-federation-contract.md` | `b0168e4a5 feat(ruflo-federation): adopt plugin contract — 3-gate alignment + ADR-097 budget integration + smoke` |
+| **Phase 4** — Doctor + `federation_breaker_status` MCP tool | Deferred | — | — |
+
+### Open questions resolved during implementation
+
+| Original question | Resolution |
+|---|---|
+| Is upstream `federation_spend` event emission required for Phase 3 consumer? | No — the consumer (`scripts/federation.mjs`) activates the moment the upstream emitter lands; it reads from the `federation-spend` namespace. Until Phase 2/3 emit events, the consumer runs against an empty namespace and reports zero spend. |
+| Does Phase 1's default `maxHops=8` close the recursion-loop class for all callers? | Yes — hop enforcement fires even when no explicit budget is passed (`validateBudget(undefined)` returns a default-bounded budget). |
+
+### Deferred
+
+- **Phase 2** — `ACTIVE`/`SUSPENDED`/`EVICTED` state machine in `federation-node.ts`; auto-recovery cooldown; `SUSPENDED → EVICTED` escalation. Depends on upstream Phase 3 spend events to drive the suspension threshold.
+- **Phase 4** — `federation_breaker_status` MCP tool; `ruflo doctor` peer-state output. Blocked on Phase 2.
+- **Phase 3 upstream** — `federation_spend` event emission from `federation_send` completion. Consumer side is wired and waiting.
+
+---
+
+>>>>>>> pr-1936-head
 ## Acceptance criteria
 
 The full implementation is done when:

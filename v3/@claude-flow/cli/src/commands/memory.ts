@@ -346,11 +346,35 @@ const searchCommand: Command = {
       let smartStats: Record<string, unknown> | undefined;
       let backendLabel = 'HNSW + sql.js';
 
+      // #1846: feature-detect smartSearch — older published builds of
+      // @claude-flow/memory don't expose it. Fall through to plain
+      // semantic search with a one-line warning instead of throwing.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let smartSearchFn: any | undefined;
       if (useSmart) {
+<<<<<<< HEAD
         // #bug16a: @claude-flow/memory@3.0.0-alpha.14 dropped the smartSearch export.
         // Use local shim until upstream re-exports the function.
         const { smartSearch } = await import('../memory/smart-search-shim.js');
+=======
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const memMod: any = await import('@claude-flow/memory');
+          if (typeof memMod.smartSearch === 'function') {
+            smartSearchFn = memMod.smartSearch;
+          }
+        } catch {
+          /* memory package not loadable */
+        }
+        if (!smartSearchFn) {
+          output.printWarning(
+            'Smart search requested but smartSearch is not available on the installed @claude-flow/memory build (#1846). Falling back to standard semantic search.',
+          );
+        }
+      }
+>>>>>>> pr-1936-head
 
+      if (useSmart && smartSearchFn) {
         // Adapt searchEntries to the SearchFn interface
         const rawSearch = async (req: { query: string; namespace?: string; limit?: number; threshold?: number }) => {
           const r = await searchEntries({
@@ -370,14 +394,14 @@ const searchCommand: Command = {
           };
         };
 
-        const smartResult = await smartSearch(rawSearch, {
+        const smartResult = await smartSearchFn(rawSearch, {
           query,
           namespace,
           limit,
           threshold,
         });
 
-        results = smartResult.results.map(r => ({
+        results = smartResult.results.map((r: { content: string; key: string; namespace: string; score: number }) => ({
           key: r.key,
           score: r.score,
           namespace: r.namespace,

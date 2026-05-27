@@ -16,8 +16,12 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const fs = require('fs');
 const path = require('path');
+<<<<<<< HEAD
 const { execSync } = require('child_process');
 const os = require('os');
+=======
+const { execSync, execFileSync } = require('child_process');
+>>>>>>> pr-1936-head
 
 // Configuration
 const CONFIG = {
@@ -63,6 +67,7 @@ const c = {
   brightWhite: '\x1b[1;37m',
 };
 
+<<<<<<< HEAD
 // Safe execSync with strict timeout (returns empty string on failure)
 function safeExec(cmd, timeoutMs = 2000) {
   try {
@@ -170,6 +175,25 @@ function getGitInfo() {
     result.ahead = parseInt(ab[0]) || 0;
     result.behind = parseInt(ab[1]) || 0;
   }
+=======
+// Get user info
+function getUserInfo() {
+  let name = 'user';
+  let gitBranch = '';
+  let modelName = 'Unknown';
+
+  // audit_1776853149979: previously used execSync with a shell string. Switched
+  // to execFileSync('git', argv) on both platforms so there is no shell
+  // interpretation. Cross-platform behavior is preserved by relying on git's
+  // own exit code instead of `|| echo` fallbacks: missing repo / no user.name
+  // throws, caught below, defaults retained.
+  try {
+    name = execFileSync('git', ['config', 'user.name'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || 'user';
+  } catch { /* keep default */ }
+  try {
+    gitBranch = execFileSync('git', ['branch', '--show-current'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { /* keep empty */ }
+>>>>>>> pr-1936-head
 
   return result;
 }

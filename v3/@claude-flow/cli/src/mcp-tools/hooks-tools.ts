@@ -951,7 +951,11 @@ export const hooksPostCommand: MCPTool = {
 
 export const hooksRoute: MCPTool = {
   name: 'hooks_route',
+<<<<<<< HEAD
   description: 'Get a 3-tier routing recommendation for a task: Tier 1 (Agent Booster, 0ms / $0 — for var-to-const, add-types, etc.), Tier 2 (Haiku — simple), Tier 3 (Sonnet/Opus — complex). Use this BEFORE spawning an agent to avoid sending simple transforms to Sonnet. Native tools have no equivalent — Claude Code does not introspect its own model-selection cost. Returns the recommended model + a `[AGENT_BOOSTER_AVAILABLE]` literal when the WASM bypass applies. Also surfaces user-installed skills/agents from ~/.claude/ that match the task (e.g. polymarket-analyzer for trading tasks).',
+=======
+  description: 'Get a 3-tier routing recommendation for a task: Tier 1 (Agent Booster, 0ms / $0 — for var-to-const, add-types, etc.), Tier 2 (Haiku — simple), Tier 3 (Sonnet/Opus — complex). Use this BEFORE spawning an agent to avoid sending simple transforms to Sonnet. Native tools have no equivalent — Claude Code does not introspect its own model-selection cost. Returns the recommended model + a `[AGENT_BOOSTER_AVAILABLE]` literal when the WASM bypass applies.',
+>>>>>>> pr-1936-head
   inputSchema: {
     type: 'object',
     properties: {
@@ -1884,6 +1888,7 @@ export const hooksMetrics: MCPTool = {
       routingOutcomes = loadRoutingOutcomes() as Array<{ success: boolean; agent?: string }>;
     } catch { /* non-fatal */ }
 
+<<<<<<< HEAD
     // ADR-094 / #bug5: helpers/intelligence.cjs:recordEdit() appends edits
     // to pending-insights.jsonl on every post-edit hook, but the only prior
     // consumer was session-end consolidation. Drain new lines (with offset
@@ -1891,6 +1896,9 @@ export const hooksMetrics: MCPTool = {
     const pendingDrained = drainPendingInsights();
 
     const totalCommands = routingOutcomes.length + pendingDrained.edits;
+=======
+    const totalCommands = routingOutcomes.length;
+>>>>>>> pr-1936-head
     const successfulCommands = routingOutcomes.filter(o => o.success).length;
     const successRate = totalCommands > 0 ? successfulCommands / totalCommands : null;
 
@@ -1901,6 +1909,7 @@ export const hooksMetrics: MCPTool = {
     }
     const topAgent = Object.entries(agentCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
+<<<<<<< HEAD
     const successful = stats.trajectories.successful + pendingDrained.trajectoriesEnded;
     const total = stats.trajectories.total + pendingDrained.trajectoriesEnded;
     const failed = Math.max(0, total - successful);
@@ -1939,13 +1948,29 @@ export const hooksMetrics: MCPTool = {
       period,
       patterns: {
         total: totalPatterns,
+=======
+    const successful = stats.trajectories.successful;
+    const total = stats.trajectories.total;
+    const failed = Math.max(0, total - successful);
+
+    return {
+      _real: true,
+      _dataSource: 'intelligence-stats + routing-outcomes',
+      period,
+      patterns: {
+        total: stats.patterns.learned,
+>>>>>>> pr-1936-head
         successful,
         failed,
         avgConfidence: stats.routing.avgConfidence || null,
       },
       agents: {
         routingAccuracy: stats.routing.avgConfidence || null,
+<<<<<<< HEAD
         totalRoutes,
+=======
+        totalRoutes: stats.routing.decisions,
+>>>>>>> pr-1936-head
         topAgent,
       },
       commands: {
@@ -1953,7 +1978,11 @@ export const hooksMetrics: MCPTool = {
         successRate,
         avgRiskScore: null,
       },
+<<<<<<< HEAD
       _note: total === 0 && totalCommands === 0 && pendingDrained.drained === 0 && totalPatterns === 0
+=======
+      _note: total === 0 && totalCommands === 0
+>>>>>>> pr-1936-head
         ? 'No metrics data collected yet. Run hooks_post-task / hooks_intelligence_trajectory-end / hooks_route to populate.'
         : undefined,
       lastUpdated: new Date().toISOString(),
@@ -2404,6 +2433,21 @@ export const hooksPretrain: MCPTool = {
       patternsStored = patterns.length;
     } catch { /* AgentDB not available */ }
 
+    // #1847: when the corpus contains files but no patterns were extracted
+    // (typical for Markdown vaults), make the source-code-only extraction
+    // contract explicit so users don't conclude the hook system is broken.
+    const SUPPORTED_EXTRACTION_EXTS = ['.ts', '.js', '.py', '.go', '.rs', '.java'];
+    let note: string | undefined;
+    if (filesAnalyzed > 0 && patterns.length === 0) {
+      const codeFileCount = SUPPORTED_EXTRACTION_EXTS.reduce(
+        (sum, ext) => sum + (extCounts[ext] ?? 0),
+        0,
+      );
+      note = codeFileCount === 0
+        ? `No source-code patterns found. hooks_pretrain extracts import/require lines from ${SUPPORTED_EXTRACTION_EXTS.join('/')} files only — Markdown/text/asset corpora produce zero patterns by design. This is not a hook-system failure; live trajectories and statusline are independent.`
+        : `Found ${codeFileCount} source-code file(s) but extracted zero import/require patterns. They may be empty, generated, or use non-standard module syntax.`;
+    }
+
     return {
       success: true,
       _real: true,
@@ -2416,7 +2460,14 @@ export const hooksPretrain: MCPTool = {
         patternsExtracted: patterns.length,
         patternsStored,
         fileTypes: Object.entries(extCounts).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([ext, count]) => ({ ext, count })),
+        // #1847: explicit extraction contract so callers can tell pretrain
+        // patterns apart from live trajectories and hook statusline state.
+        sources: {
+          extractedFrom: SUPPORTED_EXTRACTION_EXTS,
+          scope: 'pretrain-only (live trajectories + statusline are tracked separately)',
+        },
       },
+      ...(note ? { note } : {}),
     };
   },
 };
@@ -4595,16 +4646,49 @@ export const hooksWorkerDispatch: MCPTool = {
     activeWorkers.set(workerId, worker);
 
     // Determine honest status
+<<<<<<< HEAD
     let reportedStatus: 'queued' | 'no-daemon' | 'synthetic-completed';
     let note: string;
+=======
+    let reportedStatus: 'queued' | 'no-daemon' | 'synthetic-completed' | 'mcp-only';
+    let note = '';
+>>>>>>> pr-1936-head
     if (!daemonAlive) {
       reportedStatus = 'no-daemon';
       note = 'No worker daemon detected. Run `claude-flow daemon start` to enable real worker execution. The dispatch was recorded in-process but no actual work will run.';
     } else if (background) {
+<<<<<<< HEAD
       // Daemon is alive — record the queued worker. The daemon polls activeWorkers
       // via its own state file, so this constitutes a real queue entry.
       reportedStatus = 'queued';
       note = `Worker queued for daemon (pid ${daemonPid}). Poll hooks_worker-status to track progression — do not assume completion until status === "completed".`;
+=======
+      // #1845: write a durable queue file the daemon polls every 5s. Until
+      // 3.7.0-alpha.11 the dispatch only updated a process-local Map that
+      // the daemon (separate process) could never see, so `queued` was a
+      // lie. The queue file makes it real and inspectable on disk.
+      const queueDir = join(cwd, '.claude-flow', 'daemon-queue');
+      const queuePath = join(queueDir, `${workerId}.json`);
+      let queueWritten = false;
+      try {
+        if (!existsSync(queueDir)) mkdirSync(queueDir, { recursive: true });
+        writeFileSync(
+          queuePath,
+          JSON.stringify({ workerId, trigger, context, priority, enqueuedAt: new Date().toISOString() }, null, 2),
+        );
+        queueWritten = true;
+      } catch (err) {
+        // Filesystem error — fall back to mcp-only status so we never
+        // claim queued without proof.
+        note = `Daemon detected (pid ${daemonPid}) but queue write to ${queuePath} failed: ${(err as Error).message}. Worker recorded in-process only; use \`ruflo daemon trigger -w ${trigger}\` to run synchronously.`;
+      }
+      if (queueWritten) {
+        reportedStatus = 'queued';
+        note = `Worker queued for daemon (pid ${daemonPid}) at ${queuePath}. Daemon polls every 5s; processed entries move to .claude-flow/daemon-queue/.processed/. Poll hooks_worker-status until status === "completed".`;
+      } else {
+        reportedStatus = 'mcp-only';
+      }
+>>>>>>> pr-1936-head
     } else {
       // Synchronous mode without a runner — be honest about it
       reportedStatus = 'synthetic-completed';

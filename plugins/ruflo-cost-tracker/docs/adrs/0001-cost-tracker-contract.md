@@ -1,8 +1,14 @@
 ---
 id: ADR-0001
 title: ruflo-cost-tracker plugin contract — pinning, namespace-routing fix, federation budget integration, smoke as contract
+<<<<<<< HEAD
 status: Proposed
 date: 2026-05-04
+=======
+status: Accepted
+date: 2026-05-04
+updated: 2026-05-09
+>>>>>>> pr-1936-head
 authors:
   - reviewer (Claude Code)
 tags: [plugin, cost, tokens, budget, optimization, namespace, federation, smoke-test]
@@ -96,3 +102,10 @@ bash plugins/ruflo-cost-tracker/scripts/smoke.sh
 - `plugins/ruflo-autopilot/docs/adrs/0001-autopilot-contract.md`
 - `plugins/ruflo-core/docs/adrs/0001-core-contract.md`
 - `v3/docs/adr/ADR-097-federation-budget-circuit-breaker.md` — federation budget envelope
+<<<<<<< HEAD
+=======
+
+## Implementation status
+
+Plugin version v0.16.1 shipped and listed in marketplace.json. Source exists at `plugins/ruflo-cost-tracker/`. Contract elements implemented: dual namespaces (`cost-tracking`, `cost-patterns`) with correct `memory_*` routing; ADR-097 budget circuit breaker Phase 1 (send-side enforcement) documented; namespace-routing bug fixed (switched from `agentdb_hierarchical-*` to `memory_*`); smoke-as-contract gate defined in `scripts/smoke.sh`.
+>>>>>>> pr-1936-head

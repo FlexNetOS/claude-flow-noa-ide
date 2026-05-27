@@ -1,6 +1,10 @@
 {
   "name": "@claude-flow/cli",
+<<<<<<< HEAD
   "version": "3.7.0-alpha.11",
+=======
+  "version": "3.7.0-alpha.19",
+>>>>>>> pr-1936-head
   "type": "module",
   "description": "Ruflo CLI - Enterprise AI agent orchestration with 60+ specialized agents, swarm coordination, MCP server, self-learning hooks, and vector memory for Claude Code",
   "main": "dist/src/index.js",
@@ -101,7 +105,8 @@
     "@claude-flow/shared": "^3.0.0-alpha.7",
     "@noble/ed25519": "^2.1.0",
     "@ruvector/rabitq-wasm": "^0.1.0",
-    "semver": "^7.6.0"
+    "semver": "^7.6.0",
+    "yaml": "^2.8.0"
   },
   "optionalDependencies": {
     "@claude-flow/aidefence": "^3.0.2",

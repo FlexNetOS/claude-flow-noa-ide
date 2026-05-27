@@ -36,7 +36,37 @@
  */
 
 import type { MCPTool } from './mcp-tools/types.js';
+<<<<<<< HEAD
 import { swallowError } from '@claude-flow/shared';
+=======
+
+// Import MCP tool handlers from local package
+import { agentTools } from './mcp-tools/agent-tools.js';
+import { swarmTools } from './mcp-tools/swarm-tools.js';
+import { memoryTools } from './mcp-tools/memory-tools.js';
+import { configTools } from './mcp-tools/config-tools.js';
+import { hooksTools } from './mcp-tools/hooks-tools.js';
+import { taskTools } from './mcp-tools/task-tools.js';
+import { sessionTools } from './mcp-tools/session-tools.js';
+import { hiveMindTools } from './mcp-tools/hive-mind-tools.js';
+import { workflowTools } from './mcp-tools/workflow-tools.js';
+import { analyzeTools } from './mcp-tools/analyze-tools.js';
+import { progressTools } from './mcp-tools/progress-tools.js';
+import { embeddingsTools } from './mcp-tools/embeddings-tools.js';
+import { claimsTools } from './mcp-tools/claims-tools.js';
+import { securityTools } from './mcp-tools/security-tools.js';
+import { transferTools } from './mcp-tools/transfer-tools.js';
+// V2 Compatibility tools
+import { systemTools } from './mcp-tools/system-tools.js';
+import { terminalTools } from './mcp-tools/terminal-tools.js';
+import { neuralTools } from './mcp-tools/neural-tools.js';
+import { performanceTools } from './mcp-tools/performance-tools.js';
+import { githubTools } from './mcp-tools/github-tools.js';
+import { daaTools } from './mcp-tools/daa-tools.js';
+import { coordinationTools } from './mcp-tools/coordination-tools.js';
+import { browserTools } from './mcp-tools/browser-tools.js';
+import { browserSessionTools } from './mcp-tools/browser-session-tools.js';
+>>>>>>> pr-1936-head
 import { execFileSync } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
@@ -182,11 +212,26 @@ export async function ensureMcpToolsLoaded(): Promise<void> {
 }
 
 /**
+<<<<<<< HEAD
  * Test-only: clear the registry and reset the load latch. Lets the lazy-load
  * test re-import a fresh module-graph slice without polluting the cache.
  * Not exported as part of the public CLI surface — use only from tests.
  *
  * @internal
+=======
+ * Lifecycle MCP tools for ruflo-browser session-as-skill architecture
+ * (ADR-0001 ruflo-browser §7). Always registered: their handlers shell out
+ * to ruvector + agent-browser + claude-flow memory and degrade gracefully
+ * when those CLIs are missing.
+ */
+function getBrowserSessionTools(): MCPTool[] {
+  return browserSessionTools;
+}
+
+/**
+ * MCP Tool Registry
+ * Maps tool names to their handler functions
+>>>>>>> pr-1936-head
  */
 export function __resetForTests(): void {
   TOOL_REGISTRY.clear();
@@ -194,6 +239,47 @@ export function __resetForTests(): void {
   _browserAvailable = null;
 }
 
+<<<<<<< HEAD
+=======
+// Initialize registry with all available tools
+registerTools([
+  ...agentTools,
+  ...swarmTools,
+  ...memoryTools,
+  ...configTools,
+  ...hooksTools,
+  ...taskTools,
+  ...sessionTools,
+  ...hiveMindTools,
+  ...workflowTools,
+  ...analyzeTools,
+  ...progressTools,
+  ...embeddingsTools,
+  ...claimsTools,
+  ...securityTools,
+  ...transferTools,
+  // V2 Compatibility tools
+  ...systemTools,
+  ...terminalTools,
+  ...neuralTools,
+  ...performanceTools,
+  ...githubTools,
+  ...daaTools,
+  ...coordinationTools,
+  ...getBrowserTools(),
+  ...getBrowserSessionTools(),
+  // Phase 6: AgentDB v3 controller tools
+  ...agentdbTools,
+  // RuVector WASM tools
+  ...ruvllmWasmTools,
+  ...wasmAgentTools,
+  // Guidance & discovery tools
+  ...guidanceTools,
+  // Autopilot persistent completion tools
+  ...autopilotTools,
+]);
+
+>>>>>>> pr-1936-head
 /**
  * MCP Client Error
  */

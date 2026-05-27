@@ -403,6 +403,7 @@ export class CLI {
     }
 
     const rootName = commandPath[0];
+<<<<<<< HEAD
     if (rootName === undefined) {
       await this.showHelp();
       return;
@@ -415,11 +416,22 @@ export class CLI {
     }
 
     if (!initial) {
+=======
+
+    // Try sync first, then lazy load
+    let command: Command | undefined = getCommand(rootName);
+    if (!command && hasCommand(rootName)) {
+      command = await getCommandAsync(rootName);
+    }
+
+    if (!command) {
+>>>>>>> pr-1936-head
       this.output.printError(`Unknown command: ${rootName}`);
       return;
     }
 
     // Walk into subcommands following the path so `hive-mind spawn --help`
+<<<<<<< HEAD
     // renders spawn's help, not hive-mind's parent help.
     // Use a non-undefined-typed variable so narrowing persists across loop reassignment.
     let command: Command = initial;
@@ -430,18 +442,34 @@ export class CLI {
       const sub: Command | undefined = command.subcommands?.find(sc => sc.name === subName || sc.aliases?.includes(subName));
       if (!sub) break; // unknown leaf — fall back to last known
       command = sub;
+=======
+    // renders spawn's help, not hive-mind's parent help. We use a non-null
+    // local (`current`) instead of reassigning the optional `command` so
+    // TS can prove the value is defined for the rest of the function.
+    let current: Command = command;
+    const titleParts: string[] = [current.name];
+    for (let i = 1; i < commandPath.length; i++) {
+      const subName = commandPath[i];
+      const sub = current.subcommands?.find(sc => sc.name === subName || sc.aliases?.includes(subName));
+      if (!sub) break; // unknown leaf — fall back to last known
+      current = sub;
+>>>>>>> pr-1936-head
       titleParts.push(sub.name);
     }
 
     this.output.writeln();
     this.output.writeln(this.output.bold(`${this.name} ${titleParts.join(' ')}`));
+<<<<<<< HEAD
     this.output.writeln(command.description);
+=======
+    this.output.writeln(current.description);
+>>>>>>> pr-1936-head
     this.output.writeln();
 
     // Subcommands
-    if (command.subcommands && command.subcommands.length > 0) {
+    if (current.subcommands && current.subcommands.length > 0) {
       this.output.writeln(this.output.bold('SUBCOMMANDS:'));
-      for (const sub of command.subcommands) {
+      for (const sub of current.subcommands) {
         if (sub.hidden) continue;
         const name = sub.name.padEnd(15);
         const aliases = sub.aliases ? this.output.dim(` (${sub.aliases.join(', ')})`) : '';
@@ -451,9 +479,9 @@ export class CLI {
     }
 
     // Options
-    if (command.options && command.options.length > 0) {
+    if (current.options && current.options.length > 0) {
       this.output.writeln(this.output.bold('OPTIONS:'));
-      for (const opt of command.options) {
+      for (const opt of current.options) {
         const flags = opt.short ? `-${opt.short}, --${opt.name}` : `    --${opt.name}`;
         const required = opt.required ? this.output.error(' (required)') : '';
         const defaultVal = opt.default !== undefined ? this.output.dim(` [default: ${opt.default}]`) : '';
@@ -463,9 +491,9 @@ export class CLI {
     }
 
     // Examples
-    if (command.examples && command.examples.length > 0) {
+    if (current.examples && current.examples.length > 0) {
       this.output.writeln(this.output.bold('EXAMPLES:'));
-      for (const example of command.examples) {
+      for (const example of current.examples) {
         this.output.writeln(`  ${this.output.dim('$')} ${example.command}`);
         this.output.writeln(`    ${this.output.dim(example.description)}`);
       }
